@@ -1,0 +1,12 @@
+{
+  "values": [
+    "create:shaft",
+    "create:cogwheel",
+    "create:large_cogwheel",
+    "create:gearbox",
+    "create:creative_motor",
+    "create:hand_crank",
+    "create:water_wheel",
+    "create:depot"
+  ]
+}

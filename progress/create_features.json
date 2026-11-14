@@ -1,0 +1,1235 @@
+{
+ "source": "Create mc1.21.1/dev (AllBlocks.java, AllItems.java)",
+ "features": [
+  {
+   "id": "schematicannon",
+   "field": "SCHEMATICANNON",
+   "section": "Schematics"
+  },
+  {
+   "id": "schematic_table",
+   "field": "SCHEMATIC_TABLE",
+   "section": "Schematics"
+  },
+  {
+   "id": "shaft",
+   "field": "SHAFT",
+   "section": "Kinetics"
+  },
+  {
+   "id": "cogwheel",
+   "field": "COGWHEEL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "large_cogwheel",
+   "field": "LARGE_COGWHEEL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "andesite_encased_shaft",
+   "field": "ANDESITE_ENCASED_SHAFT",
+   "section": "Kinetics"
+  },
+  {
+   "id": "brass_encased_shaft",
+   "field": "BRASS_ENCASED_SHAFT",
+   "section": "Kinetics"
+  },
+  {
+   "id": "andesite_encased_cogwheel",
+   "field": "ANDESITE_ENCASED_COGWHEEL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "brass_encased_cogwheel",
+   "field": "BRASS_ENCASED_COGWHEEL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "andesite_encased_large_cogwheel",
+   "field": "ANDESITE_ENCASED_LARGE_COGWHEEL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "brass_encased_large_cogwheel",
+   "field": "BRASS_ENCASED_LARGE_COGWHEEL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "gearbox",
+   "field": "GEARBOX",
+   "section": "Kinetics"
+  },
+  {
+   "id": "clutch",
+   "field": "CLUTCH",
+   "section": "Kinetics"
+  },
+  {
+   "id": "gearshift",
+   "field": "GEARSHIFT",
+   "section": "Kinetics"
+  },
+  {
+   "id": "encased_chain_drive",
+   "field": "ENCASED_CHAIN_DRIVE",
+   "section": "Kinetics"
+  },
+  {
+   "id": "adjustable_chain_gearshift",
+   "field": "ADJUSTABLE_CHAIN_GEARSHIFT",
+   "section": "Kinetics"
+  },
+  {
+   "id": "belt",
+   "field": "BELT",
+   "section": "Kinetics"
+  },
+  {
+   "id": "chain_conveyor",
+   "field": "CHAIN_CONVEYOR",
+   "section": "Kinetics"
+  },
+  {
+   "id": "creative_motor",
+   "field": "CREATIVE_MOTOR",
+   "section": "Kinetics"
+  },
+  {
+   "id": "water_wheel",
+   "field": "WATER_WHEEL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "large_water_wheel",
+   "field": "LARGE_WATER_WHEEL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "water_wheel_structure",
+   "field": "WATER_WHEEL_STRUCTURAL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "encased_fan",
+   "field": "ENCASED_FAN",
+   "section": "Kinetics"
+  },
+  {
+   "id": "nozzle",
+   "field": "NOZZLE",
+   "section": "Kinetics"
+  },
+  {
+   "id": "turntable",
+   "field": "TURNTABLE",
+   "section": "Kinetics"
+  },
+  {
+   "id": "hand_crank",
+   "field": "HAND_CRANK",
+   "section": "Kinetics"
+  },
+  {
+   "id": "cuckoo_clock",
+   "field": "CUCKOO_CLOCK",
+   "section": "Kinetics"
+  },
+  {
+   "id": "mysterious_cuckoo_clock",
+   "field": "MYSTERIOUS_CUCKOO_CLOCK",
+   "section": "Kinetics"
+  },
+  {
+   "id": "millstone",
+   "field": "MILLSTONE",
+   "section": "Kinetics"
+  },
+  {
+   "id": "crushing_wheel",
+   "field": "CRUSHING_WHEEL",
+   "section": "Kinetics"
+  },
+  {
+   "id": "crushing_wheel_controller",
+   "field": "CRUSHING_WHEEL_CONTROLLER",
+   "section": "Kinetics"
+  },
+  {
+   "id": "mechanical_press",
+   "field": "MECHANICAL_PRESS",
+   "section": "Kinetics"
+  },
+  {
+   "id": "mechanical_mixer",
+   "field": "MECHANICAL_MIXER",
+   "section": "Kinetics"
+  },
+  {
+   "id": "basin",
+   "field": "BASIN",
+   "section": "Kinetics"
+  },
+  {
+   "id": "blaze_burner",
+   "field": "BLAZE_BURNER",
+   "section": "Kinetics"
+  },
+  {
+   "id": "lit_blaze_burner",
+   "field": "LIT_BLAZE_BURNER",
+   "section": "Kinetics"
+  },
+  {
+   "id": "depot",
+   "field": "DEPOT",
+   "section": "Kinetics"
+  },
+  {
+   "id": "weighted_ejector",
+   "field": "WEIGHTED_EJECTOR",
+   "section": "Kinetics"
+  },
+  {
+   "id": "chute",
+   "field": "CHUTE",
+   "section": "Kinetics"
+  },
+  {
+   "id": "smart_chute",
+   "field": "SMART_CHUTE",
+   "section": "Kinetics"
+  },
+  {
+   "id": "speedometer",
+   "field": "SPEEDOMETER",
+   "section": "Kinetics"
+  },
+  {
+   "id": "stressometer",
+   "field": "STRESSOMETER",
+   "section": "Kinetics"
+  },
+  {
+   "id": "wooden_bracket",
+   "field": "WOODEN_BRACKET",
+   "section": "Kinetics"
+  },
+  {
+   "id": "metal_bracket",
+   "field": "METAL_BRACKET",
+   "section": "Kinetics"
+  },
+  {
+   "id": "fluid_pipe",
+   "field": "FLUID_PIPE",
+   "section": "Fluids"
+  },
+  {
+   "id": "encased_fluid_pipe",
+   "field": "ENCASED_FLUID_PIPE",
+   "section": "Fluids"
+  },
+  {
+   "id": "glass_fluid_pipe",
+   "field": "GLASS_FLUID_PIPE",
+   "section": "Fluids"
+  },
+  {
+   "id": "mechanical_pump",
+   "field": "MECHANICAL_PUMP",
+   "section": "Fluids"
+  },
+  {
+   "id": "smart_fluid_pipe",
+   "field": "SMART_FLUID_PIPE",
+   "section": "Fluids"
+  },
+  {
+   "id": "fluid_valve",
+   "field": "FLUID_VALVE",
+   "section": "Fluids"
+  },
+  {
+   "id": "copper_valve_handle",
+   "field": "COPPER_VALVE_HANDLE",
+   "section": "Fluids"
+  },
+  {
+   "id": "dyed_valve_handles",
+   "field": "DYED_VALVE_HANDLES",
+   "section": "Fluids"
+  },
+  {
+   "id": "fluid_tank",
+   "field": "FLUID_TANK",
+   "section": "Fluids"
+  },
+  {
+   "id": "creative_fluid_tank",
+   "field": "CREATIVE_FLUID_TANK",
+   "section": "Fluids"
+  },
+  {
+   "id": "hose_pulley",
+   "field": "HOSE_PULLEY",
+   "section": "Fluids"
+  },
+  {
+   "id": "item_drain",
+   "field": "ITEM_DRAIN",
+   "section": "Fluids"
+  },
+  {
+   "id": "spout",
+   "field": "SPOUT",
+   "section": "Fluids"
+  },
+  {
+   "id": "portable_fluid_interface",
+   "field": "PORTABLE_FLUID_INTERFACE",
+   "section": "Fluids"
+  },
+  {
+   "id": "steam_engine",
+   "field": "STEAM_ENGINE",
+   "section": "Fluids"
+  },
+  {
+   "id": "steam_whistle",
+   "field": "STEAM_WHISTLE",
+   "section": "Fluids"
+  },
+  {
+   "id": "steam_whistle_extension",
+   "field": "STEAM_WHISTLE_EXTENSION",
+   "section": "Fluids"
+  },
+  {
+   "id": "powered_shaft",
+   "field": "POWERED_SHAFT",
+   "section": "Fluids"
+  },
+  {
+   "id": "mechanical_piston",
+   "field": "MECHANICAL_PISTON",
+   "section": "Contraptions"
+  },
+  {
+   "id": "sticky_mechanical_piston",
+   "field": "STICKY_MECHANICAL_PISTON",
+   "section": "Contraptions"
+  },
+  {
+   "id": "piston_extension_pole",
+   "field": "PISTON_EXTENSION_POLE",
+   "section": "Contraptions"
+  },
+  {
+   "id": "mechanical_piston_head",
+   "field": "MECHANICAL_PISTON_HEAD",
+   "section": "Contraptions"
+  },
+  {
+   "id": "gantry_carriage",
+   "field": "GANTRY_CARRIAGE",
+   "section": "Contraptions"
+  },
+  {
+   "id": "gantry_shaft",
+   "field": "GANTRY_SHAFT",
+   "section": "Contraptions"
+  },
+  {
+   "id": "windmill_bearing",
+   "field": "WINDMILL_BEARING",
+   "section": "Contraptions"
+  },
+  {
+   "id": "mechanical_bearing",
+   "field": "MECHANICAL_BEARING",
+   "section": "Contraptions"
+  },
+  {
+   "id": "clockwork_bearing",
+   "field": "CLOCKWORK_BEARING",
+   "section": "Contraptions"
+  },
+  {
+   "id": "rope_pulley",
+   "field": "ROPE_PULLEY",
+   "section": "Contraptions"
+  },
+  {
+   "id": "rope",
+   "field": "ROPE",
+   "section": "Contraptions"
+  },
+  {
+   "id": "pulley_magnet",
+   "field": "PULLEY_MAGNET",
+   "section": "Contraptions"
+  },
+  {
+   "id": "elevator_pulley",
+   "field": "ELEVATOR_PULLEY",
+   "section": "Contraptions"
+  },
+  {
+   "id": "cart_assembler",
+   "field": "CART_ASSEMBLER",
+   "section": "Contraptions"
+  },
+  {
+   "id": "controller_rail",
+   "field": "CONTROLLER_RAIL",
+   "section": "Contraptions"
+  },
+  {
+   "id": "minecart_anchor",
+   "field": "MINECART_ANCHOR",
+   "section": "Contraptions"
+  },
+  {
+   "id": "linear_chassis",
+   "field": "LINEAR_CHASSIS",
+   "section": "Contraptions"
+  },
+  {
+   "id": "secondary_linear_chassis",
+   "field": "SECONDARY_LINEAR_CHASSIS",
+   "section": "Contraptions"
+  },
+  {
+   "id": "radial_chassis",
+   "field": "RADIAL_CHASSIS",
+   "section": "Contraptions"
+  },
+  {
+   "id": "sticker",
+   "field": "STICKER",
+   "section": "Contraptions"
+  },
+  {
+   "id": "contraption_controls",
+   "field": "CONTRAPTION_CONTROLS",
+   "section": "Contraptions"
+  },
+  {
+   "id": "mechanical_drill",
+   "field": "MECHANICAL_DRILL",
+   "section": "Contraptions"
+  },
+  {
+   "id": "mechanical_saw",
+   "field": "MECHANICAL_SAW",
+   "section": "Contraptions"
+  },
+  {
+   "id": "deployer",
+   "field": "DEPLOYER",
+   "section": "Contraptions"
+  },
+  {
+   "id": "portable_storage_interface",
+   "field": "PORTABLE_STORAGE_INTERFACE",
+   "section": "Contraptions"
+  },
+  {
+   "id": "redstone_contact",
+   "field": "REDSTONE_CONTACT",
+   "section": "Contraptions"
+  },
+  {
+   "id": "elevator_contact",
+   "field": "ELEVATOR_CONTACT",
+   "section": "Contraptions"
+  },
+  {
+   "id": "mechanical_harvester",
+   "field": "MECHANICAL_HARVESTER",
+   "section": "Contraptions"
+  },
+  {
+   "id": "mechanical_plough",
+   "field": "MECHANICAL_PLOUGH",
+   "section": "Contraptions"
+  },
+  {
+   "id": "mechanical_roller",
+   "field": "MECHANICAL_ROLLER",
+   "section": "Contraptions"
+  },
+  {
+   "id": "sail_frame",
+   "field": "SAIL_FRAME",
+   "section": "Contraptions"
+  },
+  {
+   "id": "white_sail",
+   "field": "SAIL",
+   "section": "Contraptions"
+  },
+  {
+   "id": "dyed_sails",
+   "field": "DYED_SAILS",
+   "section": "Contraptions"
+  },
+  {
+   "id": "andesite_casing",
+   "field": "ANDESITE_CASING",
+   "section": "Contraptions"
+  },
+  {
+   "id": "brass_casing",
+   "field": "BRASS_CASING",
+   "section": "Contraptions"
+  },
+  {
+   "id": "copper_casing",
+   "field": "COPPER_CASING",
+   "section": "Contraptions"
+  },
+  {
+   "id": "shadow_steel_casing",
+   "field": "SHADOW_STEEL_CASING",
+   "section": "Contraptions"
+  },
+  {
+   "id": "refined_radiance_casing",
+   "field": "REFINED_RADIANCE_CASING",
+   "section": "Contraptions"
+  },
+  {
+   "id": "mechanical_crafter",
+   "field": "MECHANICAL_CRAFTER",
+   "section": "Contraptions"
+  },
+  {
+   "id": "sequenced_gearshift",
+   "field": "SEQUENCED_GEARSHIFT",
+   "section": "Contraptions"
+  },
+  {
+   "id": "flywheel",
+   "field": "FLYWHEEL",
+   "section": "Contraptions"
+  },
+  {
+   "id": "rotation_speed_controller",
+   "field": "ROTATION_SPEED_CONTROLLER",
+   "section": "Contraptions"
+  },
+  {
+   "id": "mechanical_arm",
+   "field": "MECHANICAL_ARM",
+   "section": "Logistics"
+  },
+  {
+   "id": "track",
+   "field": "TRACK",
+   "section": "Logistics"
+  },
+  {
+   "id": "fake_track",
+   "field": "FAKE_TRACK",
+   "section": "Logistics"
+  },
+  {
+   "id": "railway_casing",
+   "field": "RAILWAY_CASING",
+   "section": "Logistics"
+  },
+  {
+   "id": "track_station",
+   "field": "TRACK_STATION",
+   "section": "Logistics"
+  },
+  {
+   "id": "track_signal",
+   "field": "TRACK_SIGNAL",
+   "section": "Logistics"
+  },
+  {
+   "id": "track_observer",
+   "field": "TRACK_OBSERVER",
+   "section": "Logistics"
+  },
+  {
+   "id": "small_bogey",
+   "field": "SMALL_BOGEY",
+   "section": "Logistics"
+  },
+  {
+   "id": "large_bogey",
+   "field": "LARGE_BOGEY",
+   "section": "Logistics"
+  },
+  {
+   "id": "controls",
+   "field": "TRAIN_CONTROLS",
+   "section": "Logistics"
+  },
+  {
+   "id": "andesite_funnel",
+   "field": "ANDESITE_FUNNEL",
+   "section": "Logistics"
+  },
+  {
+   "id": "andesite_belt_funnel",
+   "field": "ANDESITE_BELT_FUNNEL",
+   "section": "Logistics"
+  },
+  {
+   "id": "brass_funnel",
+   "field": "BRASS_FUNNEL",
+   "section": "Logistics"
+  },
+  {
+   "id": "brass_belt_funnel",
+   "field": "BRASS_BELT_FUNNEL",
+   "section": "Logistics"
+  },
+  {
+   "id": "andesite_tunnel",
+   "field": "ANDESITE_TUNNEL",
+   "section": "Logistics"
+  },
+  {
+   "id": "brass_tunnel",
+   "field": "BRASS_TUNNEL",
+   "section": "Logistics"
+  },
+  {
+   "id": "content_observer",
+   "field": "SMART_OBSERVER",
+   "section": "Logistics"
+  },
+  {
+   "id": "stockpile_switch",
+   "field": "THRESHOLD_SWITCH",
+   "section": "Logistics"
+  },
+  {
+   "id": "creative_crate",
+   "field": "CREATIVE_CRATE",
+   "section": "Logistics"
+  },
+  {
+   "id": "item_vault",
+   "field": "ITEM_VAULT",
+   "section": "Logistics"
+  },
+  {
+   "id": "item_hatch",
+   "field": "ITEM_HATCH",
+   "section": "Logistics"
+  },
+  {
+   "id": "packager",
+   "field": "PACKAGER",
+   "section": "Logistics"
+  },
+  {
+   "id": "repackager",
+   "field": "REPACKAGER",
+   "section": "Logistics"
+  },
+  {
+   "id": "package_frogport",
+   "field": "PACKAGE_FROGPORT",
+   "section": "Logistics"
+  },
+  {
+   "id": "package_postboxes",
+   "field": "PACKAGE_POSTBOXES",
+   "section": "Logistics"
+  },
+  {
+   "id": "stock_link",
+   "field": "STOCK_LINK",
+   "section": "Logistics"
+  },
+  {
+   "id": "stock_ticker",
+   "field": "STOCK_TICKER",
+   "section": "Logistics"
+  },
+  {
+   "id": "redstone_requester",
+   "field": "REDSTONE_REQUESTER",
+   "section": "Logistics"
+  },
+  {
+   "id": "factory_gauge",
+   "field": "FACTORY_GAUGE",
+   "section": "Logistics"
+  },
+  {
+   "id": "table_cloths",
+   "field": "TABLE_CLOTHS",
+   "section": "Logistics"
+  },
+  {
+   "id": "andesite_table_cloth",
+   "field": "ANDESITE_TABLE_CLOTH",
+   "section": "Logistics"
+  },
+  {
+   "id": "brass_table_cloth",
+   "field": "BRASS_TABLE_CLOTH",
+   "section": "Logistics"
+  },
+  {
+   "id": "copper_table_cloth",
+   "field": "COPPER_TABLE_CLOTH",
+   "section": "Logistics"
+  },
+  {
+   "id": "display_link",
+   "field": "DISPLAY_LINK",
+   "section": "Logistics"
+  },
+  {
+   "id": "display_board",
+   "field": "DISPLAY_BOARD",
+   "section": "Logistics"
+  },
+  {
+   "id": "nixie_tube",
+   "field": "ORANGE_NIXIE_TUBE",
+   "section": "Logistics"
+  },
+  {
+   "id": "nixie_tubes",
+   "field": "NIXIE_TUBES",
+   "section": "Logistics"
+  },
+  {
+   "id": "rose_quartz_lamp",
+   "field": "ROSE_QUARTZ_LAMP",
+   "section": "Logistics"
+  },
+  {
+   "id": "redstone_link",
+   "field": "REDSTONE_LINK",
+   "section": "Logistics"
+  },
+  {
+   "id": "analog_lever",
+   "field": "ANALOG_LEVER",
+   "section": "Logistics"
+  },
+  {
+   "id": "placard",
+   "field": "PLACARD",
+   "section": "Logistics"
+  },
+  {
+   "id": "pulse_repeater",
+   "field": "PULSE_REPEATER",
+   "section": "Logistics"
+  },
+  {
+   "id": "pulse_extender",
+   "field": "PULSE_EXTENDER",
+   "section": "Logistics"
+  },
+  {
+   "id": "pulse_timer",
+   "field": "PULSE_TIMER",
+   "section": "Logistics"
+  },
+  {
+   "id": "powered_latch",
+   "field": "POWERED_LATCH",
+   "section": "Logistics"
+  },
+  {
+   "id": "powered_toggle_latch",
+   "field": "POWERED_TOGGLE_LATCH",
+   "section": "Logistics"
+  },
+  {
+   "id": "lectern_controller",
+   "field": "LECTERN_CONTROLLER",
+   "section": "Logistics"
+  },
+  {
+   "id": "copper_backtank",
+   "field": "COPPER_BACKTANK",
+   "section": "Curiosities"
+  },
+  {
+   "id": "netherite_backtank",
+   "field": "NETHERITE_BACKTANK",
+   "section": "Curiosities"
+  },
+  {
+   "id": "peculiar_bell",
+   "field": "PECULIAR_BELL",
+   "section": "Curiosities"
+  },
+  {
+   "id": "haunted_bell",
+   "field": "HAUNTED_BELL",
+   "section": "Curiosities"
+  },
+  {
+   "id": "desk_bell",
+   "field": "DESK_BELL",
+   "section": "Curiosities"
+  },
+  {
+   "id": "toolboxes",
+   "field": "TOOLBOXES",
+   "section": "Curiosities"
+  },
+  {
+   "id": "clipboard",
+   "field": "CLIPBOARD",
+   "section": "Curiosities"
+  },
+  {
+   "id": "andesite_ladder",
+   "field": "ANDESITE_LADDER",
+   "section": "Palettes"
+  },
+  {
+   "id": "brass_ladder",
+   "field": "BRASS_LADDER",
+   "section": "Palettes"
+  },
+  {
+   "id": "copper_ladder",
+   "field": "COPPER_LADDER",
+   "section": "Palettes"
+  },
+  {
+   "id": "andesite",
+   "field": "ANDESITE_BARS",
+   "section": "Palettes"
+  },
+  {
+   "id": "brass",
+   "field": "BRASS_BARS",
+   "section": "Palettes"
+  },
+  {
+   "id": "copper",
+   "field": "COPPER_BARS",
+   "section": "Palettes"
+  },
+  {
+   "id": "andesite_scaffolding",
+   "field": "ANDESITE_SCAFFOLD",
+   "section": "Palettes"
+  },
+  {
+   "id": "brass_scaffolding",
+   "field": "BRASS_SCAFFOLD",
+   "section": "Palettes"
+  },
+  {
+   "id": "copper_scaffolding",
+   "field": "COPPER_SCAFFOLD",
+   "section": "Palettes"
+  },
+  {
+   "id": "metal_girder",
+   "field": "METAL_GIRDER",
+   "section": "Palettes"
+  },
+  {
+   "id": "metal_girder_encased_shaft",
+   "field": "METAL_GIRDER_ENCASED_SHAFT",
+   "section": "Palettes"
+  },
+  {
+   "id": "copycat_base",
+   "field": "COPYCAT_BASE",
+   "section": "Palettes"
+  },
+  {
+   "id": "copycat_step",
+   "field": "COPYCAT_STEP",
+   "section": "Palettes"
+  },
+  {
+   "id": "copycat_panel",
+   "field": "COPYCAT_PANEL",
+   "section": "Palettes"
+  },
+  {
+   "id": "copycat_bars",
+   "field": "COPYCAT_BARS",
+   "section": "Palettes"
+  },
+  {
+   "id": "seats",
+   "field": "SEATS",
+   "section": "Palettes"
+  },
+  {
+   "id": "andesite_door",
+   "field": "ANDESITE_DOOR",
+   "section": "Palettes"
+  },
+  {
+   "id": "brass_door",
+   "field": "BRASS_DOOR",
+   "section": "Palettes"
+  },
+  {
+   "id": "copper_door",
+   "field": "COPPER_DOOR",
+   "section": "Palettes"
+  },
+  {
+   "id": "train_door",
+   "field": "TRAIN_DOOR",
+   "section": "Palettes"
+  },
+  {
+   "id": "train_trapdoor",
+   "field": "TRAIN_TRAPDOOR",
+   "section": "Palettes"
+  },
+  {
+   "id": "framed_glass_door",
+   "field": "FRAMED_GLASS_DOOR",
+   "section": "Palettes"
+  },
+  {
+   "id": "framed_glass_trapdoor",
+   "field": "FRAMED_GLASS_TRAPDOOR",
+   "section": "Palettes"
+  },
+  {
+   "id": "zinc_ore",
+   "field": "ZINC_ORE",
+   "section": "Palettes"
+  },
+  {
+   "id": "deepslate_zinc_ore",
+   "field": "DEEPSLATE_ZINC_ORE",
+   "section": "Palettes"
+  },
+  {
+   "id": "raw_zinc_block",
+   "field": "RAW_ZINC_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "zinc_block",
+   "field": "ZINC_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "andesite_alloy_block",
+   "field": "ANDESITE_ALLOY_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "industrial_iron_block",
+   "field": "INDUSTRIAL_IRON_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "weathered_iron_block",
+   "field": "WEATHERED_IRON_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "brass_block",
+   "field": "BRASS_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "cardboard_block",
+   "field": "CARDBOARD_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "bound_cardboard_block",
+   "field": "BOUND_CARDBOARD_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "experience_block",
+   "field": "EXPERIENCE_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "rose_quartz_block",
+   "field": "ROSE_QUARTZ_BLOCK",
+   "section": "Palettes"
+  },
+  {
+   "id": "rose_quartz_tiles",
+   "field": "ROSE_QUARTZ_TILES",
+   "section": "Palettes"
+  },
+  {
+   "id": "small_rose_quartz_tiles",
+   "field": "SMALL_ROSE_QUARTZ_TILES",
+   "section": "Palettes"
+  },
+  {
+   "id": "copper_shingles",
+   "field": "COPPER_SHINGLES",
+   "section": "Palettes"
+  },
+  {
+   "id": "copper_tiles",
+   "field": "COPPER_TILES",
+   "section": "Palettes"
+  },
+  {
+   "id": "cardboard",
+   "field": "CARDBOARD",
+   "section": "Materials"
+  },
+  {
+   "id": "precision_mechanism",
+   "field": "PRECISION_MECHANISM",
+   "section": "Materials"
+  },
+  {
+   "id": "blaze_cake_base",
+   "field": "BLAZE_CAKE_BASE",
+   "section": "Materials"
+  },
+  {
+   "id": "blaze_cake",
+   "field": "BLAZE_CAKE",
+   "section": "Materials"
+  },
+  {
+   "id": "creative_blaze_cake",
+   "field": "CREATIVE_BLAZE_CAKE",
+   "section": "Materials"
+  },
+  {
+   "id": "bar_of_chocolate",
+   "field": "BAR_OF_CHOCOLATE",
+   "section": "Materials"
+  },
+  {
+   "id": "sweet_roll",
+   "field": "SWEET_ROLL",
+   "section": "Materials"
+  },
+  {
+   "id": "chocolate_glazed_berries",
+   "field": "CHOCOLATE_BERRIES",
+   "section": "Materials"
+  },
+  {
+   "id": "honeyed_apple",
+   "field": "HONEYED_APPLE",
+   "section": "Materials"
+  },
+  {
+   "id": "builders_tea",
+   "field": "BUILDERS_TEA",
+   "section": "Materials"
+  },
+  {
+   "id": "cardboard_sword",
+   "field": "CARDBOARD_SWORD",
+   "section": "Materials"
+  },
+  {
+   "id": "raw_zinc",
+   "field": "RAW_ZINC",
+   "section": "Materials"
+  },
+  {
+   "id": "andesite_alloy",
+   "field": "ANDESITE_ALLOY",
+   "section": "Materials"
+  },
+  {
+   "id": "chromatic_compound",
+   "field": "CHROMATIC_COMPOUND",
+   "section": "Materials"
+  },
+  {
+   "id": "shadow_steel",
+   "field": "SHADOW_STEEL",
+   "section": "Materials"
+  },
+  {
+   "id": "refined_radiance",
+   "field": "REFINED_RADIANCE",
+   "section": "Materials"
+  },
+  {
+   "id": "copper_nugget",
+   "field": "COPPER_NUGGET",
+   "section": "Materials"
+  },
+  {
+   "id": "experience_nugget",
+   "field": "EXP_NUGGET",
+   "section": "Materials"
+  },
+  {
+   "id": "copper_sheet",
+   "field": "COPPER_SHEET",
+   "section": "Materials"
+  },
+  {
+   "id": "crushed_osmium",
+   "field": "CRUSHED_OSMIUM",
+   "section": "Materials"
+  },
+  {
+   "id": "belt_connector",
+   "field": "BELT_CONNECTOR",
+   "section": "Kinetics"
+  },
+  {
+   "id": "vertical_gearbox",
+   "field": "VERTICAL_GEARBOX",
+   "section": "Kinetics"
+  },
+  {
+   "id": "empty_blaze_burner",
+   "field": "EMPTY_BLAZE_BURNER",
+   "section": "Kinetics"
+  },
+  {
+   "id": "goggles",
+   "field": "GOGGLES",
+   "section": "Kinetics"
+  },
+  {
+   "id": "super_glue",
+   "field": "SUPER_GLUE",
+   "section": "Kinetics"
+  },
+  {
+   "id": "minecart_coupling",
+   "field": "MINECART_COUPLING",
+   "section": "Kinetics"
+  },
+  {
+   "id": "crafting_blueprint",
+   "field": "CRAFTING_BLUEPRINT",
+   "section": "Kinetics"
+  },
+  {
+   "id": "copper_backtank_placeable",
+   "field": "COPPER_BACKTANK_PLACEABLE",
+   "section": "Kinetics"
+  },
+  {
+   "id": "netherite_backtank_placeable",
+   "field": "NETHERITE_BACKTANK_PLACEABLE",
+   "section": "Kinetics"
+  },
+  {
+   "id": "sand_paper",
+   "field": "SAND_PAPER",
+   "section": "Kinetics"
+  },
+  {
+   "id": "red_sand_paper",
+   "field": "RED_SAND_PAPER",
+   "section": "Kinetics"
+  },
+  {
+   "id": "wrench",
+   "field": "WRENCH",
+   "section": "Kinetics"
+  },
+  {
+   "id": "minecart_contraption",
+   "field": "MINECART_CONTRAPTION",
+   "section": "Kinetics"
+  },
+  {
+   "id": "furnace_minecart_contraption",
+   "field": "FURNACE_MINECART_CONTRAPTION",
+   "section": "Kinetics"
+  },
+  {
+   "id": "chest_minecart_contraption",
+   "field": "CHEST_MINECART_CONTRAPTION",
+   "section": "Kinetics"
+  },
+  {
+   "id": "linked_controller",
+   "field": "LINKED_CONTROLLER",
+   "section": "Curiosities"
+  },
+  {
+   "id": "potato_cannon",
+   "field": "POTATO_CANNON",
+   "section": "Curiosities"
+  },
+  {
+   "id": "extendo_grip",
+   "field": "EXTENDO_GRIP",
+   "section": "Curiosities"
+  },
+  {
+   "id": "wand_of_symmetry",
+   "field": "WAND_OF_SYMMETRY",
+   "section": "Curiosities"
+  },
+  {
+   "id": "handheld_worldshaper",
+   "field": "WORLDSHAPER",
+   "section": "Curiosities"
+  },
+  {
+   "id": "tree_fertilizer",
+   "field": "TREE_FERTILIZER",
+   "section": "Curiosities"
+  },
+  {
+   "id": "filter",
+   "field": "FILTER",
+   "section": "Logistics"
+  },
+  {
+   "id": "attribute_filter",
+   "field": "ATTRIBUTE_FILTER",
+   "section": "Logistics"
+  },
+  {
+   "id": "package_filter",
+   "field": "PACKAGE_FILTER",
+   "section": "Logistics"
+  },
+  {
+   "id": "schedule",
+   "field": "SCHEDULE",
+   "section": "Logistics"
+  },
+  {
+   "id": "shopping_list",
+   "field": "SHOPPING_LIST",
+   "section": "Logistics"
+  },
+  {
+   "id": "empty_schematic",
+   "field": "EMPTY_SCHEMATIC",
+   "section": "Schematics"
+  },
+  {
+   "id": "schematic_and_quill",
+   "field": "SCHEMATIC_AND_QUILL",
+   "section": "Schematics"
+  },
+  {
+   "id": "schematic",
+   "field": "SCHEMATIC",
+   "section": "Schematics"
+  }
+ ]
+}

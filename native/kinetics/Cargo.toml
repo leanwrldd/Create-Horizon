@@ -1,0 +1,9 @@
+[package]
+name = "create-kinetics"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Create's rotation network rules, with no dependency on the game"
+
+[lints.rust]
+unsafe_code = "forbid"

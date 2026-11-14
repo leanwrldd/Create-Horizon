@@ -1,0 +1,18 @@
+# Create (Rust): a native trait mod (Horizon's docs/native-mods.md, "Trait mods").
+# Build it with `horizon-launcher native-build <this folder> --instance <instance> --trust-native-code`.
+[mod]
+id = "create"
+version = "0.1.0"
+
+# Unpinned, it builds on the instance's own Horizon. It uses only named hook points.
+# [compatibility]
+# horizon_revision = "<40 hex digits>"
+
+# The hooks: `api/src/lib.rs` exports `hooks()`.
+[api]
+path = "api"
+
+# The rotation rules, with no dependency on the game, so `cargo test` runs them in seconds.
+[[crate]]
+id = "kinetics"
+path = "kinetics"

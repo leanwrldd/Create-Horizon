@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " C ",
+    "CAC",
+    " C "
+  ],
+  "key": {
+    "C": "create:cogwheel",
+    "A": "create:andesite_alloy"
+  },
+  "result": {
+    "id": "create:gearbox"
+  }
+}

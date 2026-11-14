@@ -1,0 +1,22 @@
+{
+  "template": "minecraft:iron_ingot",
+  "max_stack_size": 1,
+  "components": {
+    "minecraft:tool": {
+      "rules": [
+        {
+          "blocks": [
+            "create:shaft",
+            "create:cogwheel",
+            "create:large_cogwheel",
+            "create:gearbox",
+            "create:creative_motor",
+            "create:depot"
+          ],
+          "correct_for_drops": true
+        }
+      ],
+      "damage_per_block": 0
+    }
+  }
+}

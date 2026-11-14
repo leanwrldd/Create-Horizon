@@ -1,0 +1,16 @@
+{
+  "title": "itemGroup.create.base",
+  "icon": "create:cogwheel",
+  "items": [
+    "create:creative_motor",
+    "create:shaft",
+    "create:cogwheel",
+    "create:large_cogwheel",
+    "create:gearbox",
+    "create:hand_crank",
+    "create:water_wheel",
+    "create:depot",
+    "create:wrench",
+    "create:andesite_alloy"
+  ]
+}

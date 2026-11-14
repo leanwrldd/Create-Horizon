@@ -1,0 +1,15 @@
+{
+  "model": {
+    "type": "minecraft:composite",
+    "models": [
+      {
+        "type": "minecraft:model",
+        "model": "create:item/wrench"
+      },
+      {
+        "type": "minecraft:model",
+        "model": "create:item/wrench/gear"
+      }
+    ]
+  }
+}

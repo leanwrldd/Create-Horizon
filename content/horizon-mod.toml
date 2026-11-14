@@ -1,0 +1,8 @@
+id = "create"
+name = "Create (Rust)"
+version = "0.1.0"
+description = "Create's rotating machines, rewritten in Rust for Horizon. First slice: shafts, cogwheels, gearboxes and the Creative Motor."
+authors = ["leanwrldd"]
+api = "0.2"
+side = "both"
+capabilities = ["registries"]
