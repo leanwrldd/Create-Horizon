@@ -259,9 +259,22 @@ pub fn tick(host: &mut dyn Host, pos: [i32; 3], entity: &mut ModBlockEntity) {
     }
 }
 
-/// The second half of `DepotBehaviour.tick`: a press two blocks above takes or holds the item.
+/// The second half of `DepotBehaviour.tick`: a press (or another processor, the Spout) two blocks
+/// above takes or holds the item.
 fn offer_to_press(host: &mut dyn Host, pos: [i32; 3], stack: &ItemStack, transport: &mut Transport) {
     let above = [pos[0], pos[1] + 2, pos[2]];
+    if let Some(processor) = crate::belt::extra_processor(&host.block(above)) {
+        if !transport.locked && crate::belt::blocked(host, pos) {
+            return;
+        }
+        let result = if transport.locked {
+            (processor.held)(host, above, stack)
+        } else {
+            (processor.received)(host, above, stack)
+        };
+        transport.locked = result == Processing::Hold;
+        return;
+    }
     if host.block(above) != press::ID {
         return;
     }
@@ -402,6 +415,17 @@ fn insert(
     play_arrival(host, pos, transport.from);
     host.block_entity_sync(pos);
     rest
+}
+
+/// The stack a processor above holds on the depot at `pos`, if it holds one.
+#[allow(dead_code)] // the spout module
+pub(crate) fn locked_stack(host: &dyn Host, pos: [i32; 3]) -> Option<ItemStack> {
+    let entity = host.mod_block_entity(pos).filter(|e| e.id == ID)?;
+    let transport = Transport::read(&entity.nbt)?;
+    if !transport.locked {
+        return None;
+    }
+    entity.items.first().cloned().flatten()
 }
 
 /// What the press does at the bottom of its cycle to the item held on the depot at `pos`

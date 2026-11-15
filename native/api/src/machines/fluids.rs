@@ -28,6 +28,14 @@ pub const CREATIVE_FLUID_TANK: &str = "create:creative_fluid_tank";
 pub const FLUID_PIPE: &str = "create:fluid_pipe";
 pub const GLASS_FLUID_PIPE: &str = "create:glass_fluid_pipe";
 pub const MECHANICAL_PUMP: &str = "create:mechanical_pump";
+pub const FLUID_VALVE: &str = "create:fluid_valve";
+pub const SMART_FLUID_PIPE: &str = "create:smart_fluid_pipe";
+pub const ENCASED_FLUID_PIPE: &str = "create:encased_fluid_pipe";
+pub const SPOUT: &str = "create:spout";
+pub const ITEM_DRAIN: &str = "create:item_drain";
+/// A Smart Fluid Pipe's saved filter: the id of the fluid its filter item holds, empty for an
+/// item that holds none; absent without a filter.
+pub const FILTER_FLUID: &str = "FilterFluid";
 
 struct Fluids;
 
@@ -47,9 +55,77 @@ pub fn direction(dir: Dir) -> Direction {
 
 /// `FluidTransportBehaviour.canHaveFlowToward` of the block at `pos`, or a fluid handler, or
 /// nothing: what the pipes and the pump make of their neighbours.
+#[allow(dead_code)] // the pump reads `classify_for`; other modules may ask without a fluid
 pub fn classify(host: &dyn Host, pos: Pos) -> Cell {
+    classify_for(host, pos, None)
+}
+
+/// Whether the block at `pos` is a Smart Fluid Pipe with a filter set.
+pub fn is_filtered(host: &dyn Host, pos: Pos) -> bool {
+    host.block(pos) == SMART_FLUID_PIPE
+        && host
+            .mod_block_entity(pos)
+            .is_some_and(|e| crate::util::get(&e.nbt, FILTER_FLUID).is_some())
+}
+
+/// `FluidTransportBehaviour.canHaveFlowToward` of a Fluid Valve, a Smart Fluid Pipe or an Encased
+/// Fluid Pipe at `pos`, whether or not it lets fluid through now: the faces its pipe is open on.
+pub fn transport_faces(host: &dyn Host, pos: Pos) -> Option<Faces> {
+    let property = |key: &str| host.block_property(pos, key);
+    match host.block(pos).as_str() {
+        FLUID_VALVE => {
+            let facing = property("facing").as_deref().and_then(Dir::from_name)?;
+            let along_first = property("axis_along_first").as_deref() == Some("true");
+            Some(Faces::axis(create_kinetics::rules::fluid_pipe::valve_pipe_axis(facing, along_first)))
+        }
+        SMART_FLUID_PIPE => {
+            let face = property("face")?;
+            let facing = property("facing").as_deref().and_then(Dir::from_name)?;
+            Some(Faces::axis(create_kinetics::rules::fluid_pipe::smart_pipe_axis(&face, facing)))
+        }
+        ENCASED_FLUID_PIPE => {
+            let open: Vec<Dir> = Dir::ALL
+                .into_iter()
+                .filter(|d| property(d.name()).as_deref() == Some("true"))
+                .collect();
+            Some(Faces::of(&open))
+        }
+        _ => None,
+    }
+}
+
+/// [`classify`] for `fluid` passing through: a Smart Fluid Pipe whose filter doesn't take it is
+/// nothing (`SmartPipeBehaviour.canPullFluidFrom`); a closed Fluid Valve is nothing for any fluid
+/// (`ValvePipeBehaviour.canPullFluidFrom`).
+pub fn classify_for(host: &dyn Host, pos: Pos, fluid: Option<&str>) -> Cell {
     let name = host.block(pos);
     match name.as_str() {
+        // `FluidValveBlockEntity.ValvePipeBehaviour`: shut until the pointer has turned `enabled`.
+        FLUID_VALVE => {
+            if host.block_property(pos, "enabled").as_deref() != Some("true") {
+                return Cell::Nothing;
+            }
+            transport_faces(host, pos).map_or(Cell::Nothing, Cell::Pipe)
+        }
+        // `SmartFluidPipeBlockEntity.SmartPipeBehaviour`: only the fluid its filter takes.
+        SMART_FLUID_PIPE => {
+            if let Some(fluid) = fluid
+                && let Some(entity) = host.mod_block_entity(pos)
+                && let Some(filter) = crate::util::get(&entity.nbt, FILTER_FLUID)
+            {
+                let passes = matches!(filter, horizon_client::mod_api::Tag::String(held)
+                    if held.to_string_lossy() == fluid);
+                if !passes {
+                    return Cell::Nothing;
+                }
+            }
+            transport_faces(host, pos).map_or(Cell::Nothing, Cell::Pipe)
+        }
+        // `FluidPipeBlockEntity.PipeFluidTransferBehaviour` for the encased pipe: the same six
+        // states as a pipe.
+        ENCASED_FLUID_PIPE => transport_faces(host, pos).map_or(Cell::Nothing, Cell::Pipe),
+        // `registerCapabilities`: the Spout's tank is closed below, the drain's above.
+        SPOUT | ITEM_DRAIN => Cell::Handler,
         FLUID_PIPE => {
             let open: Vec<Dir> = Dir::ALL
                 .into_iter()

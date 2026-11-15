@@ -121,9 +121,63 @@ pub fn shape(sides: &Sides) -> Vec<[f32; 6]> {
     boxes
 }
 
+/// `DirectionalAxisKineticBlock.getRotationAxis`, which the Fluid Valve uses: the shaft's axis
+/// from the block's `facing` and `axis_along_first`.
+pub fn valve_rotation_axis(facing: Dir, along_first: bool) -> Axis {
+    match facing.axis() {
+        Axis::X => if along_first { Axis::Y } else { Axis::Z },
+        Axis::Y => if along_first { Axis::X } else { Axis::Z },
+        Axis::Z => if along_first { Axis::X } else { Axis::Y },
+    }
+}
+
+/// `FluidValveBlock.getPipeAxis`: the axis the water runs along, the one of the two that are
+/// not `facing`'s which isn't the shaft's.
+pub fn valve_pipe_axis(facing: Dir, along_first: bool) -> Axis {
+    // Create's local `alongFirst` is the property inverted; it skips one axis when it is false.
+    let mut skip = along_first;
+    for axis in Axis::ALL {
+        if axis == facing.axis() {
+            continue;
+        }
+        if !skip {
+            return axis;
+        }
+        skip = false;
+    }
+    unreachable!("a facing leaves two axes")
+}
+
+/// `SmartFluidPipeBlock.getPipeAxis`: Y on a wall, else the axis of its horizontal `facing`.
+pub fn smart_pipe_axis(face: &str, facing: Dir) -> Axis {
+    if face == "wall" { Axis::Y } else { facing.axis() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_valve_runs_along_the_axis_its_shaft_does_not() {
+        for facing in Dir::ALL {
+            for along_first in [false, true] {
+                let shaft = valve_rotation_axis(facing, along_first);
+                let pipe = valve_pipe_axis(facing, along_first);
+                assert!(shaft != facing.axis() && pipe != facing.axis() && shaft != pipe);
+            }
+        }
+        // `AXIS_ALONG_FIRST_COORDINATE` with the shaft on X, facing Y: the pipe is Z.
+        assert_eq!(valve_rotation_axis(Dir::Up, true), Axis::X);
+        assert_eq!(valve_pipe_axis(Dir::Up, true), Axis::Z);
+        assert_eq!(valve_pipe_axis(Dir::Up, false), Axis::X);
+    }
+
+    #[test]
+    fn a_smart_pipe_on_a_wall_is_vertical() {
+        assert_eq!(smart_pipe_axis("wall", Dir::East), Axis::Y);
+        assert_eq!(smart_pipe_axis("floor", Dir::East), Axis::X);
+        assert_eq!(smart_pipe_axis("ceiling", Dir::North), Axis::Z);
+    }
 
     fn sides(open: &[Dir]) -> Sides {
         Dir::ALL.map(|d| open.contains(&d))

@@ -3,11 +3,16 @@
 //! The rules of one machine per module: numbers and state machines ported from Create, with
 //! no game types, so `cargo test` covers them.
 
+pub mod analog_lever;
 pub mod basin;
+pub mod bearing;
 pub mod burner;
 pub mod chain_drive;
 pub mod chute;
+pub mod contraption;
+pub mod contraption_facts;
 pub mod crushing_wheel;
+pub mod diodes;
 pub mod drill;
 pub mod drill_hardness;
 pub mod encased;
@@ -15,14 +20,21 @@ pub mod fan;
 pub mod fan_nozzle;
 pub mod fluid_pipe;
 pub mod fluid_tank;
+pub mod fluid_valve;
 pub mod fluids;
 pub mod funnel;
 pub mod gauges;
 pub mod gearshift;
+pub mod item_drain;
 pub mod millstone;
 pub mod mixer;
+pub mod piston;
 pub mod pump;
+pub mod redstone_link;
+pub mod rose_quartz_lamp;
 pub mod saw;
 pub mod saw_tree;
+pub mod smart_fluid_pipe;
+pub mod spout;
 pub mod steam_engine;
 pub mod steam_engine_whistle;

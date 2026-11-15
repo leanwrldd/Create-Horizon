@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "RCT",
+    "SSS"
+  ],
+  "key": {
+    "C": "#c:plates/brass",
+    "S": "#c:stones",
+    "T": "minecraft:redstone_torch",
+    "R": "minecraft:amethyst_shard"
+  },
+  "result": {
+    "id": "create:pulse_timer",
+    "count": 1
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "template": "minecraft:stone",
+  "item": true,
+  "properties": {
+    "hardness": 0.3,
+    "explosion_resistance": 0.3,
+    "requires_tool": false,
+    "map_color": 42,
+    "sounds": "minecraft:glass"
+  },
+  "state_properties": {
+    "activate": {
+      "type": "boolean"
+    },
+    "powered": {
+      "type": "boolean"
+    },
+    "powering": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "activate": "false",
+    "powered": "false",
+    "powering": "false"
+  },
+  "state_light": {
+    "property": "powering",
+    "values": {
+      "false": 0,
+      "true": 15
+    }
+  }
+}

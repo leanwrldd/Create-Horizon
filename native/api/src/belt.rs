@@ -274,7 +274,7 @@ fn replaceable(host: &dyn Host, block: &str) -> bool {
 }
 
 /// `Block.isFaceFull` of the collision boxes of the block at `pos` on its side `side`.
-fn face_full(host: &dyn Host, pos: Pos, side: Dir) -> bool {
+pub(crate) fn face_full(host: &dyn Host, pos: Pos, side: Dir) -> bool {
     const CELLS: usize = 16;
     let axis = side.axis().index();
     let (u, v) = match axis {
@@ -337,6 +337,42 @@ fn extra_input(block: &str) -> Option<BeltInput> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .find(|input| (input.claims)(block))
+        .copied()
+}
+
+/// A block two above a belt or a depot that holds, changes or takes the items that come to the
+/// middle of the block under it (`BeltProcessingBehaviour`), other than the press: the Spout.
+/// A module adds its block with [`register_processor`] when it starts, so this file doesn't
+/// name it.
+#[derive(Clone, Copy)]
+pub(crate) struct BeltProcessor {
+    /// Whether the block named is its block.
+    pub claims: fn(&str) -> bool,
+    /// `handleReceivedItem`: an item came to the middle of the block two under the processor at
+    /// the position.
+    pub received: fn(&mut dyn Host, Pos, &ItemStack) -> Processing,
+    /// `handleHeldItem`: whether it goes on holding the item it caught.
+    pub held: fn(&mut dyn Host, Pos, &ItemStack) -> Processing,
+}
+
+static PROCESSORS: Mutex<Vec<BeltProcessor>> = Mutex::new(Vec::new());
+
+#[allow(dead_code)] // the spout module calls it; a build without it doesn't
+pub(crate) fn register_processor(processor: BeltProcessor) {
+    let mut all = PROCESSORS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    // `hooks()` may run more than once.
+    if !all.iter().any(|p| p.claims as usize == processor.claims as usize) {
+        all.push(processor);
+    }
+}
+
+/// The registered processor that claims `block`.
+pub(crate) fn extra_processor(block: &str) -> Option<BeltProcessor> {
+    PROCESSORS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .find(|processor| (processor.claims)(block))
         .copied()
 }
 
@@ -501,15 +537,26 @@ impl Surroundings<ItemStack> for Around<'_> {
     }
 
     /// `getBeltProcessingAtSegment(segment)`: the block two above.
-    fn held(&mut self, segment: i32, _: &Item<ItemStack>) -> Option<Processing> {
+    fn held(&mut self, segment: i32, item: &Item<ItemStack>) -> Option<Processing> {
         let at = self.at(segment);
-        press::holding(self.host, [at[0], at[1] + 2, at[2]])
+        let above = [at[0], at[1] + 2, at[2]];
+        if let Some(processor) = extra_processor(&self.host.block(above)) {
+            return Some((processor.held)(self.host, above, &item.stack));
+        }
+        press::holding(self.host, above)
     }
 
     fn received(&mut self, segment: i32, item: &Item<ItemStack>) -> Option<Processing> {
         let at = self.at(segment);
         let above = [at[0], at[1] + 2, at[2]];
-        if self.host.block(above) != press::ID || blocked(self.host, at) {
+        let name = self.host.block(above);
+        if let Some(processor) = extra_processor(&name) {
+            if blocked(self.host, at) {
+                return None;
+            }
+            return Some((processor.received)(self.host, above, &item.stack));
+        }
+        if name != press::ID || blocked(self.host, at) {
             return None;
         }
         press::offered(self.host, above, &item.stack)
@@ -798,6 +845,23 @@ pub(crate) fn edit_items(
     });
     host.block_entity_sync(controller);
     true
+}
+
+/// The stack a processor above holds in the middle of the block of the belt at `pos`
+/// (`TransportedItemStackHandlerBehaviour.applyToEachWithin(index + .5, .51, ...)` for a locked
+/// item): `None` when none is held there.
+#[allow(dead_code)] // the spout module
+pub(crate) fn locked_stack(host: &dyn Host, pos: Pos) -> Option<ItemStack> {
+    let (facing, _) = segment(host, pos)?;
+    let index = host.mod_block_entity(pos).map(|e| int(&e.nbt, INDEX))?;
+    let controller = segment_position(pos, facing, -index);
+    let ctl = host.mod_block_entity(controller)?;
+    let middle = index as f32 + 0.5;
+    read_inventory(&ctl.nbt)
+        .items
+        .iter()
+        .find(|i| i.locked && (i.pos - middle).abs() < 0.51)
+        .map(|i| i.stack.clone())
 }
 
 /// What the press does at the bottom of its cycle to the item it holds on the block of the belt

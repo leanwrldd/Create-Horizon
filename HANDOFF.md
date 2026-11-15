@@ -74,7 +74,14 @@ build and the native build (`native-9f42064-184eb2b2db3e`). Waves 1 and 2 were t
 earlier report was an empty burner). Fixed after the wave 2 test, not yet re-tested: a bucket on a tank also
 poured water or filled twice, the saw had no log recipes (Create writes its wood cutting and concrete washing
 recipes at load time, `RuntimeDataGenerator`; now baked in), and the package now carries Create's sounds.
-**Wave 3 has not been tried in game.** Each module file lists its known differences.
+Wave 3 was tested in game on 2026-11-15 and worked (see the README).
+
+Later the same day: the contraption engine with the Mechanical and Sticky Pistons and the Mechanical Bearing,
+the fluid machines (Spout, Item Drain, Fluid Valve and handles, Smart and Encased Fluid Pipes) and the
+redstone parts (Redstone Link, Analog Lever, pulse diodes, latches, Rose Quartz Lamp). They pass the tests,
+the type-check and the content build; the full native build into `create-dev` was not run (the user was
+playing there), and none of it has been tried in game. The task list is the Port Board artifact
+(https://claude.ai/artifact/YGFoFYxhHFMELsUzYxt35D). Each module file lists its known differences.
 
 **Ponder (2026-11-15, tested in game):** Rust client-side library with the 169 registered Create 6.0.10
 storyboards and 18 tags, plus 12 tutorials adapted to Horizon. K opens the index; holding W over a supported
@@ -91,7 +98,7 @@ outlines through. Still missing: see the README's Ponder section (block entity d
 arm, deployer, bearing and pulley movement, trains, parrots, particles, funnel flaps, Create's hint-box art).
 Build the content pack as usual to package the original schematics and captions locally.
 
-**Not started:** tunnels, deployer, crafter, sloped belts, contraptions, trains, the rest of logistics,
+**Not started:** tunnels, deployer, crafter, sloped belts, the rest of contraptions, trains, the rest of logistics,
 schematics and goggles.
 
 **Agent waves:** the user wants at most 3 subagents at a time; after each wave, build, redraw the progress

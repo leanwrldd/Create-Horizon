@@ -6,8 +6,9 @@
 //!
 //! Known differences from Create: see `rules/fluid_pipe.rs`. Also, a pipe block entity only
 //! refreshes its sides every ten ticks (and at once when a pipe is placed), where Create reacts
-//! to each neighbour's update; the encased pipe (`EncasedPipeBlock`), brackets and waterlogging
-//! are not done.
+//! to each neighbour's update; brackets and waterlogging are not done. The Fluid Valve, the Smart
+//! Fluid Pipe and the Encased Fluid Pipe (`EncasedPipeBlock`) are modules of their own
+//! (`fluid_valve`, `smart_fluid_pipe`), joined to the pipes here through `fluids::transport_faces`.
 
 use create_kinetics::rules::fluid_pipe::{self as rules, Sides};
 use create_kinetics::{Dir, looking};
@@ -16,7 +17,10 @@ use horizon_client::mod_api::{
     Hooks, Host, LevelHost, PlaceBlockEvent, StateForPlacementEvent, UseItemOnEvent,
 };
 
-use super::fluids::{FLUID_PIPE, GLASS_FLUID_PIPE, MECHANICAL_PUMP, direction};
+use super::fluids::{
+    self, ENCASED_FLUID_PIPE, FLUID_PIPE, FLUID_VALVE, GLASS_FLUID_PIPE, ITEM_DRAIN, MECHANICAL_PUMP,
+    SMART_FLUID_PIPE, SPOUT, direction,
+};
 use crate::util;
 
 type Pos = [i32; 3];
@@ -39,7 +43,7 @@ fn sides_of(host: &dyn Host, pos: Pos) -> Sides {
 }
 
 /// `FluidPipeBlock.canConnectTo`: whether the pipe at `pos` joins what is beside it on `d`.
-fn connects(host: &dyn Host, pos: Pos, d: Dir) -> bool {
+pub(crate) fn connects(host: &dyn Host, pos: Pos, d: Dir) -> bool {
     let beside = add(pos, d);
     match host.block(beside).as_str() {
         // `isPipe(neighbour)`.
@@ -51,6 +55,15 @@ fn connects(host: &dyn Host, pos: Pos, d: Dir) -> bool {
             host.block_property(beside, "facing").as_deref().and_then(Dir::from_name).map(Dir::axis)
                 == Some(d.axis())
         }
+        // `FluidTransportBehaviour.canHaveFlowToward` of the valve, the smart pipe and the encased pipe.
+        FLUID_VALVE | SMART_FLUID_PIPE | ENCASED_FLUID_PIPE => {
+            fluids::transport_faces(host, beside).is_some_and(|faces| faces.has(d.opposite()))
+        }
+        // `hasFluidCapability`: a tank on the side facing the pipe (the Spout's is closed below, the
+        // drain's above).
+        SPOUT | ITEM_DRAIN => host
+            .fluid_tanks(host.dimension(), beside, direction(d.opposite()))
+            .is_some_and(|tanks| !tanks.is_empty()),
         "minecraft:air" => false,
         // `hasFluidCapability`: any block holding tanks.
         _ => host.fluid_tanks(host.dimension(), beside, direction(d.opposite())).is_some(),

@@ -16,13 +16,13 @@ is not pinned to one Horizon commit.
 |---|---:|---:|---:|
 | Kinetics | 36 | 57 | 63% |
 | Materials | 18 | 20 | 90% |
-| Logistics | 4 | 52 | 8% |
-| Fluids | 9 | 18 | 50% |
-| Contraptions | 7 | 42 | 17% |
+| Logistics | 12 | 52 | 23% |
+| Fluids | 15 | 18 | 83% |
+| Contraptions | 12 | 42 | 29% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 29 | 39 | 74% |
-| **All** | **103** | **246** | **41.9%** |
+| **All** | **122** | **246** | **49.6%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -121,6 +121,9 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Belts II | Compacting with the press over a basin; the press over a belt and a depot; belt hand-off; depot output slots and hoppers; belt casings and dye |
 | Chutes, Funnels | Chute and Smart Chute (items fall, fans push them up, hoppers and belts feed them); Andesite and Brass Funnels taking from and putting into the block behind, and on belts and depots as belt funnels; filters set by sneak-clicking with an item |
 | Steam | The boiler on a Fluid Tank, heated by Blaze Burners and fed water by pipes, with its gauge; the Steam Engine turning a Powered Shaft; the Steam Whistle and its extensions, pitched by size |
+| Spout, Item Drain | The Spout fills items on a belt or depot below it from its tank (`create:filling` recipes, buckets, bottles); the Item Drain empties items brought by belt, funnel or hand into its tank |
+| Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter (sneak-click with an item); a fluid pipe encased with a copper casing |
+| Redstone parts | Redstone Link (frequency set by clicking each half with an item), Analog Lever, Pulse Repeater, Pulse Extender and Pulse Timer (the Wrench on a side steps the delay), Powered Latch and Toggle Latch, Rose Quartz Lamp |
 | Building blocks | 364 blocks: metal ladders, bars, scaffolding and doors, copper shingles and tiles, glass and windows, 14 stone types in every pattern |
 
 Broad gaps across these modules:
@@ -137,6 +140,27 @@ Broad gaps across these modules:
   didn't pick them back up in the test.
 - A mod can't list another block's slots, so chutes and funnels read a container's saved items; the Smart Chute
   and Brass Funnel have no filter slot (sneak-click with an item instead).
+
+### Contraptions
+
+The engine that lifts a group of blocks out of the world, moves or turns it and sets it down
+(`native/api/src/machines/contraption.rs` has the design; the rules are
+`native/kinetics/src/rules/contraption.rs`), with the first blocks that use it:
+
+| Block | Behaviour |
+|---|---|
+| Mechanical Piston, Sticky Mechanical Piston | With Piston Extension Poles behind it, takes the poles, a head and the line of blocks in front (and what slime, honey and attached blocks hold on to) and moves them along its facing by RPM / 512 blocks a tick, up to the length of its poles, until something is in the way or the rotation stops; the sticky one pulls the block in front back. A negative speed extends a piston facing east, as in Create; an empty hand assembles it, a slime ball makes a piston sticky |
+| Piston Extension Pole, Mechanical Piston Head | The poles set the range; the head only exists on an extended piston |
+| Mechanical Bearing | Takes the block in front of it and what holds to it, turns it about its axis at the speed of the shaft out of its back, and sets it down at the nearest right angle when the rotation stops, an empty hand clicks it, a wrench turns it or it is broken |
+
+A structure is saved in the controller's block entity in Create's layout (`Anchor`, `Blocks.Palette`,
+`Blocks.BlockList`), is out of the world while it moves, and is drawn by the controller's block entity;
+a reload resumes it. Known differences from Create: nothing collides with a moving structure (no one rides,
+stands on or is pushed by it), blocks in it are drawn as their block model only, no actors, seats or
+movement interactions, only the "move and place" mode, Super Glue, chassis and the windmill are not here yet,
+belts and tanks can't be moved, and a controller destroyed by an explosion loses its structure. Not yet
+tested in game: the bearing, the sticky piston, glue-less structures with slime, save and reload; a first test
+of the piston extended and kept a chest's items, the retract and the fixes after it are untested.
 
 ### Ponder
 
@@ -177,8 +201,11 @@ item icons.
 
 ### Not done, and known differences from Create
 
-- Tunnels, deployers, the mechanical crafter, open pipe ends and valves,
-  contraptions, trains, logistics and schematics.
+- Tunnels, deployers, the mechanical crafter, open pipe ends, most contraptions, trains, the rest of logistics
+  and schematics.
+- The Spout, Item Drain, valves, smart pipes and redstone parts (2026-11-15) have not been tried in game. Their
+  filters and settings use click stand-ins until Create's value boxes are ported, and redstone is polled
+  every tick rather than heard.
 - The Creative Motor's speed is set with the Wrench, not Create's scroll-value box.
 - A network only includes loaded, ticking blocks: the part of a line in an unloaded chunk drops out.
 - A speed change takes one tick to reach each block, and is not eased.

@@ -1,0 +1,41 @@
+{
+  "template": "minecraft:glass",
+  "item": false,
+  "properties": {
+    "hardness": 3.0,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:copper_block",
+    "map_color": 44,
+    "render_shape": "MODEL",
+    "occludes": false
+  },
+  "state_properties": {
+    "down": {
+      "type": "boolean"
+    },
+    "up": {
+      "type": "boolean"
+    },
+    "north": {
+      "type": "boolean"
+    },
+    "south": {
+      "type": "boolean"
+    },
+    "west": {
+      "type": "boolean"
+    },
+    "east": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "down": "false",
+    "up": "false",
+    "north": "false",
+    "south": "false",
+    "west": "false",
+    "east": "false"
+  }
+}

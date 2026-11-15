@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "T",
+    "P"
+  ],
+  "key": {
+    "T": "create:copper_casing",
+    "P": "minecraft:dried_kelp"
+  },
+  "result": {
+    "id": "create:spout",
+    "count": 1
+  }
+}

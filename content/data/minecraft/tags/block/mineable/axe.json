@@ -8,9 +8,16 @@
     "create:depot",
     "create:mechanical_press",
     "create:belt",
+    "create:analog_lever",
+    "create:mechanical_bearing",
     "create:encased_chain_drive",
     "create:adjustable_chain_gearshift",
     "create:clutch",
+    "create:pulse_repeater",
+    "create:pulse_extender",
+    "create:pulse_timer",
+    "create:powered_latch",
+    "create:powered_toggle_latch",
     "create:mechanical_drill",
     "create:andesite_encased_shaft",
     "create:brass_encased_shaft",
@@ -31,6 +38,12 @@
     "create:cardboard_block",
     "create:bound_cardboard_block",
     "create:mechanical_mixer",
-    "create:mechanical_saw"
+    "create:mechanical_piston",
+    "create:sticky_mechanical_piston",
+    "create:piston_extension_pole",
+    "create:mechanical_piston_head",
+    "create:redstone_link",
+    "create:mechanical_saw",
+    "create:encased_fluid_pipe"
   ]
 }

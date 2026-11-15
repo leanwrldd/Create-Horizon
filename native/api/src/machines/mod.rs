@@ -5,32 +5,47 @@
 
 use horizon_client::mod_api::Hooks;
 
+pub mod analog_lever;
 pub mod basin;
+pub mod bearing;
 pub mod belts_ii;
 pub mod burner;
 pub mod chain_drive;
 pub mod chute;
 pub mod chute_inv;
 pub mod clutch;
+pub mod contraption;
 pub mod crushing_wheel;
+pub mod diodes;
+pub mod diodes_signal;
 pub mod drill;
 pub mod encased;
 pub mod fan;
 pub mod fan_nozzle;
 pub mod fluid_pipe;
 pub mod fluid_tank;
+pub mod fluid_valve;
+pub mod fluid_valve_handle;
 pub mod fluids;
 pub mod funnel;
 pub mod gauges;
 pub mod gearshift;
+pub mod item_drain;
 pub mod millstone;
 pub mod mixer;
+pub mod piston;
 pub mod pump;
+pub mod redstone_link;
+pub mod rose_quartz_lamp;
 pub mod saw;
+pub mod smart_fluid_pipe;
+pub mod smart_fluid_pipe_encased;
+pub mod spout;
+pub mod spout_fill;
 pub mod steam_engine;
 pub mod steam_engine_boiler;
 pub mod steam_engine_whistle;
 
 pub fn all() -> Vec<Box<dyn Hooks>> {
-    vec![basin::hooks(), belts_ii::hooks(), burner::hooks(), chain_drive::hooks(), chute::hooks(), chute_inv::hooks(), clutch::hooks(), crushing_wheel::hooks(), drill::hooks(), encased::hooks(), fan::hooks(), fan_nozzle::hooks(), fluid_pipe::hooks(), fluid_tank::hooks(), fluids::hooks(), funnel::hooks(), gauges::hooks(), gearshift::hooks(), millstone::hooks(), mixer::hooks(), pump::hooks(), saw::hooks(), steam_engine::hooks(), steam_engine_boiler::hooks(), steam_engine_whistle::hooks()]
+    vec![analog_lever::hooks(), basin::hooks(), bearing::hooks(), belts_ii::hooks(), burner::hooks(), chain_drive::hooks(), chute::hooks(), chute_inv::hooks(), clutch::hooks(), contraption::hooks(), crushing_wheel::hooks(), diodes::hooks(), diodes_signal::hooks(), drill::hooks(), encased::hooks(), fan::hooks(), fan_nozzle::hooks(), fluid_pipe::hooks(), fluid_tank::hooks(), fluid_valve::hooks(), fluid_valve_handle::hooks(), fluids::hooks(), funnel::hooks(), gauges::hooks(), gearshift::hooks(), item_drain::hooks(), millstone::hooks(), mixer::hooks(), piston::hooks(), pump::hooks(), redstone_link::hooks(), rose_quartz_lamp::hooks(), saw::hooks(), smart_fluid_pipe::hooks(), smart_fluid_pipe_encased::hooks(), spout::hooks(), spout_fill::hooks(), steam_engine::hooks(), steam_engine_boiler::hooks(), steam_engine_whistle::hooks()]
 }

@@ -12,6 +12,9 @@
 //! follows the player (`DirectionalKineticBlock.getStateForPlacement`) but not the pipe beside it
 //! (`PumpBlock.getStateForPlacement` reads neighbours a placement hook can't), the network is
 //! solved every second rather than on each neighbour's update, and the pump isn't waterlogged.
+//! A closed Fluid Valve and a Smart Fluid Pipe whose filter refuses the fluid are no pipe to the
+//! network (`fluids::classify_for`); with a filtered pipe in it, each source's fluid gets the
+//! network worked out for itself, every second like the rest.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -53,6 +56,10 @@ struct State {
     push: Side,
     /// Ticks before the fluid reaches (`FluidNetwork.pauseBeforePropagation` and the flow's progress).
     warmup: i32,
+    /// Whether a Smart Fluid Pipe with a filter lies in the network: then which tanks the fluid of
+    /// each source reaches is worked out for that fluid (`by_fluid`).
+    filtered: bool,
+    by_fluid: HashMap<String, (Side, Side)>,
 }
 
 static STATES: Mutex<Option<HashMap<(String, Pos), State>>> = Mutex::new(None);
@@ -69,13 +76,18 @@ fn node(facing: Dir) -> Node {
     }
 }
 
-/// `distributePressureTo` for both sides of the pump.
-fn solve(host: &dyn Host, pos: Pos, facing: Dir, speed: f32) -> (Side, Side) {
+/// `distributePressureTo` for both sides of the pump, for `fluid` passing (a Smart Fluid Pipe's
+/// filter lets only its own through). Also whether the network holds a filtered pipe.
+fn solve(host: &dyn Host, pos: Pos, facing: Dir, speed: f32, fluid: Option<&str>) -> (Side, Side, bool) {
     let mut memo: HashMap<Pos, Cell> = HashMap::new();
-    let mut cells = |p: Pos| *memo.entry(p).or_insert_with(|| fluids::classify(host, p));
-    let pull = solve_side(&mut cells, pos, facing.opposite(), true, speed, rules::RANGE);
-    let push = solve_side(&mut cells, pos, facing, false, speed, rules::RANGE);
-    (pull, push)
+    let (pull, push) = {
+        let mut cells = |p: Pos| *memo.entry(p).or_insert_with(|| fluids::classify_for(host, p, fluid));
+        let pull = solve_side(&mut cells, pos, facing.opposite(), true, speed, rules::RANGE);
+        let push = solve_side(&mut cells, pos, facing, false, speed, rules::RANGE);
+        (pull, push)
+    };
+    let filtered = fluid.is_none() && memo.keys().any(|p| fluids::is_filtered(host, *p));
+    (pull, push, filtered)
 }
 
 fn same_ends(a: &[Endpoint], b: &[Endpoint]) -> bool {
@@ -83,23 +95,35 @@ fn same_ends(a: &[Endpoint], b: &[Endpoint]) -> bool {
 }
 
 /// `FluidNetwork.tick`'s transfer, for each source behind the pump: up to its `transferSpeed`
-/// from the tank, shared among the tanks in front by how much room each has.
-fn transfer(host: &mut dyn Host, state: &State) {
+/// from the tank, shared among the tanks in front by how much room each has. With a filtered
+/// pipe in the network each source's fluid sees the network its own way.
+fn transfer(host: &mut dyn Host, pos: Pos, state: &mut State) {
     if state.push.endpoints.is_empty() {
         return;
     }
-    for source in &state.pull.endpoints {
+    let sources = state.pull.endpoints.clone();
+    for source in &sources {
         let face = direction(source.face);
         let Some((fluid, have)) = fluids::contents(&*host, source.handler, face) else {
             continue;
         };
-        let want = transfer_speed(source.pressure).min(have);
-        let targets: Vec<&Endpoint> = state
-            .push
-            .endpoints
-            .iter()
-            .filter(|t| t.handler != source.handler)
-            .collect();
+        let (pressure, ends) = if state.filtered {
+            let (facing, speed) = (state.facing, state.speed);
+            let entry = state.by_fluid.entry(fluid.clone()).or_insert_with(|| {
+                let (pull, push, _) = solve(&*host, pos, facing, speed, Some(&fluid));
+                (pull, push)
+            });
+            let (pull, push) = entry.clone();
+            let Some(own) = pull.endpoints.iter().find(|e| e.handler == source.handler && e.face == source.face)
+            else {
+                continue;
+            };
+            (own.pressure, push.endpoints)
+        } else {
+            (source.pressure, state.push.endpoints.clone())
+        };
+        let want = transfer_speed(pressure).min(have);
+        let targets: Vec<&Endpoint> = ends.iter().filter(|t| t.handler != source.handler).collect();
         let rooms: Vec<i32> = targets
             .iter()
             .map(|t| fluids::room(&*host, t.handler, direction(t.face), &fluid))
@@ -143,7 +167,7 @@ fn flow(host: &mut dyn Host, pos: Pos, facing: Dir, rpm: f32) {
         .as_ref()
         .is_none_or(|s| s.facing != facing || s.speed != speed || now - s.solved >= SOLVE);
     if stale {
-        let (pull, push) = solve(&*host, pos, facing, speed);
+        let (pull, push, filtered) = solve(&*host, pos, facing, speed, None);
         let unchanged = state.as_ref().is_some_and(|s| {
             s.facing == facing
                 && s.speed == speed
@@ -163,6 +187,8 @@ fn flow(host: &mut dyn Host, pos: Pos, facing: Dir, rpm: f32) {
             pull,
             push,
             warmup,
+            filtered,
+            by_fluid: HashMap::new(),
         });
     }
     let Some(mut state) = state else { return };
@@ -170,7 +196,7 @@ fn flow(host: &mut dyn Host, pos: Pos, facing: Dir, rpm: f32) {
     if state.warmup > 0 {
         state.warmup -= 1;
     } else {
-        transfer(host, &state);
+        transfer(host, pos, &mut state);
     }
     with_states(|states| {
         states.insert(key, state);

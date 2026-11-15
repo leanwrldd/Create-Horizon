@@ -1,0 +1,9 @@
+{
+  "values": [
+    "create:analog_lever",
+    "create:pulse_repeater",
+    "create:pulse_extender",
+    "create:pulse_timer",
+    "create:redstone_link"
+  ]
+}
