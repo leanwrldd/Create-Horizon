@@ -43,3 +43,7 @@ menu_closed
 item_model_property
 loot_drops
 net_from_server
+custom_block_fluids
+custom_fluid_tanks
+custom_fluid_fill
+custom_fluid_drain

@@ -11,6 +11,7 @@
     "create:encased_chain_drive",
     "create:adjustable_chain_gearshift",
     "create:clutch",
+    "create:mechanical_drill",
     "create:andesite_encased_shaft",
     "create:brass_encased_shaft",
     "create:andesite_encased_cogwheel",
@@ -29,6 +30,7 @@
     "create:refined_radiance_casing",
     "create:cardboard_block",
     "create:bound_cardboard_block",
-    "create:mechanical_mixer"
+    "create:mechanical_mixer",
+    "create:mechanical_saw"
   ]
 }

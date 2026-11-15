@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:deepslate"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:deepslate_bricks"
+    }
+  ],
+  "type": "create:cutting"
+}

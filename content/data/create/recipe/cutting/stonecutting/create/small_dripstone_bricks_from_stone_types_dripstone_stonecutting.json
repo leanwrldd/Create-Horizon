@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "tag": "create:stone_types/dripstone"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 1,
+      "id": "create:small_dripstone_bricks"
+    }
+  ],
+  "type": "create:cutting"
+}

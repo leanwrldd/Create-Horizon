@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:purple_concrete"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "minecraft:purple_concrete_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

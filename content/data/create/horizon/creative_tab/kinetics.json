@@ -22,6 +22,7 @@
     "create:adjustable_chain_gearshift",
     "create:clutch",
     "create:crushing_wheel",
+    "create:mechanical_drill",
     "create:andesite_encased_shaft",
     "create:brass_encased_shaft",
     "create:andesite_encased_cogwheel",
@@ -30,6 +31,11 @@
     "create:brass_encased_large_cogwheel",
     "create:encased_fan",
     "create:nozzle",
+    "create:fluid_pipe",
+    "create:fluid_tank",
+    "create:creative_fluid_tank",
+    "create:honey_bucket",
+    "create:chocolate_bucket",
     "create:speedometer",
     "create:stressometer",
     "create:gearshift",
@@ -83,6 +89,8 @@
     "create:bound_cardboard_block",
     "create:experience_block",
     "create:millstone",
-    "create:mechanical_mixer"
+    "create:mechanical_mixer",
+    "create:mechanical_pump",
+    "create:mechanical_saw"
   ]
 }

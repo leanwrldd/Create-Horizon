@@ -17,6 +17,7 @@
     "create:adjustable_chain_gearshift",
     "create:clutch",
     "create:crushing_wheel",
+    "create:mechanical_drill",
     "create:andesite_encased_shaft",
     "create:brass_encased_shaft",
     "create:andesite_encased_cogwheel",
@@ -25,6 +26,10 @@
     "create:brass_encased_large_cogwheel",
     "create:encased_fan",
     "create:nozzle",
+    "create:fluid_pipe",
+    "create:glass_fluid_pipe",
+    "create:fluid_tank",
+    "create:creative_fluid_tank",
     "create:speedometer",
     "create:stressometer",
     "create:gearshift",
@@ -369,6 +374,8 @@
     "create:small_veridium_brick_slab",
     "create:small_veridium_brick_wall",
     "create:layered_veridium",
-    "create:veridium_pillar"
+    "create:veridium_pillar",
+    "create:mechanical_pump",
+    "create:mechanical_saw"
   ]
 }

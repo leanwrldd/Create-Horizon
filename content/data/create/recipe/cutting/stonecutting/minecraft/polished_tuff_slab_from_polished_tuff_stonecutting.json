@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:polished_tuff"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "minecraft:polished_tuff_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

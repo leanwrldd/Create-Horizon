@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:deepslate"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "minecraft:polished_deepslate_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

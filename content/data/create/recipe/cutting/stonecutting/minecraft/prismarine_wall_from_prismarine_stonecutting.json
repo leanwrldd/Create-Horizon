@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:prismarine"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:prismarine_wall"
+    }
+  ],
+  "type": "create:cutting"
+}

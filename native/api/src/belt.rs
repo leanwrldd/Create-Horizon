@@ -12,8 +12,9 @@ use std::hash::{BuildHasher, Hasher};
 use std::sync::Mutex;
 
 use create_kinetics::belt::{
-    self, Ending, Inventory, Item, Part, chain_speed, clockwise, connect, foresee,
-    movement_facing, movement_speed, part_at, rotation_axis, segment_position,
+    self, Ending, Insertion, Inventory, Item, Part, Processing, Surroundings, chain_speed,
+    clockwise, connect, entry, foresee, movement_facing, movement_speed, part_at, rotation_axis,
+    segment_position,
 };
 use create_kinetics::{Axis, Dir, Kind, Networks, Node, Pos};
 use horizon_client::item_data::{decode_components, encode_components};
@@ -22,7 +23,7 @@ use horizon_client::mod_api::{
     ModBlockEntity, Tag,
 };
 
-use crate::{CREATIVE, SPECTATOR, float, int, set_float};
+use crate::{CREATIVE, SPECTATOR, depot, float, int, press, set_float};
 
 pub const ID: &str = "create:belt";
 pub const CONNECTOR: &str = "create:belt_connector";
@@ -32,6 +33,21 @@ const INDEX: &str = "Index";
 const LENGTH: &str = "Length";
 const INVENTORY: &str = "Inventory";
 const ITEMS: &str = "Items";
+/// Stacks other blocks handed to this belt since it last ticked (`BeltInventory.toInsert`); the
+/// controller puts them on at the start of its next tick.
+const INCOMING: &str = "Incoming";
+/// `BeltBlockEntity.casing`, as the ordinal of `CasingType`: 0 none, 1 andesite, 2 brass.
+pub(crate) const CASING: &str = "Casing";
+/// `BeltBlockEntity.color`, the `DyeColor`'s name (`NBTHelper.writeEnum`); absent when undyed.
+pub(crate) const DYE: &str = "Dye";
+/// The casing's models (`belt_casing/horizontal_*`), drawn over a cased belt block; the module
+/// `belts_ii` names them to the game and its content declaration imports them.
+pub(crate) const CASING_MODELS: [&str; 4] = [
+    "create:block/belt_casing/horizontal_start",
+    "create:block/belt_casing/horizontal_middle",
+    "create:block/belt_casing/horizontal_pulley",
+    "create:block/belt_casing/horizontal_end",
+];
 const POSITIVE: &str = "PositiveOrder";
 /// The end the items last met (`Ending` as a byte), so clients stop them where the server does.
 const ENDING: &str = "Ending";
@@ -136,6 +152,9 @@ fn item_tag(item: &Item<ItemStack>) -> Tag {
     tag.insert("InSegment".into(), Tag::Int(item.inserted_at));
     tag.insert("Angle".into(), Tag::Int(item.angle));
     tag.insert("InDirection".into(), Tag::Int(dir_id(item.inserted_from)));
+    if item.locked {
+        tag.insert("Locked".into(), Tag::Byte(1));
+    }
     Tag::Compound(tag)
 }
 
@@ -153,6 +172,7 @@ fn item_of(tag: &Tag) -> Option<Item<ItemStack>> {
             .get(int(nbt, "InDirection") as usize)
             .copied()
             .unwrap_or(Dir::Up),
+        locked: int(nbt, "Locked") != 0,
     })
 }
 
@@ -169,6 +189,24 @@ fn read_inventory<K: Ord + for<'a> From<&'a str>>(nbt: &BTreeMap<K, Tag>) -> Inv
         items,
         positive: int(inventory, POSITIVE) != 0,
     }
+}
+
+/// The stacks waiting to be put on the belt.
+fn read_incoming<K: Ord + for<'a> From<&'a str>>(nbt: &BTreeMap<K, Tag>) -> Vec<Item<ItemStack>> {
+    match get(nbt, INCOMING) {
+        Some(Tag::List(items)) => items.iter().filter_map(item_of).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The items on the belt and the ones waiting to go on it (`getTransportedItems` plus
+/// `toInsert`), for what looks at all of them.
+fn read_all<K: Ord + for<'a> From<&'a str>>(nbt: &BTreeMap<K, Tag>) -> Inventory<ItemStack> {
+    let mut inventory = read_inventory(nbt);
+    for item in read_incoming(nbt) {
+        inventory.insert(item);
+    }
+    inventory
 }
 
 /// `BeltInventory.write`.
@@ -268,9 +306,26 @@ fn face_full(host: &dyn Host, pos: Pos, side: Dir) -> bool {
     covered.iter().flatten().all(|c| *c)
 }
 
-/// `BeltInventory.resolveEnding`, without the funnels and belt inputs this slice lacks.
+/// Blocks that take items from a belt (`DirectBeltInputBehaviour`): a horizontal belt, a depot,
+/// a basin. Funnels, tunnels, saws and the like are not here yet.
+fn takes_belt_input(host: &dyn Host, pos: Pos) -> bool {
+    match host.block(pos).as_str() {
+        ID => segment(host, pos).is_some(),
+        depot::ID | "create:basin" => true,
+        // An upright saw takes items onto its blade (`SawBlockEntity`'s `DirectBeltInputBehaviour`).
+        SAW => crate::util::facing(host, pos, "facing") == Some(Dir::Up),
+        _ => false,
+    }
+}
+
+const SAW: &str = "create:mechanical_saw";
+
+/// `BeltInventory.resolveEnding`, without the funnels.
 fn resolve_ending(host: &dyn Host, controller: Pos, facing: Dir, length: i32, positive: bool) -> Ending {
     let next = segment_position(controller, facing, if positive { length } else { -1 });
+    if takes_belt_input(host, next) {
+        return Ending::Insert;
+    }
     let moving = if positive { facing } else { facing.opposite() };
     if face_full(host, next, moving.opposite()) {
         Ending::Blocked
@@ -336,7 +391,7 @@ pub fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, networks
     if !linked(host, pos, facing, part, true) || !linked(host, pos, facing, part, false) {
         if int(&entity.nbt, INDEX) == 0 && int(&entity.nbt, LENGTH) > 0 {
             let rpm = float(&entity.nbt, SPEED).unwrap_or(0.0);
-            eject_all(host, pos, facing, rpm, &read_inventory(&entity.nbt));
+            eject_all(host, pos, facing, rpm, &read_all(&entity.nbt));
         }
         let dimension = host.dimension();
         if part.has_pulley() {
@@ -369,7 +424,7 @@ pub fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, networks
     if breaks {
         if index == 0 {
             let old = float(&entity.nbt, SPEED).unwrap_or(0.0);
-            eject_all(host, pos, facing, old, &read_inventory(&entity.nbt));
+            eject_all(host, pos, facing, old, &read_all(&entity.nbt));
         }
         host.destroy_block(pos, None, false);
         return;
@@ -387,14 +442,330 @@ pub fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, networks
     }
 }
 
-/// The controller's share of the tick: stacks dropped on the belt get on, then everything moves
-/// (`BeltBlock.entityInside`, `ItemHandlerBeltSegment.insertItem`, `BeltInventory.tick`).
-/// True when clients need the items again.
+/// What the belt asks of the world while its items move (`BeltInventory.tick`): the processors
+/// above (the press) and the block at the end.
+struct Around<'a> {
+    host: &'a mut dyn Host,
+    controller: Pos,
+    facing: Dir,
+    length: i32,
+    rpm: f32,
+    positive: bool,
+    ending: Ending,
+}
+
+impl Around<'_> {
+    /// The block of the belt at `segment` (`BeltHelper.getPositionForOffset`).
+    fn at(&self, segment: i32) -> Pos {
+        segment_position(self.controller, self.facing, segment)
+    }
+}
+
+impl Surroundings<ItemStack> for Around<'_> {
+    fn ending(&mut self) -> Ending {
+        self.ending
+    }
+
+    /// `getBeltProcessingAtSegment(segment)`: the block two above.
+    fn held(&mut self, segment: i32, _: &Item<ItemStack>) -> Option<Processing> {
+        let at = self.at(segment);
+        press::holding(self.host, [at[0], at[1] + 2, at[2]])
+    }
+
+    fn received(&mut self, segment: i32, item: &Item<ItemStack>) -> Option<Processing> {
+        let at = self.at(segment);
+        let above = [at[0], at[1] + 2, at[2]];
+        if self.host.block(above) != press::ID || blocked(self.host, at) {
+            return None;
+        }
+        press::offered(self.host, above, &item.stack)
+    }
+
+    /// `Ending.INSERT`: the item is at the end; the block past it may take it.
+    fn insert(&mut self, item: &mut Item<ItemStack>) -> Insertion {
+        let next = segment_position(
+            self.controller,
+            self.facing,
+            if self.positive { self.length } else { -1 },
+        );
+        let side = movement_facing(self.rpm, self.facing);
+        if can_insert_from_side(self.host, next, side) != Some(true) {
+            return Insertion::Nothing;
+        }
+        let before = item.stack.count;
+        match handle_insertion(self.host, next, side, item, true, false) {
+            Some(rest) if rest.count == 0 => Insertion::All,
+            Some(rest) if rest.count != before => {
+                item.stack = rest;
+                Insertion::Part
+            }
+            _ => Insertion::Nothing,
+        }
+    }
+}
+
+/// `BeltProcessingBehaviour.isBlocked`: something solid over the block `space` (the block a
+/// processor works on) leaves no room for it.
+pub(crate) fn blocked(host: &dyn Host, space: Pos) -> bool {
+    !host.block_collision([space[0], space[1] + 1, space[2]]).is_empty()
+}
+
+/// `DirectBeltInputBehaviour.canInsertFromSide`: whether the block at `pos` takes items that
+/// arrive moving towards `side`; `None` where the block takes none from belts.
+pub(crate) fn can_insert_from_side(host: &dyn Host, pos: Pos, side: Dir) -> Option<bool> {
+    match host.block(pos).as_str() {
+        ID => {
+            let (facing, _) = segment(host, pos)?;
+            // `BeltBlockEntity.canInsertFrom`.
+            let rpm = host
+                .mod_block_entity(pos)
+                .and_then(|e| float(&e.nbt, SPEED))
+                .unwrap_or(0.0);
+            Some(rpm != 0.0 && movement_facing(rpm, facing) != side.opposite())
+        }
+        depot::ID | "create:basin" => Some(true),
+        SAW => Some(crate::util::facing(host, pos, "facing") == Some(Dir::Up)),
+        _ => None,
+    }
+}
+
+/// `DirectBeltInputBehaviour.handleInsertion`: hands `item`, moving towards `side`, to the block
+/// at `pos`. `from_belt` says a belt was carrying it (`prevBeltPosition != 0`). Answers what was
+/// left (count 0: all of it went in), or `None` where the block takes nothing from belts. A
+/// basin can't be asked first, so `simulate` leaves it out (the stack comes back whole).
+pub(crate) fn handle_insertion(
+    host: &mut dyn Host,
+    pos: Pos,
+    side: Dir,
+    item: &Item<ItemStack>,
+    from_belt: bool,
+    simulate: bool,
+) -> Option<ItemStack> {
+    match host.block(pos).as_str() {
+        ID => belt_insert(host, pos, side, item, from_belt, simulate),
+        depot::ID => Some(depot::insert_from_side(host, pos, side, item, simulate)),
+        "create:basin" => {
+            if simulate {
+                return Some(item.stack.clone());
+            }
+            let face = crate::util::direction(side.opposite());
+            Some(host.insert_item(pos, face, item.stack.clone()).unwrap_or_else(|| {
+                let mut none = item.stack.clone();
+                none.count = 0;
+                none
+            }))
+        }
+        SAW => Some(crate::machines::saw::insert_from_side(host, pos, &item.stack, simulate)),
+        _ => None,
+    }
+}
+
+/// An `ItemHandler` insertion into the block at `pos` as a basin's spout or a hopper makes it
+/// (`ItemHandlerBeltSegment.insertItem`, `DepotItemHandler.insertItem`): answers what was left
+/// (count 0: all of it), or `None` where `pos` is neither a belt nor a depot. This is the path
+/// a basin's spout should use for a belt or a depot.
+#[allow(dead_code)]
+pub(crate) fn handler_insert(
+    host: &mut dyn Host,
+    pos: Pos,
+    stack: &ItemStack,
+    simulate: bool,
+) -> Option<ItemStack> {
+    match host.block(pos).as_str() {
+        ID => {
+            let (facing, _) = segment(host, pos)?;
+            let whole = stack.clone();
+            let index = host.mod_block_entity(pos).map(|e| int(&e.nbt, INDEX))?;
+            let controller = segment_position(pos, facing, -index);
+            let ctl = host.mod_block_entity(controller)?;
+            if int(&ctl.nbt, LENGTH) == 0 {
+                return Some(whole);
+            }
+            let inventory = read_all(&ctl.nbt);
+            if !inventory.can_insert_at(index) {
+                return Some(whole);
+            }
+            // `ItemHelper.limitCountToMaxStackSize`.
+            let limit = host.max_stack_size(&whole.item).unwrap_or(64);
+            let mut taken = whole.clone();
+            taken.count = whole.count.min(limit);
+            let mut rest = whole;
+            rest.count -= taken.count;
+            if !simulate {
+                let item = Item::dropped(taken, index, (random() % 360) as i32, inventory.positive);
+                push_incoming(host, controller, vec![item]);
+            }
+            Some(rest)
+        }
+        depot::ID => Some(depot::handler_insert(host, pos, stack, simulate)),
+        _ => None,
+    }
+}
+
+fn push_incoming(host: &mut dyn Host, controller: Pos, items: Vec<Item<ItemStack>>) {
+    host.change_mod_block_entity(controller, &mut |entity| {
+        let mut list = match get(&entity.nbt, INCOMING) {
+            Some(Tag::List(list)) => list.clone(),
+            _ => Vec::new(),
+        };
+        list.extend(items.iter().map(item_tag));
+        entity.nbt.insert(INCOMING.into(), Tag::List(list));
+    });
+}
+
+/// `BeltBlockEntity.tryInsertingFromSide` for the belt block at `pos`.
+fn belt_insert(
+    host: &mut dyn Host,
+    pos: Pos,
+    side: Dir,
+    item: &Item<ItemStack>,
+    from_belt: bool,
+    simulate: bool,
+) -> Option<ItemStack> {
+    let (facing, _) = segment(host, pos)?;
+    let whole = item.stack.clone();
+    let Some(entity) = host.mod_block_entity(pos) else {
+        return Some(whole);
+    };
+    let rpm = float(&entity.nbt, SPEED).unwrap_or(0.0);
+    let index = int(&entity.nbt, INDEX);
+    // `isOccupied`: a belt that is stopped, not set up, or moving towards the side the item
+    // comes from takes nothing.
+    if int(&entity.nbt, LENGTH) == 0 || rpm == 0.0 {
+        return Some(whole);
+    }
+    let movement = movement_facing(rpm, facing);
+    if movement == side.opposite() {
+        return Some(whole);
+    }
+    let controller = segment_position(pos, facing, -index);
+    let Some(ctl) = host.mod_block_entity(controller) else {
+        return Some(whole);
+    };
+    if !read_all(&ctl.nbt).can_insert_at_from_side(index, side, movement) {
+        return Some(whole);
+    }
+    let mut none = whole.clone();
+    none.count = 0;
+    if simulate {
+        return Some(none);
+    }
+    let [dx, dy, dz] = movement.opposite().normal();
+    let behind = [pos[0] + dx, pos[1] + dy, pos[2] + dz];
+    let placed = entry(
+        index,
+        chain_speed(rpm, facing),
+        movement,
+        side,
+        item.side,
+        from_belt,
+        host.block(behind) == ID,
+    );
+    let new = Item {
+        stack: whole,
+        pos: placed.pos,
+        side: placed.side,
+        angle: item.angle,
+        inserted_at: index,
+        inserted_from: side,
+        locked: false,
+    };
+    push_incoming(host, controller, vec![new]);
+    Some(none)
+}
+
+/// What the press does at the bottom of its cycle to the item it holds on the block of the belt
+/// at `pos` (`BeltPressingCallbacks.whenItemHeld`): `results` gives what the press makes of a
+/// stack, or `None` where it takes none. The held item goes, what it makes comes in its place and
+/// stays held until the press lets go; what a press that works one item at a time left over
+/// waits to be taken in its turn. True when an item was pressed.
+pub(crate) fn process_held(
+    host: &mut dyn Host,
+    pos: Pos,
+    results: &mut dyn FnMut(&mut dyn Host, &ItemStack) -> Option<Vec<ItemStack>>,
+) -> bool {
+    let Some((facing, _)) = segment(host, pos) else {
+        return false;
+    };
+    let Some(index) = host.mod_block_entity(pos).map(|e| int(&e.nbt, INDEX)) else {
+        return false;
+    };
+    let controller = segment_position(pos, facing, -index);
+    let Some(ctl) = host.mod_block_entity(controller) else {
+        return false;
+    };
+    let mut inventory = read_inventory(&ctl.nbt);
+    let middle = index as f32 + 0.5;
+    // `applyToEachWithin(index + .5, .51, ...)`.
+    let Some(at) = inventory
+        .items
+        .iter()
+        .position(|i| i.locked && (i.pos - middle).abs() < 0.51)
+    else {
+        return false;
+    };
+    let item = inventory.items.remove(at);
+    let (take, left) = create_kinetics::press::belt_split(item.stack.count);
+    let mut probe = item.stack.clone();
+    probe.count = take;
+    let Some(made) = results(host, &probe) else {
+        // `PASS`: the press takes nothing of it after all, so it goes on.
+        let mut free = item;
+        free.locked = false;
+        inventory.items.insert(at, free);
+        host.change_mod_block_entity(controller, &mut |entity| {
+            entity.nbt.insert(INVENTORY.into(), inventory_tag(&inventory));
+        });
+        return false;
+    };
+    let mut incoming = Vec::new();
+    for stack in made {
+        let mut out = item.clone();
+        out.stack = stack;
+        out.locked = true;
+        out.angle = (random() % 360) as i32;
+        incoming.push(out);
+    }
+    if left > 0 {
+        // `held.beltPosition = (int) position + .5f - (positive ? 1 / 512f : -1 / 512f)`.
+        let mut rest = item.clone();
+        rest.stack.count = left;
+        rest.locked = false;
+        rest.pos = middle - if inventory.positive { 1.0 / 512.0 } else { -1.0 / 512.0 };
+        incoming.push(rest);
+    }
+    host.change_mod_block_entity(controller, &mut |entity| {
+        entity.nbt.insert(INVENTORY.into(), inventory_tag(&inventory));
+        let mut list = match get(&entity.nbt, INCOMING) {
+            Some(Tag::List(list)) => list.clone(),
+            _ => Vec::new(),
+        };
+        list.extend(incoming.iter().map(item_tag));
+        entity.nbt.insert(INCOMING.into(), Tag::List(list));
+    });
+    true
+}
+
+/// The controller's share of the tick: stacks other blocks handed over get on, stacks dropped on
+/// the belt get on, then everything moves (`BeltBlock.entityInside`,
+/// `ItemHandlerBeltSegment.insertItem`, `BeltInventory.tick`). True when clients need the items
+/// again.
 fn carry(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, facing: Dir, length: i32, rpm: f32) -> bool {
     let had = get(&entity.nbt, INVENTORY).is_some();
     let mut inventory = read_inventory(&entity.nbt);
     let mut changed = false;
     let mut sync = false;
+
+    // `toInsert`, at the start of `BeltInventory.tick`.
+    let incoming = read_incoming(&entity.nbt);
+    if !incoming.is_empty() {
+        for item in incoming {
+            inventory.insert(item);
+        }
+        crate::util::remove(&mut entity.nbt, INCOMING);
+        changed = true;
+        sync = true;
+    }
 
     // Item entities in any block of the belt, not rising.
     let dimension = host.dimension();
@@ -444,7 +815,16 @@ fn carry(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, facing: Dir
             entity.nbt.insert(ENDING.into(), Tag::Byte(ending.id()));
             sync = true;
         }
-        let moved = inventory.tick(speed, length, || ending);
+        let mut around = Around {
+            host: &mut *host,
+            controller: pos,
+            facing,
+            length,
+            rpm,
+            positive,
+            ending,
+        };
+        let moved = inventory.tick_with(speed, length, &mut around);
         for item in &moved.ejected {
             eject(host, pos, facing, rpm, item);
         }
@@ -473,7 +853,67 @@ pub fn update_tag(entity: &ModBlockEntity) -> Compound {
         tag.insert(ENDING.into(), Tag::Byte(int(&entity.nbt, ENDING) as i8));
         tag.insert(TICK.into(), Tag::Long(long(&entity.nbt, TICK).unwrap_or(0)));
     }
+    // Always sent: a client that had a casing or a dye must hear it is gone.
+    tag.insert(CASING.into(), Tag::Int(int(&entity.nbt, CASING)));
+    let dye = match get(&entity.nbt, DYE) {
+        Some(Tag::String(name)) => name.to_string_lossy(),
+        _ => String::new(),
+    };
+    tag.insert(DYE.into(), Tag::String(dye.as_str().into()));
     tag
+}
+
+/// `BeltBlockEntity.casing` of the belt block at `pos`: 0 none, 1 andesite, 2 brass.
+pub(crate) fn casing(host: &dyn Host, pos: Pos) -> i32 {
+    host.mod_block_entity(pos)
+        .map_or(0, |entity| int(&entity.nbt, CASING))
+}
+
+/// `BeltBlockEntity.setCasingType` for the belt block at `pos`: the state's `casing` follows.
+pub(crate) fn set_casing(host: &mut dyn Host, pos: Pos, kind: i32) {
+    if casing(host, pos) == kind {
+        return;
+    }
+    host.change_mod_block_entity(pos, &mut |entity| {
+        entity.nbt.insert(CASING.into(), Tag::Int(kind));
+    });
+    host.set_block_property(pos, "casing", if kind != 0 { "true" } else { "false" });
+    host.block_entity_sync(pos);
+}
+
+/// `BeltBlockEntity.applyColor`: dyes the whole belt `color` (a `DyeColor` name), or washes it
+/// with `None`. False, changing nothing, when it already is that colour.
+pub(crate) fn apply_color(host: &mut dyn Host, pos: Pos, color: Option<&str>) -> bool {
+    let Some((facing, _)) = segment(host, pos) else {
+        return false;
+    };
+    let Some(entity) = host.mod_block_entity(pos) else {
+        return false;
+    };
+    let controller = segment_position(pos, facing, -int(&entity.nbt, INDEX));
+    let current = match host.mod_block_entity(controller).and_then(|e| get(&e.nbt, DYE).cloned()) {
+        Some(Tag::String(name)) => Some(name.to_string_lossy()),
+        _ => None,
+    };
+    if current.as_deref() == color {
+        return false;
+    }
+    let length = host
+        .mod_block_entity(controller)
+        .map_or(0, |e| int(&e.nbt, LENGTH));
+    for offset in 0..length {
+        let at = segment_position(controller, facing, offset);
+        host.change_mod_block_entity(at, &mut |entity| match color {
+            Some(name) => {
+                entity.nbt.insert(DYE.into(), Tag::String(name.into()));
+            }
+            None => {
+                crate::util::remove(&mut entity.nbt, DYE);
+            }
+        });
+        host.block_entity_sync(at);
+    }
+    true
 }
 
 /// The controller draws past its own block: its items ride the whole belt
@@ -515,6 +955,20 @@ pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, part: Part
         host.draw_model(draw, &format!("create:block/belt/{name}{bottom}"), 0xFF_FFFF);
         draw.pop();
     }
+    // A cased belt block has its casing round it (`belt_casing/horizontal_*`, the block's own
+    // model in Create).
+    if int(&entity.nbt, CASING) != 0 {
+        let model = match part {
+            Part::Start => CASING_MODELS[0],
+            Part::Middle => CASING_MODELS[1],
+            Part::Pulley => CASING_MODELS[2],
+            Part::End => CASING_MODELS[3],
+        };
+        draw.push();
+        draw.rotate_about(UP, horizontal_angle(facing), CENTRE);
+        host.draw_model(draw, model, 0xFF_FFFF);
+        draw.pop();
+    }
     if part.has_pulley() {
         let axis = rotation_axis(facing);
         draw.spin(axis.unit(), CENTRE, rpm * 0.3, 0.0);
@@ -546,7 +1000,8 @@ fn draw_items(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, rpm: f32
     let since = (draw.game_time - long(&entity.nbt, TICK).unwrap_or(draw.game_time)) as f32
         + draw.partial;
     let positions: Vec<f32> = inventory.items.iter().map(|i| i.pos).collect();
-    let drawn = foresee(&positions, chain_speed(rpm, facing), since, length, margin);
+    let locked: Vec<bool> = inventory.items.iter().map(|i| i.locked).collect();
+    let drawn = foresee(&positions, &locked, chain_speed(rpm, facing), since, length, margin);
     let n = facing.normal().map(|v| v as f32);
     let along_x = clockwise(facing).axis() == Axis::X;
     for (item, pos) in inventory.items.iter().zip(drawn) {
@@ -675,7 +1130,7 @@ pub fn destroyed(host: &mut dyn Host, pos: Pos) {
     let Some(entity) = host.mod_block_entity(controller) else {
         return;
     };
-    let inventory = read_inventory(&entity.nbt);
+    let inventory = read_all(&entity.nbt);
     if inventory.items.is_empty() {
         return;
     }
@@ -685,6 +1140,7 @@ pub fn destroyed(host: &mut dyn Host, pos: Pos) {
         entity
             .nbt
             .insert(INVENTORY.into(), inventory_tag(&Inventory::default()));
+        crate::util::remove(&mut entity.nbt, INCOMING);
     });
 }
 
@@ -788,6 +1244,24 @@ mod tests {
         let mut nbt = Compound::new();
         nbt.insert(INVENTORY.into(), inventory_tag(&inventory));
         assert_eq!(read_inventory(&nbt), inventory);
+    }
+
+    #[test]
+    fn held_and_waiting_items_round_trip_through_nbt() {
+        let mut held = Item::dropped(ItemStack::new("minecraft:iron_ingot", 3), 1, 90, true);
+        held.locked = true;
+        held.inserted_from = Dir::East;
+        let tag = item_tag(&held);
+        assert_eq!(item_of(&tag), Some(held.clone()));
+        let mut nbt = Compound::new();
+        nbt.insert(INCOMING.into(), Tag::List(vec![tag]));
+        assert_eq!(read_incoming(&nbt), vec![held.clone()]);
+        // What waits to go on counts with what is on, for what looks at both.
+        assert_eq!(read_all(&nbt).items, vec![held]);
+        // A free item saves no `Locked` key.
+        let free = Item::dropped(ItemStack::new("minecraft:iron_ingot", 1), 0, 10, true);
+        let Tag::Compound(saved) = item_tag(&free) else { panic!() };
+        assert!(!saved.contains_key(&"Locked".into()));
     }
 
     #[test]

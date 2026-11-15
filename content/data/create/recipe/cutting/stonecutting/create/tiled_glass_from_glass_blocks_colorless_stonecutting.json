@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "tag": "c:glass_blocks/colorless"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 1,
+      "id": "create:tiled_glass"
+    }
+  ],
+  "type": "create:cutting"
+}

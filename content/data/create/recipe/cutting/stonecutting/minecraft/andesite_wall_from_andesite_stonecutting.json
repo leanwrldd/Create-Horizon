@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:andesite"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:andesite_wall"
+    }
+  ],
+  "type": "create:cutting"
+}

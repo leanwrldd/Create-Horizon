@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:oxidized_copper"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 4,
+      "id": "minecraft:oxidized_cut_copper_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

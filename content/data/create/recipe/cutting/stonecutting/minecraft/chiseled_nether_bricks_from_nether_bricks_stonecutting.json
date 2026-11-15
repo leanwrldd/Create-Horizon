@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:nether_bricks"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:chiseled_nether_bricks"
+    }
+  ],
+  "type": "create:cutting"
+}

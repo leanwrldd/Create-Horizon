@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:cobblestone"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:cobblestone_wall"
+    }
+  ],
+  "type": "create:cutting"
+}

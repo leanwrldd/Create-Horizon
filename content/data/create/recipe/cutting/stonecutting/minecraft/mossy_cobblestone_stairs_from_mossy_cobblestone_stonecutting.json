@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:mossy_cobblestone"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:mossy_cobblestone_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

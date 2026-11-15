@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:smooth_quartz"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:smooth_quartz_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

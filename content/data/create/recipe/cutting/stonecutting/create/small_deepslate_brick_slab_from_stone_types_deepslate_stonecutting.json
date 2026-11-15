@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "tag": "create:stone_types/deepslate"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "create:small_deepslate_brick_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

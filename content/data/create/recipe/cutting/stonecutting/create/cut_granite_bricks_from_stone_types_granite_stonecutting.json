@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "tag": "create:stone_types/granite"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 1,
+      "id": "create:cut_granite_bricks"
+    }
+  ],
+  "type": "create:cutting"
+}

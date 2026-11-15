@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "tag": "c:ingots/zinc"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 4,
+      "id": "create:copycat_step"
+    }
+  ],
+  "type": "create:cutting"
+}

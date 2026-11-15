@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:smooth_quartz"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "minecraft:smooth_quartz_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

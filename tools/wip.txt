@@ -1,4 +1,2 @@
 # Who is writing which machine modules right now: `<owner>: <module> <module> ...`.
 # tools/check_module.sh <owner> leaves the other owners' modules out of its build.
-fluids: fluids fluid_tank fluid_pipe pump
-cutting: saw drill

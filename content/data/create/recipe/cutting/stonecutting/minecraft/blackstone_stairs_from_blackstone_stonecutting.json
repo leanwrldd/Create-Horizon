@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:blackstone"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:blackstone_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

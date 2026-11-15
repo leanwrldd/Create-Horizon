@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:bricks"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:brick_wall"
+    }
+  ],
+  "type": "create:cutting"
+}

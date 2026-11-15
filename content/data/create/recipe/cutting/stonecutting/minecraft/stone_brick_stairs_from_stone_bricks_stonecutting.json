@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:stone_bricks"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:stone_brick_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:red_sandstone"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:red_sandstone_wall"
+    }
+  ],
+  "type": "create:cutting"
+}

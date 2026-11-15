@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:quartz_block"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "minecraft:quartz_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

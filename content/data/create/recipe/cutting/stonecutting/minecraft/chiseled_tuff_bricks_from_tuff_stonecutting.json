@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:tuff"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:chiseled_tuff_bricks"
+    }
+  ],
+  "type": "create:cutting"
+}

@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:waxed_exposed_copper"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 8,
+      "id": "minecraft:waxed_exposed_cut_copper_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

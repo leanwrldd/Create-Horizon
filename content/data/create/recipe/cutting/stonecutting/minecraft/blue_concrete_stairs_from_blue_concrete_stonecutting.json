@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:blue_concrete"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:blue_concrete_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

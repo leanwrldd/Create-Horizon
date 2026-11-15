@@ -4,10 +4,12 @@
 //! `BeltBlock`, `BeltBlockEntity`, `BeltConnectorItem`, `transport/BeltInventory`,
 //! `transport/TransportedItemStack` and `transport/ItemHandlerBeltSegment`.
 //!
-//! This slice is the straight horizontal belt. Items move along it, queue one block apart,
-//! and at the end either fly off as item entities or wait at a block whose face closes the
-//! way. Belt processing (presses, fans), funnels, tunnels, crushers, belt-to-belt insertion,
-//! slopes and casings are not here yet.
+//! This is the straight horizontal belt. Items move along it, queue one block apart, and at the
+//! end either fly off as item entities, wait at a block whose face closes the way, or are handed
+//! on to a block that takes items from a belt (`Ending.INSERT`: another belt, a depot, a basin).
+//! A processor two blocks above a block of the belt (the press) can hold an item in the middle
+//! of that block while it works (`BeltProcessingBehaviour`). Fans, funnels, tunnels, crushers
+//! and slopes are not here yet.
 //!
 //! An item's position counts blocks from the belt's start (its controller, `index` 0) along
 //! the belt's facing: 0 is the start block's back edge, `length` the end block's front edge.
@@ -193,6 +195,9 @@ pub enum Ending {
     Eject,
     /// A block whose face towards the belt is solid: items wait.
     Blocked,
+    /// A block that takes items from a belt (`DirectBeltInputBehaviour`): items wait a quarter
+    /// of a block short of it and are handed over, or stay if it will not take them.
+    Insert,
 }
 
 impl Ending {
@@ -200,6 +205,7 @@ impl Ending {
         match self {
             Ending::Eject => 0.0,
             Ending::Blocked => 0.45,
+            Ending::Insert => 0.25,
         }
     }
 
@@ -207,14 +213,73 @@ impl Ending {
         match self {
             Ending::Eject => 0,
             Ending::Blocked => 1,
+            Ending::Insert => 2,
         }
     }
 
     pub const fn from_id(id: i8) -> Self {
         match id {
             1 => Ending::Blocked,
+            2 => Ending::Insert,
             _ => Ending::Eject,
         }
+    }
+}
+
+/// `BeltProcessingBehaviour.ProcessingResult`: what a processor above the belt says of an item
+/// at the middle of the block under it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Processing {
+    /// Let it go on.
+    Pass,
+    /// Keep it there (`locked`) until the processor lets go.
+    Hold,
+    /// Take it off the belt.
+    Remove,
+}
+
+/// What came of handing an item to the block at the belt's end (`handleInsertion`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Insertion {
+    /// Nothing was taken: the item waits.
+    Nothing,
+    /// Some of the stack was taken (the item's stack is now what was left).
+    Part,
+    /// All of it: the item is gone from the belt.
+    All,
+}
+
+/// What a belt's surroundings answer while its items move: the end of the belt, and what sits
+/// above it. The glue implements this over the game; a plain `|| Ending` does for the rules.
+pub trait Surroundings<S> {
+    /// `BeltInventory.resolveEnding`: asked once, and only when an item comes near the end.
+    fn ending(&mut self) -> Ending;
+
+    /// `BeltProcessingBehaviour.handleHeldItem` of the processor above `segment`, for an item
+    /// it holds; `None` where there is none (the item is let go).
+    fn held(&mut self, _segment: i32, _item: &Item<S>) -> Option<Processing> {
+        None
+    }
+
+    /// `BeltProcessingBehaviour.handleReceivedItem` for an item about to cross the middle of
+    /// `segment`; `None` where no processor works there (or the space is blocked).
+    fn received(&mut self, _segment: i32, _item: &Item<S>) -> Option<Processing> {
+        None
+    }
+
+    /// `handleInsertion` into the block past the end for an item at the end of the belt, with
+    /// `canInsertFromSide` already asked. Changes the item's stack to what was left.
+    fn insert(&mut self, _item: &mut Item<S>) -> Insertion {
+        Insertion::Nothing
+    }
+}
+
+/// A closure that only knows the ending.
+struct Plain<F>(F);
+
+impl<S, F: FnMut() -> Ending> Surroundings<S> for Plain<F> {
+    fn ending(&mut self) -> Ending {
+        (self.0)()
     }
 }
 
@@ -232,6 +297,8 @@ pub struct Item<S> {
     pub inserted_at: i32,
     /// `insertedFrom`.
     pub inserted_from: Dir,
+    /// `locked`: a processor above holds it in the middle of a block.
+    pub locked: bool,
 }
 
 impl<S> Item<S> {
@@ -245,6 +312,7 @@ impl<S> Item<S> {
             angle,
             inserted_at: segment,
             inserted_from: Dir::Up,
+            locked: false,
         };
         item.side = item.target_side();
         item
@@ -263,8 +331,70 @@ pub struct Moved<S> {
     pub ejected: Vec<Item<S>>,
     /// Anything moved, so the saved items changed.
     pub moved: bool,
-    /// The list changed in a way a client can't foresee: an item left or the order turned.
+    /// The list changed in a way a client can't foresee: an item left, was held or let go, was
+    /// handed on, or the order turned.
     pub reordered: bool,
+}
+
+/// What `BeltInventory.handleBeltProcessingAndCheckIfRemoved` found.
+enum Handled {
+    Nothing,
+    /// The item was locked or unlocked, or its place changed.
+    Changed,
+    /// A processor took the item off the belt.
+    Removed,
+}
+
+/// `BeltInventory.handleBeltProcessingAndCheckIfRemoved` for one item about to move to
+/// `next_offset`: a held item asks its processor to go on holding it; a free one that will
+/// cross the middle of a block with a processor above it is offered to that processor.
+fn handle_processing<S>(
+    item: &mut Item<S>,
+    next_offset: f32,
+    no_movement: bool,
+    positive: bool,
+    env: &mut impl Surroundings<S>,
+) -> Handled {
+    // Continue processing if held.
+    if item.locked {
+        // `(int) beltPosition`.
+        let segment = item.pos as i32;
+        return match env.held(segment, item) {
+            None | Some(Processing::Pass) => {
+                item.locked = false;
+                Handled::Changed
+            }
+            Some(Processing::Remove) => Handled::Removed,
+            Some(Processing::Hold) => Handled::Nothing,
+        };
+    }
+    if no_movement {
+        return Handled::Nothing;
+    }
+    // See if any new belt processing catches the item.
+    if item.pos > 0.5 || positive {
+        let first = (item.pos + if positive { 0.5 } else { -0.5 }) as i32;
+        let step = if positive { 1 } else { -1 };
+        let mut segment = first;
+        while if positive {
+            segment as f32 + 0.5 <= next_offset
+        } else {
+            segment as f32 + 0.5 >= next_offset
+        } {
+            match env.received(segment, item) {
+                Some(Processing::Remove) => return Handled::Removed,
+                Some(Processing::Hold) => {
+                    item.pos =
+                        segment as f32 + 0.5 + if positive { 1.0 / 512.0 } else { -1.0 / 512.0 };
+                    item.locked = true;
+                    return Handled::Changed;
+                }
+                _ => {}
+            }
+            segment += step;
+        }
+    }
+    Handled::Nothing
 }
 
 /// `BeltInventory`: the items of one belt, kept on its controller.
@@ -286,10 +416,22 @@ impl<S> Default for Inventory<S> {
 }
 
 impl<S> Inventory<S> {
+    /// `BeltInventory.tick` on the server for a belt with nothing above it and a plain end:
+    /// see [`Inventory::tick_with`].
+    pub fn tick(&mut self, speed: f32, length: i32, ending: impl FnMut() -> Ending) -> Moved<S> {
+        self.tick_with(speed, length, &mut Plain(ending))
+    }
+
     /// `BeltInventory.tick` on the server, for a belt `length` blocks long moving `speed`
-    /// blocks a tick towards its end ([`chain_speed`]). `ending` is asked only once an item
-    /// gets near the end in this tick.
-    pub fn tick(&mut self, speed: f32, length: i32, mut ending: impl FnMut() -> Ending) -> Moved<S> {
+    /// blocks a tick towards its end ([`chain_speed`]). `env` is asked for the ending only once
+    /// an item gets near the end in this tick, and for the processors above and the block at
+    /// the end as items reach them.
+    pub fn tick_with(
+        &mut self,
+        speed: f32,
+        length: i32,
+        env: &mut impl Surroundings<S>,
+    ) -> Moved<S> {
         let mut moved = Moved {
             ejected: Vec::new(),
             moved: false,
@@ -331,7 +473,7 @@ impl<S> Inventory<S> {
                 -item.pos
             };
             if to_end.abs() < movement.abs() + 1.0 {
-                let margin = resolved.get_or_insert_with(&mut ending).margin();
+                let margin = resolved.get_or_insert_with(|| env.ending()).margin();
                 to_end += if positive { -margin } else { margin };
             }
             let limited = if positive {
@@ -339,7 +481,18 @@ impl<S> Inventory<S> {
             } else {
                 movement.max(to_end)
             };
-            if no_movement {
+            // Belt item processing.
+            let next_offset = item.pos + limited;
+            match handle_processing(&mut item, next_offset, no_movement, positive, env) {
+                Handled::Nothing => {}
+                Handled::Changed => moved.reordered = true,
+                Handled::Removed => {
+                    front = Some(item.pos);
+                    moved.reordered = true;
+                    continue;
+                }
+            }
+            if item.locked || no_movement {
                 front = Some(item.pos);
                 kept.push(item);
                 continue;
@@ -351,13 +504,28 @@ impl<S> Inventory<S> {
                 moved.moved = true;
             }
             front = Some(item.pos);
-            // Movement successful, or it waits at a closed end.
-            if limited == movement || resolved != Some(Ending::Eject) {
+            // Movement successful.
+            if limited == movement {
                 kept.push(item);
                 continue;
             }
-            moved.ejected.push(item);
-            moved.reordered = true;
+            // The end was reached.
+            match resolved {
+                Some(Ending::Eject) => {
+                    moved.ejected.push(item);
+                    moved.reordered = true;
+                }
+                Some(Ending::Insert) => match env.insert(&mut item) {
+                    Insertion::Nothing => kept.push(item),
+                    Insertion::Part => {
+                        moved.reordered = true;
+                        kept.push(item);
+                    }
+                    Insertion::All => moved.reordered = true,
+                },
+                // A closed end holds the item.
+                _ => kept.push(item),
+            }
         }
         self.items = kept;
         moved
@@ -369,6 +537,30 @@ impl<S> Inventory<S> {
         !self.items.iter().any(|item| {
             item.inserted_at == segment
                 && item.inserted_from == Dir::Up
+                && if self.positive {
+                    item.pos <= at + 1.0
+                } else {
+                    item.pos >= at - 1.0
+                }
+        })
+    }
+
+    /// `canInsertAtFromSide(segment, side)` for a belt moving towards `movement`: whether a
+    /// stack handed over at `segment` from `side` would still be too close to the last one that
+    /// came that way. A belt can't take items from the side it moves towards.
+    pub fn can_insert_at_from_side(&self, segment: i32, side: Dir, movement: Dir) -> bool {
+        if movement == side.opposite() {
+            return false;
+        }
+        let mut at = segment as f32;
+        if movement != side {
+            at += 0.5;
+        } else if !self.positive {
+            at += 1.0;
+        }
+        !self.items.iter().any(|item| {
+            item.inserted_at == segment
+                && item.inserted_from == side
                 && if self.positive {
                     item.pos <= at + 1.0
                 } else {
@@ -398,10 +590,67 @@ impl<S> Inventory<S> {
     }
 }
 
+/// Where a stack handed on to a belt lands (`BeltBlockEntity.tryInsertingFromSide`): the belt's
+/// own block `index`, its direction-aware speed (blocks a tick towards its end, not zero), the
+/// way it moves (`movement`) and the way the stack was moving when it came (`side`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Entry {
+    /// `beltPosition`.
+    pub pos: f32,
+    /// `sideOffset`.
+    pub side: f32,
+}
+
+/// `item_side` is the stack's own `sideOffset` (kept when it comes along the belt); `from_belt`
+/// says it was carried by a belt (`prevBeltPosition != 0`) and `belt_behind` that the block behind
+/// this one in the direction of movement is a belt block, so the stack comes onto the next belt
+/// where the last one left it (`.26` of a block short of the start).
+pub fn entry(
+    index: i32,
+    speed: f32,
+    movement: Dir,
+    side: Dir,
+    item_side: f32,
+    from_belt: bool,
+    belt_behind: bool,
+) -> Entry {
+    let mut pos = index as f32 + 0.5 - speed.signum() / 16.0;
+    let mut side_offset = item_side;
+    if side.axis() != Axis::Y {
+        if movement != side {
+            // Across the belt: dropped on its near edge.
+            side_offset = side.sign() as f32 * 0.675;
+            if side.axis() == Axis::X {
+                side_offset = -side_offset;
+            }
+        } else {
+            // This creates a smoother transition from belt to belt.
+            let extra = if from_belt && belt_behind { 0.26 } else { 0.0 };
+            pos = if speed > 0.0 {
+                index as f32 - extra
+            } else {
+                index as f32 + 1.0 + extra
+            };
+        }
+    }
+    Entry {
+        pos,
+        side: side_offset,
+    }
+}
+
 /// Where a client draws the items `ticks` after the server last sent them: each moves at
 /// `speed` until the end (less `margin`) or the item in front stops it, as the server's
-/// [`Inventory::tick`] will move them while nothing new happens. `positions` are front first.
-pub fn foresee(positions: &[f32], speed: f32, ticks: f32, length: i32, margin: f32) -> Vec<f32> {
+/// [`Inventory::tick`] will move them while nothing new happens. `positions` are front first; an
+/// item a processor holds (`locked`) stays where it is.
+pub fn foresee(
+    positions: &[f32],
+    locked: &[bool],
+    speed: f32,
+    ticks: f32,
+    length: i32,
+    margin: f32,
+) -> Vec<f32> {
     let positive = speed > 0.0;
     let end = if positive {
         length as f32 - margin
@@ -411,7 +660,12 @@ pub fn foresee(positions: &[f32], speed: f32, ticks: f32, length: i32, margin: f
     let mut front: Option<f32> = None;
     positions
         .iter()
-        .map(|&pos| {
+        .enumerate()
+        .map(|(i, &pos)| {
+            if locked.get(i).copied().unwrap_or(false) {
+                front = Some(pos);
+                return pos;
+            }
             let mut limit = end;
             if let Some(front) = front {
                 limit = if positive {
@@ -448,6 +702,7 @@ mod tests {
                     angle: 180,
                     inserted_at: 0,
                     inserted_from: Dir::Up,
+                    locked: false,
                 })
                 .collect(),
             positive,
@@ -608,7 +863,7 @@ mod tests {
         let start = positions(&inventory);
         for ticks in 1..=40 {
             inventory.tick(speed, 5, || Ending::Blocked);
-            let drawn = foresee(&start, speed, ticks as f32, 5, Ending::Blocked.margin());
+            let drawn = foresee(&start, &[false; 3], speed, ticks as f32, 5, Ending::Blocked.margin());
             for (a, b) in drawn.iter().zip(positions(&inventory)) {
                 assert!((a - b).abs() < 1e-3, "tick {ticks}: {drawn:?} vs {:?}", positions(&inventory));
             }
@@ -668,6 +923,248 @@ mod tests {
         for pos in [[1, 0, 1], [3, 0, 0], [4, 0, 0]] {
             assert_eq!(speeds[&pos], 0.0, "{pos:?}");
         }
+    }
+
+    /// A belt's surroundings for the tests: a processor above one segment and a block at the end.
+    struct Around {
+        ending: Ending,
+        /// The segment with a processor above it and what it says of an arriving item.
+        processor: Option<(i32, Processing)>,
+        /// What the processor says once an item is held.
+        holding: Processing,
+        offered: Vec<i32>,
+        takes: Insertion,
+        taken: u32,
+    }
+
+    impl Around {
+        fn new(ending: Ending) -> Self {
+            Around {
+                ending,
+                processor: None,
+                holding: Processing::Hold,
+                offered: Vec::new(),
+                takes: Insertion::Nothing,
+                taken: 0,
+            }
+        }
+    }
+
+    impl Surroundings<u32> for Around {
+        fn ending(&mut self) -> Ending {
+            self.ending
+        }
+
+        fn held(&mut self, segment: i32, _: &Item<u32>) -> Option<Processing> {
+            self.processor.filter(|p| p.0 == segment).map(|_| self.holding)
+        }
+
+        fn received(&mut self, segment: i32, _: &Item<u32>) -> Option<Processing> {
+            self.offered.push(segment);
+            self.processor.filter(|p| p.0 == segment).map(|p| p.1)
+        }
+
+        fn insert(&mut self, item: &mut Item<u32>) -> Insertion {
+            if self.takes != Insertion::Nothing {
+                self.taken += 1;
+            }
+            if self.takes == Insertion::Part {
+                item.stack += 100;
+            }
+            self.takes
+        }
+    }
+
+    #[test]
+    fn an_item_stops_a_quarter_block_short_of_a_block_that_takes_it_and_is_handed_over() {
+        assert_eq!(Ending::Insert.margin(), 0.25);
+        assert_eq!(Ending::from_id(Ending::Insert.id()), Ending::Insert);
+        let speed = chain_speed(256.0, Dir::South);
+        // Refused: it waits at the margin, however long, and the next waits a block behind.
+        let mut inventory = belt(&[1.5, 0.5], true);
+        let mut env = Around::new(Ending::Insert);
+        for _ in 0..200 {
+            let moved = inventory.tick_with(speed, 3, &mut env);
+            assert!(moved.ejected.is_empty());
+        }
+        let at = positions(&inventory);
+        assert!(close(at[0], 3.0 - 0.25), "{at:?}");
+        assert!(close(at[1], 3.0 - 0.25 - SPACING), "{at:?}");
+        assert_eq!(env.taken, 0);
+        // Taken whole: the front one is gone, and the one behind moves up and goes too.
+        env.takes = Insertion::All;
+        let mut reordered = false;
+        for _ in 0..200 {
+            reordered |= inventory.tick_with(speed, 3, &mut env).reordered;
+        }
+        assert!(reordered);
+        assert!(inventory.items.is_empty());
+        assert_eq!(env.taken, 2);
+    }
+
+    #[test]
+    fn a_part_taken_leaves_the_rest_waiting() {
+        let speed = chain_speed(256.0, Dir::South);
+        let mut inventory = belt(&[2.7], true);
+        let mut env = Around::new(Ending::Insert);
+        env.takes = Insertion::Part;
+        let moved = inventory.tick_with(speed, 3, &mut env);
+        assert!(moved.reordered);
+        // The glue changed the stack to what was left, and it stays on the belt.
+        assert_eq!(inventory.items.len(), 1);
+        assert_eq!(inventory.items[0].stack, 100);
+    }
+
+    #[test]
+    fn a_processor_holds_an_item_in_the_middle_of_its_block_and_lets_it_go() {
+        let speed = chain_speed(64.0, Dir::South);
+        // The processor above segment 1.
+        let mut env = Around::new(Ending::Eject);
+        env.processor = Some((1, Processing::Hold));
+        let mut inventory = belt(&[2.0, 0.5], true);
+        // The first item is past the processor, the second comes to it.
+        let mut caught = false;
+        for _ in 0..60 {
+            let moved = inventory.tick_with(speed, 14, &mut env);
+            if inventory.items[1].locked {
+                caught = true;
+                assert!(moved.reordered);
+                break;
+            }
+        }
+        assert!(caught, "the processor never caught the item");
+        assert!(close(inventory.items[1].pos, 1.5 + 1.0 / 512.0), "{}", inventory.items[1].pos);
+        // Held: it stays however long, and the one in front keeps going.
+        for _ in 0..30 {
+            inventory.tick_with(speed, 14, &mut env);
+        }
+        assert!(inventory.items[1].locked);
+        assert!(close(inventory.items[1].pos, 1.5 + 1.0 / 512.0));
+        assert!(inventory.items[0].pos > 3.0);
+        // Let go, it runs on and is not offered to the same processor again.
+        env.holding = Processing::Pass;
+        env.offered.clear();
+        let moved = inventory.tick_with(speed, 14, &mut env);
+        assert!(moved.reordered);
+        assert!(!inventory.items[1].locked);
+        for _ in 0..40 {
+            inventory.tick_with(speed, 14, &mut env);
+        }
+        assert!(inventory.items[1].pos > 2.5);
+        assert!(!env.offered.contains(&1), "{:?}", env.offered);
+    }
+
+    #[test]
+    fn a_held_item_whose_processor_is_gone_is_let_go() {
+        let speed = chain_speed(64.0, Dir::South);
+        let mut inventory = belt(&[1.502], true);
+        inventory.items[0].locked = true;
+        let mut env = Around::new(Ending::Eject);
+        let moved = inventory.tick_with(speed, 6, &mut env);
+        assert!(moved.reordered);
+        assert!(!inventory.items[0].locked);
+    }
+
+    #[test]
+    fn a_processor_that_takes_the_item_off_empties_the_belt_of_it() {
+        let speed = chain_speed(64.0, Dir::South);
+        let mut inventory = belt(&[1.45], true);
+        let mut env = Around::new(Ending::Eject);
+        env.processor = Some((1, Processing::Remove));
+        let moved = inventory.tick_with(speed, 6, &mut env);
+        assert!(moved.reordered);
+        assert!(inventory.items.is_empty());
+    }
+
+    #[test]
+    fn items_on_a_belt_running_the_other_way_are_caught_at_the_segment_they_reach() {
+        let speed = chain_speed(64.0, Dir::North);
+        assert!(speed < 0.0);
+        let mut env = Around::new(Ending::Eject);
+        env.processor = Some((1, Processing::Hold));
+        let mut inventory = belt(&[2.45], false);
+        for _ in 0..40 {
+            inventory.tick_with(speed, 6, &mut env);
+            if inventory.items[0].locked {
+                break;
+            }
+        }
+        assert!(inventory.items[0].locked);
+        assert!(close(inventory.items[0].pos, 1.5 - 1.0 / 512.0), "{}", inventory.items[0].pos);
+    }
+
+    #[test]
+    fn a_stack_behind_a_held_one_queues_a_block_back() {
+        let speed = chain_speed(64.0, Dir::South);
+        let mut env = Around::new(Ending::Eject);
+        env.processor = Some((2, Processing::Hold));
+        let mut inventory = belt(&[1.8, 0.5], true);
+        for _ in 0..100 {
+            inventory.tick_with(speed, 8, &mut env);
+        }
+        let at = positions(&inventory);
+        assert!(inventory.items[0].locked);
+        assert!(close(at[0], 2.5 + 1.0 / 512.0), "{at:?}");
+        assert!(close(at[1], at[0] - SPACING), "{at:?}");
+    }
+
+    #[test]
+    fn the_client_leaves_a_held_item_where_it_is() {
+        let speed = chain_speed(128.0, Dir::South);
+        let drawn = foresee(&[2.0, 1.0], &[true, false], speed, 40.0, 8, 0.0);
+        assert_eq!(drawn[0], 2.0);
+        // The one behind runs up to a block short of it and stops.
+        assert!(close(drawn[1], 1.0), "{drawn:?}");
+        let free = foresee(&[2.0, 0.2], &[false, false], speed, 40.0, 8, 0.0);
+        assert!(free[0] > 7.9 && free[1] < free[0] - SPACING + 1e-3, "{free:?}");
+    }
+
+    #[test]
+    fn a_stack_handed_on_lands_as_create_s_try_inserting_from_side_puts_it() {
+        // In line, from a belt behind: a quarter block short of the start (.26 of a block).
+        let e = entry(0, 0.1, Dir::South, Dir::South, 0.05, true, true);
+        assert!(close(e.pos, -0.26));
+        assert_eq!(e.side, 0.05);
+        // Moving the other way round the belt, the stack starts past the far end of the block.
+        let e = entry(3, -0.1, Dir::North, Dir::North, 0.0, true, true);
+        assert!(close(e.pos, 4.26));
+        // Not from a belt, or nothing behind: right at the edge.
+        let e = entry(2, 0.1, Dir::South, Dir::South, 0.0, false, true);
+        assert!(close(e.pos, 2.0));
+        let e = entry(2, 0.1, Dir::South, Dir::South, 0.0, true, false);
+        assert!(close(e.pos, 2.0));
+        // From the side: onto the middle of the block, on the near edge. Coming east lands on the
+        // west edge (x is flipped), coming south on the north edge.
+        let e = entry(1, 0.1, Dir::South, Dir::East, 0.0, true, false);
+        assert!(close(e.pos, 1.5 - 1.0 / 16.0));
+        assert!(close(e.side, -0.675));
+        let e = entry(1, 0.1, Dir::East, Dir::South, 0.0, true, false);
+        assert!(close(e.side, 0.675));
+        let e = entry(1, -0.1, Dir::East, Dir::South, 0.0, true, false);
+        assert!(close(e.pos, 1.5 + 1.0 / 16.0));
+        // From above: dropped in the middle with its own side offset.
+        let e = entry(1, 0.1, Dir::South, Dir::Up, 0.2, false, false);
+        assert!(close(e.pos, 1.5 - 1.0 / 16.0));
+        assert!(close(e.side, 0.2));
+    }
+
+    #[test]
+    fn a_belt_takes_nothing_from_the_side_it_moves_towards_and_spaces_what_comes() {
+        let mut inventory = belt(&[], true);
+        // A belt moving south can't be fed from the south: that would be coming from ahead.
+        assert!(!inventory.can_insert_at_from_side(1, Dir::North, Dir::South));
+        assert!(inventory.can_insert_at_from_side(1, Dir::South, Dir::South));
+        assert!(inventory.can_insert_at_from_side(1, Dir::East, Dir::South));
+        let mut item = Item::dropped(1u32, 1, 180, true);
+        item.inserted_from = Dir::South;
+        item.pos = 0.9;
+        inventory.insert(item);
+        // In line: the last one is too close until it is past the segment's start plus a block.
+        assert!(!inventory.can_insert_at_from_side(1, Dir::South, Dir::South));
+        inventory.items[0].pos = 2.1;
+        assert!(inventory.can_insert_at_from_side(1, Dir::South, Dir::South));
+        // Another side is not held up by it.
+        assert!(inventory.can_insert_at_from_side(1, Dir::East, Dir::South));
     }
 
     #[test]

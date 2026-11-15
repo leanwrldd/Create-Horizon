@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:lime_concrete"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:lime_concrete_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

@@ -373,6 +373,8 @@ fn tag_holds(tag: &str, fluid: &str) -> bool {
     match tag {
         "c:milk" => fluid == "neoforge:milk",
         "c:honey" => fluid == "create:honey",
+        "c:chocolate" => fluid == "create:chocolate",
+        "c:tea" => fluid == "create:tea",
         "minecraft:water" | "c:water" => fluid == "minecraft:water",
         "c:lava" => fluid == "minecraft:lava",
         _ => false,
@@ -1000,10 +1002,12 @@ fn pick_up(host: &mut dyn Host, pos: Pos, items: &mut [Option<ItemStack>]) -> bo
 // --- fluid items -------------------------------------------------------------------------------------
 
 /// `GenericItemEmptying` / `Filling` for the three buckets: full bucket, fluid.
-const BUCKETS: [(&str, &str); 3] = [
+const BUCKETS: [(&str, &str); 5] = [
     ("minecraft:water_bucket", "minecraft:water"),
     ("minecraft:lava_bucket", "minecraft:lava"),
     ("minecraft:milk_bucket", "neoforge:milk"),
+    ("create:honey_bucket", "create:honey"),
+    ("create:chocolate_bucket", "create:chocolate"),
 ];
 const BUCKET: i32 = 1000;
 

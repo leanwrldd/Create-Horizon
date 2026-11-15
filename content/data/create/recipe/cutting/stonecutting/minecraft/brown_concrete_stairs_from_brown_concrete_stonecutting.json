@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:brown_concrete"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:brown_concrete_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

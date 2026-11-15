@@ -2,10 +2,14 @@
 //! Create's `PressingBehaviour`, `MechanicalPressBlockEntity` and `AllBlocks.MECHANICAL_PRESS`
 //! (MIT, the Creators of Create), checked against Create `mc1.21.1/dev` at 4148fd8.
 //!
-//! This slice presses items lying in the world under the press (`Mode.WORLD`). Belts, depots
-//! and basins come later. The game glue scans for items, applies recipes and spawns results;
-//! this module only decides when. On the kinetic network a press is a shaft along its facing's
-//! axis (`MechanicalPressBlock.getRotationAxis`, `hasShaftTowards`) that costs [`IMPACT`].
+//! The press works in three places (`PressingBehaviour.Mode`): on items lying in the world under
+//! it (`WORLD`), on items carried by a belt or lying on a depot two blocks under it (`BELT`,
+//! `BeltPressingCallbacks`) and on a basin two blocks under it (`BASIN`, compacting). The game
+//! glue scans for items, applies recipes and spawns results; this module only decides when.
+//! On the kinetic network a press is a shaft along its facing's axis
+//! (`MechanicalPressBlock.getRotationAxis`, `hasShaftTowards`) that costs [`IMPACT`].
+
+use crate::belt::Processing;
 
 /// Ticks of progress in one press, down and up (`PressingBehaviour.CYCLE`).
 pub const CYCLE: i32 = 240;
@@ -17,6 +21,10 @@ pub const ENTITY_SCAN: i32 = 10;
 pub const IMPACT: f32 = 8.0;
 /// How far the head travels for an item in the world, in blocks (`Mode.WORLD.headOffset`).
 pub const WORLD_HEAD_TRAVEL: f32 = 1.0;
+/// `Mode.BELT.headOffset`: 19/16 of a block, down to an item on a belt or a depot.
+pub const BELT_HEAD_TRAVEL: f32 = 19.0 / 16.0;
+/// `Mode.BASIN.headOffset`: 22/16 of a block, down onto a basin's contents.
+pub const BASIN_HEAD_TRAVEL: f32 = 22.0 / 16.0;
 /// Ticks before a player may pick up an item the press made (`ItemEntity.setDefaultPickUpDelay`).
 pub const PICKUP_DELAY: i32 = 10;
 /// How hard a made item is tossed, at most, along each axis (`VecHelper.offsetRandomly(.05f)`).
@@ -36,6 +44,45 @@ pub fn progress_per_tick(rpm: f32) -> i32 {
     (1.0 + t * (60.0 - 1.0)) as i32
 }
 
+/// `PressingBehaviour.Mode`: what the running cycle works on. Saved as its ordinal under `Mode`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Items lying under the press.
+    World,
+    /// An item on a belt or a depot two blocks under it.
+    Belt,
+    /// The contents of a basin two blocks under it.
+    Basin,
+}
+
+impl Mode {
+    pub const fn id(self) -> i32 {
+        match self {
+            Mode::World => 0,
+            Mode::Belt => 1,
+            Mode::Basin => 2,
+        }
+    }
+
+    /// `Mode.values()[ordinal]`; anything else reads as the first, as a fresh press is.
+    pub const fn from_id(id: i32) -> Self {
+        match id {
+            1 => Mode::Belt,
+            2 => Mode::Basin,
+            _ => Mode::World,
+        }
+    }
+
+    /// How far the head comes down, in blocks (`Mode.headOffset`).
+    pub const fn head_travel(self) -> f32 {
+        match self {
+            Mode::World => WORLD_HEAD_TRAVEL,
+            Mode::Belt => BELT_HEAD_TRAVEL,
+            Mode::Basin => BASIN_HEAD_TRAVEL,
+        }
+    }
+}
+
 /// What the glue does after a tick of the press.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -43,8 +90,9 @@ pub enum Step {
     Wait,
     /// Look for items to press under the press; call [`Press::start`] if one has a recipe.
     Scan,
-    /// The head is down: press what lies under it, then call [`Press::pressed`] if anything was
-    /// there. Tell clients.
+    /// The head is down: work on what is under it, as [`Press::mode`] says (items in the world
+    /// first, then call [`Press::pressed`] if any lay there; the held item on a belt or a depot;
+    /// the basin's recipe). Tell clients.
     Apply,
     /// The press went back up and stopped. Tell clients.
     Finished,
@@ -55,6 +103,8 @@ pub enum Step {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Press {
     pub running: bool,
+    /// What the cycle works on (`PressingBehaviour.mode`), set by [`Press::start_in`].
+    pub mode: Mode,
     /// Progress through the cycle, 0 to just past [`CYCLE`].
     pub ticks: i32,
     pub finished: bool,
@@ -65,6 +115,7 @@ impl Default for Press {
     fn default() -> Self {
         Self {
             running: false,
+            mode: Mode::World,
             ticks: 0,
             finished: false,
             scan_cooldown: ENTITY_SCAN,
@@ -75,7 +126,20 @@ impl Default for Press {
 impl Press {
     /// `PressingBehaviour.start(Mode.WORLD)`. Tell clients.
     pub fn start(&mut self) {
+        self.start_in(Mode::World);
+    }
+
+    /// `PressingBehaviour.start(mode)`. Tell clients.
+    pub fn start_in(&mut self, mode: Mode) {
+        self.mode = mode;
         self.running = true;
+        self.ticks = 0;
+    }
+
+    /// `MechanicalPressBlockEntity.onBasinRemoved`: the basin below was emptied or taken away, so
+    /// the head goes back up at once. Tell clients.
+    pub fn basin_removed(&mut self) {
+        self.running = false;
         self.ticks = 0;
     }
 
@@ -160,6 +224,83 @@ pub fn in_world(count: u32) -> InWorld {
         InWorld::TakeOne
     }
 }
+
+/// What the press tells a belt or a depot about an item that has just come to the middle of the
+/// block under it (`BeltPressingCallbacks.onItemReceived`). `recipe` says a pressing recipe takes
+/// the item (`tryProcessOnBelt` simulated).
+pub fn on_item_received(rpm: f32, running: bool, recipe: bool) -> Processing {
+    if rpm == 0.0 {
+        return Processing::Pass;
+    }
+    if running {
+        return Processing::Hold;
+    }
+    if !recipe {
+        return Processing::Pass;
+    }
+    Processing::Hold
+}
+
+/// Whether [`on_item_received`] starts the press (`behaviour.start(Mode.BELT)`): it was idle,
+/// turning, and took the item.
+pub fn starts_on_item(rpm: f32, running: bool, recipe: bool) -> bool {
+    rpm != 0.0 && !running && recipe
+}
+
+/// What the press tells a belt or a depot about an item it holds while the press runs
+/// (`BeltPressingCallbacks.whenItemHeld`, less the pressing at the item itself: that is
+/// [`Step::Apply`], done by the press's own tick whatever order the blocks tick in).
+pub fn while_item_held(rpm: f32, running: bool) -> Processing {
+    if rpm == 0.0 || !running {
+        Processing::Pass
+    } else {
+        Processing::Hold
+    }
+}
+
+/// How a stack of `count` on a belt or a depot is pressed (`whenItemHeld`): the number of items
+/// the recipe takes this time, and the number left held in its place for the next press.
+/// Without `bulkPressing` (the default) a stack is pressed one item at a time.
+pub fn belt_split(count: u32) -> (u32, u32) {
+    match in_world(count) {
+        InWorld::Convert => (count, 0),
+        InWorld::TakeOne => (1, count - 1),
+    }
+}
+
+/// `BasinOperatingBlockEntity.updateBasin`: whether to look for a recipe in the basin. The press
+/// needs no minimum speed (`isSpeedRequirementFulfilled` of `SpeedLevel.NONE`).
+pub fn looks_at_basin(rpm: f32, running: bool, basin_can_continue: bool) -> bool {
+    rpm != 0.0 && !running && basin_can_continue
+}
+
+/// What `MechanicalPressBlockEntity.onPressingCompleted` does after a cycle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Next {
+    /// `startProcessingBasin`: the recipe still matches, press again at once.
+    Again,
+    /// `basinChecker.scheduleUpdate()`: look at the basin afresh.
+    Recheck,
+}
+
+pub fn after_cycle(mode: Mode, recipe_matches: bool, basin_can_continue: bool) -> Next {
+    if mode == Mode::Basin && recipe_matches && basin_can_continue {
+        Next::Again
+    } else {
+        Next::Recheck
+    }
+}
+
+/// `MechanicalPressBlockEntity.startProcessingBasin`'s guard: a cycle still on its way down is
+/// not started again.
+pub fn may_start_on_basin(running: bool, ticks: i32) -> bool {
+    !(running && ticks <= HALF)
+}
+
+/// Ticks between the glue's looks at the basin while the press is idle. Create is told the
+/// moment a basin's contents change (`contentsChanged`), which the glue approximates with this
+/// poll; the mixer polls at the same rate.
+pub const BASIN_POLL: i64 = 5;
 
 /// Whether a result with `chance` comes out, given a uniform draw in 0..1
 /// (`ProcessingOutput.rollOutput`: `chance == 1` always, else `random.nextFloat() <= chance`).
@@ -299,6 +440,75 @@ mod tests {
         let solution = solve(&two);
         assert!(solution.networks[0].overstressed);
         assert_eq!(solution.speeds[&[1, 0, 0]], 0.0);
+    }
+
+    #[test]
+    fn the_head_comes_down_as_far_as_the_mode_says() {
+        // Mode.WORLD 1, Mode.BELT 19/16, Mode.BASIN 22/16, saved as the ordinal.
+        assert_eq!(Mode::World.head_travel(), 1.0);
+        assert_eq!(Mode::Belt.head_travel(), 1.1875);
+        assert_eq!(Mode::Basin.head_travel(), 1.375);
+        for mode in [Mode::World, Mode::Belt, Mode::Basin] {
+            assert_eq!(Mode::from_id(mode.id()), mode);
+        }
+        assert_eq!([Mode::World.id(), Mode::Belt.id(), Mode::Basin.id()], [0, 1, 2]);
+        assert_eq!(Mode::from_id(7), Mode::World);
+    }
+
+    #[test]
+    fn a_basin_cycle_times_as_a_world_one_and_remembers_its_mode() {
+        let mut press = Press::default();
+        press.start_in(Mode::Basin);
+        assert_eq!(press.mode, Mode::Basin);
+        assert!(press.running && press.ticks == 0);
+        // The same 240 progress, applied at the item's height whatever the mode.
+        assert_eq!(cycle(32.0), (30, 61));
+        // A basin emptied under a running press stops it where it is and puts the head up.
+        press.ticks = 150;
+        press.basin_removed();
+        assert!(!press.running);
+        assert_eq!(press.ticks, 0);
+    }
+
+    #[test]
+    fn a_belt_item_is_held_while_the_press_runs_and_taken_when_it_has_a_recipe() {
+        // `BeltPressingCallbacks.onItemReceived`.
+        assert_eq!(on_item_received(0.0, false, true), Processing::Pass);
+        assert_eq!(on_item_received(32.0, true, false), Processing::Hold);
+        assert_eq!(on_item_received(32.0, false, false), Processing::Pass);
+        assert_eq!(on_item_received(32.0, false, true), Processing::Hold);
+        assert!(starts_on_item(32.0, false, true));
+        assert!(!starts_on_item(32.0, true, true));
+        assert!(!starts_on_item(0.0, false, true));
+        assert!(!starts_on_item(32.0, false, false));
+        // `whenItemHeld`: pass when stopped or idle, else hold.
+        assert_eq!(while_item_held(32.0, true), Processing::Hold);
+        assert_eq!(while_item_held(32.0, false), Processing::Pass);
+        assert_eq!(while_item_held(0.0, true), Processing::Pass);
+    }
+
+    #[test]
+    fn a_stack_on_a_belt_is_pressed_one_item_at_a_time() {
+        assert_eq!(belt_split(1), (1, 0));
+        assert_eq!(belt_split(5), (1, 4));
+    }
+
+    #[test]
+    fn a_press_over_a_basin_starts_and_repeats_as_create_s() {
+        assert!(looks_at_basin(32.0, false, true));
+        assert!(!looks_at_basin(0.0, false, true));
+        assert!(!looks_at_basin(32.0, true, true));
+        assert!(!looks_at_basin(32.0, false, false));
+        // `startProcessingBasin` leaves a cycle on its way down alone.
+        assert!(!may_start_on_basin(true, 0));
+        assert!(!may_start_on_basin(true, HALF));
+        assert!(may_start_on_basin(true, HALF + 4));
+        assert!(may_start_on_basin(false, 0));
+        // `onPressingCompleted`.
+        assert_eq!(after_cycle(Mode::Basin, true, true), Next::Again);
+        assert_eq!(after_cycle(Mode::Basin, false, true), Next::Recheck);
+        assert_eq!(after_cycle(Mode::Basin, true, false), Next::Recheck);
+        assert_eq!(after_cycle(Mode::Belt, true, true), Next::Recheck);
     }
 
     #[test]

@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:stone_bricks"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "minecraft:stone_brick_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

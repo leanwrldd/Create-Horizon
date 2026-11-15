@@ -1,0 +1,166 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 1.5,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:andesite",
+    "map_color": 34,
+    "render_shape": "MODEL"
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "up",
+        "down"
+      ]
+    },
+    "axis_along_first": {
+      "type": "boolean"
+    },
+    "flipped": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "facing": "north",
+    "axis_along_first": "false",
+    "flipped": "false"
+  },
+  "shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0,
+          0,
+          0.25,
+          1,
+          1,
+          1
+        ]
+      ],
+      "south": [
+        [
+          0,
+          0,
+          0,
+          1,
+          1,
+          0.75
+        ]
+      ],
+      "east": [
+        [
+          0,
+          0,
+          0,
+          0.75,
+          1,
+          1
+        ]
+      ],
+      "west": [
+        [
+          0.25,
+          0,
+          0,
+          1,
+          1,
+          1
+        ]
+      ],
+      "up": [
+        [
+          0,
+          0,
+          0,
+          1,
+          0.75,
+          1
+        ]
+      ],
+      "down": [
+        [
+          0,
+          0.25,
+          0,
+          1,
+          1,
+          1
+        ]
+      ]
+    }
+  },
+  "collision_shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0,
+          0,
+          0.25,
+          1,
+          1,
+          1
+        ]
+      ],
+      "south": [
+        [
+          0,
+          0,
+          0,
+          1,
+          1,
+          0.75
+        ]
+      ],
+      "east": [
+        [
+          0,
+          0,
+          0,
+          0.75,
+          1,
+          1
+        ]
+      ],
+      "west": [
+        [
+          0.25,
+          0,
+          0,
+          1,
+          1,
+          1
+        ]
+      ],
+      "up": [
+        [
+          0,
+          0,
+          0,
+          1,
+          0.75,
+          1
+        ]
+      ],
+      "down": [
+        [
+          0,
+          0.25,
+          0,
+          1,
+          1,
+          1
+        ]
+      ]
+    }
+  }
+}

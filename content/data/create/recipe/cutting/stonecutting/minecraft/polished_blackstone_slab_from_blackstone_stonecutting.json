@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:blackstone"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "minecraft:polished_blackstone_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

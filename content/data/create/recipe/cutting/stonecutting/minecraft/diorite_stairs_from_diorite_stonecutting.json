@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:diorite"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:diorite_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:yellow_concrete"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:yellow_concrete_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:mud_bricks"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:mud_brick_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

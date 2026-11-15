@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:white_concrete"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "minecraft:white_concrete_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

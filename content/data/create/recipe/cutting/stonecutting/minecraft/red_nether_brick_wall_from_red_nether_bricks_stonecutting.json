@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:red_nether_bricks"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:red_nether_brick_wall"
+    }
+  ],
+  "type": "create:cutting"
+}

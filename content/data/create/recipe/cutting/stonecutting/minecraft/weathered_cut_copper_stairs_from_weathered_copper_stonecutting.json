@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:weathered_copper"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 4,
+      "id": "minecraft:weathered_cut_copper_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:stone"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:cobblestone"
+    }
+  ],
+  "type": "create:cutting"
+}

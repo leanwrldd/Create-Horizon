@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:polished_cinnabar"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:cinnabar_brick_wall"
+    }
+  ],
+  "type": "create:cutting"
+}

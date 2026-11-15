@@ -17,12 +17,12 @@ is not pinned to one Horizon commit.
 | Kinetics | 34 | 57 | 60% |
 | Materials | 18 | 20 | 90% |
 | Logistics | 0 | 52 | 0% |
-| Fluids | 0 | 18 | 0% |
-| Contraptions | 5 | 42 | 12% |
+| Fluids | 5 | 18 | 28% |
+| Contraptions | 7 | 42 | 17% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 29 | 39 | 74% |
-| **All** | **86** | **246** | **35.0%** |
+| **All** | **93** | **246** | **37.8%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -61,8 +61,10 @@ or nothing in hand, to take the stack back (`SharedDepotBlockMethods.onUse`). Th
 player faces and settles in the centre, as Create's does. The stack is saved in the block entity's one item slot and
 drops when the block is broken; the sneak-wrench picks the Depot up. Its logic is in `native/api/src/depot.rs`.
 
-Not yet: belts, funnels, hoppers or a press feeding or emptying it, items landing on it from above, upright and
-package items. A block item's model is told apart from a flat
+Belts ending at it hand their items on, items landing on it are caught, hoppers feed and empty it, and a press
+above presses what it holds, putting extra results in eight output slots drawn in a ring (Belts II, below).
+
+Not yet: funnels, upright and package items. A block item's model is told apart from a flat
 one by whether the item names a block, not by its model's `gui3d` flag.
 
 ### Mechanical Belt (straight, horizontal)
@@ -79,16 +81,24 @@ takes the stacks off the block clicked. Breaking a block drops its Belt Connecto
 everything the belt carried; the rest of the belt goes too, leaving shafts at the pulleys. Rules and tests are in
 `native/kinetics/src/belt.rs`, the hooks in `native/api/src/belt.rs`.
 
-Not yet: slopes, vertical and sideways belts, belt-to-belt and belt-to-depot hand-off (a belt ending at another belt
-or a depot throws its items on top instead), funnels, tunnels, presses and fans over the belt, casings, dye, the
-texture scroll, carrying players and mobs, and upright items. The rest of a broken belt goes one block a tick, not
+A belt ending at another belt, a depot, a basin or an upright saw hands its items on (`Ending.INSERT`), a press
+over a belt stops each item and presses it one at a time, and casings and dye can be put on (Belts II, below).
+
+Not yet: slopes, vertical and sideways belts, funnels, tunnels, fans over the belt, the texture scroll, dye and
+the andesite casing drawn (dye is saved but not drawn; every casing draws as brass), carrying players and mobs, and
+upright items. The rest of a broken belt goes one block a tick, not
 all at once, and only a player's break drops its items (an explosion loses them). The first shaft is remembered per
 player rather than on the item, with no outline shown.
 
 ### Machines and blocks added as modules
 
 Everything below was written from Create's source and passes the unit tests, the type-check against Horizon,
-the content build and the native build. **None of it has been tried in the game yet.** Each module's own file
+the content build and the native build. An in-game test on 2026-11-15 (MCP-driven, `create-dev`) found the
+content mod loading with no errors and every module below doing its main job: encasing, clutch and gearshift
+on redstone, chain drives and the adjustable gearshift's ratio, the gauges, milling, crushing, fan pushing,
+pulling and washing, basin and mixer (unheated and heated brass), burner fuel and Blaze Cakes, ore drops and
+the building blocks. Not tested yet: mobs in crushing wheels, the fan on players, the nozzle's air, the
+stressometer under load, food, zinc generation; the Blaze Burner's head didn't show. Each module's own file
 (`native/api/src/machines/<name>.rs`, `tools/content/<name>.py`) lists its known differences from Create at
 the top. [MODULES.md](MODULES.md) explains the layout.
 
@@ -101,6 +111,10 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Basin, Mechanical Mixer | Basin with item slots, fluid tanks and spout output; mixer with Create's mixing recipes and heat requirements |
 | Blaze Burner | Fuel, Blaze Cakes, heat levels, capturing a Blaze, the lit burner |
 | Materials | 44 items (ingots, sheets, nuggets, crushed ores, foods, Precision Mechanism...), zinc ore with world generation, storage blocks, the five casings |
+| Fluid Tank, Pipes, Pump | Tanks up to 3 wide and 32 high with Create's windows, the Creative Fluid Tank, buckets and bottles; fluid and glass pipes; a pump moving fluid through branching pipes (it pulls behind and pushes in front, flipped with the wrench, as in Create); honey and chocolate as fluids with buckets |
+| Mechanical Drill | Breaks the block in front at Create's speed for its hardness, with the crack shown; hurts entities |
+| Mechanical Saw | Sideways: breaks blocks and fells whole trees (Create's `TreeCutter`). Upright: cuts items dropped on it or carried in by belts with `create:cutting` and stonecutting recipes, and hands results on |
+| Belts II | Compacting with the press over a basin; the press over a belt and a depot; belt hand-off; depot output slots and hoppers; belt casings and dye |
 | Building blocks | 364 blocks: metal ladders, bars, scaffolding and doors, copper shingles and tiles, glass and windows, 14 stone types in every pattern |
 
 Broad gaps across these modules:
@@ -110,12 +124,15 @@ Broad gaps across these modules:
 - Copper shingles and tiles don't weather or wax, metal scaffolding has no collision, sliding doors swing
   like vanilla doors, and no connected textures are drawn.
 - Redstone and neighbour changes are polled each tick rather than heard.
-- Compacting needs the press to work over a basin (the basin offers the API; the press doesn't call it yet).
+- Vanilla stonecutting recipes are baked into the saw's data (678 of them), and block hardness for the drill is a
+  baked table: Horizon gives a mod neither.
+- The fluids, drill, saw and Belts II modules (wave 2) have not been tried in the game yet. The honey and chocolate
+  fluid sprites are the first thing to check: a missing one would stop the content mod loading.
 
 ### Not done, and known differences from Create
 
-- Fluid pipes and tanks, saws and drills, funnels, tunnels, chutes, deployers, contraptions, trains,
-  logistics, schematics and Ponder.
+- Funnels, tunnels, chutes, deployers, the mechanical crafter, steam engines, open pipe ends and valves,
+  contraptions, trains, logistics, schematics and Ponder.
 - The Creative Motor's speed is set with the Wrench, not Create's scroll-value box.
 - A network only includes loaded, ticking blocks: the part of a line in an unloaded chunk drops out.
 - A speed change takes one tick to reach each block, and is not eased.

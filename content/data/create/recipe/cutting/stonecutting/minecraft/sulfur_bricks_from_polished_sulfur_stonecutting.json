@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:polished_sulfur"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:sulfur_bricks"
+    }
+  ],
+  "type": "create:cutting"
+}

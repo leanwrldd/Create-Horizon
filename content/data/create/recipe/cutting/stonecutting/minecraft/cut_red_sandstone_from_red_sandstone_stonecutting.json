@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:red_sandstone"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:cut_red_sandstone"
+    }
+  ],
+  "type": "create:cutting"
+}

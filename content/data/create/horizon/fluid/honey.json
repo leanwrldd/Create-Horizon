@@ -1,0 +1,13 @@
+{
+  "template": "minecraft:water",
+  "viscosity": 2000,
+  "density": 1400,
+  "level_decrease_per_block": 2,
+  "tick_rate": 25,
+  "slope_find_distance": 3,
+  "explosion_resistance": 100.0,
+  "bucket": "create:honey_bucket",
+  "block": "create:honey",
+  "still": "create:fluid/honey_still",
+  "flowing": "create:fluid/honey_still"
+}

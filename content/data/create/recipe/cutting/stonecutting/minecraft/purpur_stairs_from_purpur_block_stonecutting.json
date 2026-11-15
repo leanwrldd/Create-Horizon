@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:purpur_block"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:purpur_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

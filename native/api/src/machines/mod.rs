@@ -6,18 +6,25 @@
 use horizon_client::mod_api::Hooks;
 
 pub mod basin;
+pub mod belts_ii;
 pub mod burner;
 pub mod chain_drive;
 pub mod clutch;
 pub mod crushing_wheel;
+pub mod drill;
 pub mod encased;
 pub mod fan;
 pub mod fan_nozzle;
+pub mod fluid_pipe;
+pub mod fluid_tank;
+pub mod fluids;
 pub mod gauges;
 pub mod gearshift;
 pub mod millstone;
 pub mod mixer;
+pub mod pump;
+pub mod saw;
 
 pub fn all() -> Vec<Box<dyn Hooks>> {
-    vec![basin::hooks(), burner::hooks(), chain_drive::hooks(), clutch::hooks(), crushing_wheel::hooks(), encased::hooks(), fan::hooks(), fan_nozzle::hooks(), gauges::hooks(), gearshift::hooks(), millstone::hooks(), mixer::hooks()]
+    vec![basin::hooks(), belts_ii::hooks(), burner::hooks(), chain_drive::hooks(), clutch::hooks(), crushing_wheel::hooks(), drill::hooks(), encased::hooks(), fan::hooks(), fan_nozzle::hooks(), fluid_pipe::hooks(), fluid_tank::hooks(), fluids::hooks(), gauges::hooks(), gearshift::hooks(), millstone::hooks(), mixer::hooks(), pump::hooks(), saw::hooks()]
 }

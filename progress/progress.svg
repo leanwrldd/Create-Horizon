@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="316" viewBox="0 0 640 316" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
 <style>.t{fill:#24292f}.m{fill:#57606a}.track{fill:#d0d7de}.fill{fill:#c98a2b}@media (prefers-color-scheme:dark){.t{fill:#e6edf3}.m{fill:#8d96a0}.track{fill:#30363d}.fill{fill:#e3a64a}}</style>
-<text class="t" x="16" y="30" font-size="18" font-weight="600">Create ported to Horizon: 35.0%</text>
-<text class="m" x="16" y="50" font-size="12">86 of 246 Create blocks and items declared</text>
+<text class="t" x="16" y="30" font-size="18" font-weight="600">Create ported to Horizon: 37.8%</text>
+<text class="m" x="16" y="50" font-size="12">93 of 246 Create blocks and items declared</text>
 <rect class="track" x="16" y="60" width="608" height="12" rx="6"/>
-<rect class="fill" x="16" y="60" width="212.6" height="12" rx="6"/>
+<rect class="fill" x="16" y="60" width="229.9" height="12" rx="6"/>
 <text class="t" x="16" y="105" font-size="13">Kinetics</text>
 <rect class="track" x="120" y="95" width="400" height="12" rx="3"/>
 <rect class="fill" x="120" y="95" width="238.6" height="12" rx="3"/>
@@ -17,11 +17,12 @@
 <text class="m" x="530" y="157" font-size="12">0 / 52  (0%)</text>
 <text class="t" x="16" y="183" font-size="13">Fluids</text>
 <rect class="track" x="120" y="173" width="400" height="12" rx="3"/>
-<text class="m" x="530" y="183" font-size="12">0 / 18  (0%)</text>
+<rect class="fill" x="120" y="173" width="111.1" height="12" rx="3"/>
+<text class="m" x="530" y="183" font-size="12">5 / 18  (28%)</text>
 <text class="t" x="16" y="209" font-size="13">Contraptions</text>
 <rect class="track" x="120" y="199" width="400" height="12" rx="3"/>
-<rect class="fill" x="120" y="199" width="47.6" height="12" rx="3"/>
-<text class="m" x="530" y="209" font-size="12">5 / 42  (12%)</text>
+<rect class="fill" x="120" y="199" width="66.7" height="12" rx="3"/>
+<text class="m" x="530" y="209" font-size="12">7 / 42  (17%)</text>
 <text class="t" x="16" y="235" font-size="13">Schematics</text>
 <rect class="track" x="120" y="225" width="400" height="12" rx="3"/>
 <text class="m" x="530" y="235" font-size="12">0 / 5  (0%)</text>

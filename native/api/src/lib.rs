@@ -29,7 +29,7 @@ use create_kinetics::generators::{
 };
 use create_kinetics::{Axis, Dir, Kind, Networks, Node, looking};
 use horizon_client::mod_api::{
-    BlockEntityContainerEvent, BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, DestroyBlockEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
+    BlockEntityContainerEvent, BlockEntityEvent, ContainerAcceptsEvent, BlockEntityRenderBoundingBoxEvent, DestroyBlockEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
     BlockEntityTicksEvent, BlockEntityUpdateTagEvent, BlockStateId, Compound, Direction,
     EquipmentSlot, Flow, Hooks, Host, LevelHost, ModContainer, PlaceBlockEvent,
     RightClickBlockEvent, ServerTickEvent, ServerTickPhase, StandaloneModelsEvent,
@@ -227,6 +227,11 @@ impl Hooks for Core {
         event: &mut BlockEntityContainerEvent<'_>,
     ) -> Option<ModContainer> {
         depot::container(event.block)
+    }
+
+    /// `DepotItemHandler.insertItem`: only into the empty depot's first slot.
+    fn container_accepts(&self, _: &dyn Host, event: &mut ContainerAcceptsEvent<'_>) -> Flow {
+        depot::container_accepts(event)
     }
 
     fn server_tick(&self, _: &mut dyn Host, event: &mut ServerTickEvent<'_>) {

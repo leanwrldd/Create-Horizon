@@ -7,18 +7,29 @@
 //! is on its slide to the centre, its angle, the side it came from) is saved under
 //! `HeldItem` with Create's key names. Clients have no item slots, so the update tag sends
 //! `HeldItem` with the stack in it under `Item`, as Create's own `HeldItem` holds it.
+//!
+//! Like Create's `DepotItemHandler` the block has nine slots: slot 0 is the held item and slots 1
+//! to 8 are `processingOutputBuffer`, where a press puts what it makes beyond the first item.
+//! Belts hand items over (`DirectBeltInputBehaviour`), items landing on top are taken in
+//! (`SharedDepotBlockMethods.onLanded`, as a scan every two ticks), and a Mechanical Press two
+//! blocks above presses the held item in place (`DepotBehaviour.tick`, `BeltPressingCallbacks`).
+//!
+//! Known differences from Create: no belt funnel output, no merging (`enableMerging`), no
+//! comparator output, items landing are noticed by a scan every two ticks rather than on landing.
 
 use std::collections::BTreeMap;
 use std::hash::{BuildHasher, Hasher};
 
+use create_kinetics::belt::{Item, Processing};
+use create_kinetics::rules::basin::insert_stacked;
 use create_kinetics::{Axis, Dir, looking};
 use horizon_client::item_data::{decode_components, encode_components};
 use horizon_client::mod_api::{
-    BlockEntityDraw, Compound, DisplayContext, EquipmentSlot, Flow, Host, ItemStack,
-    ModBlockEntity, ModContainer, NativeInventoryKind, NativeServerPlayer, Tag,
+    BlockEntityDraw, Compound, ContainerAcceptsEvent, DisplayContext, EquipmentSlot, Flow, Host,
+    ItemStack, ModBlockEntity, ModContainer, NativeInventoryKind, NativeServerPlayer, Tag,
 };
 
-use crate::{float, int, set_float};
+use crate::{float, int, press, set_float, util};
 
 pub const ID: &str = "create:depot";
 const HELD: &str = "HeldItem";
@@ -29,6 +40,13 @@ const OFFSET: &str = "Offset";
 const PREV_OFFSET: &str = "PrevOffset";
 const ANGLE: &str = "Angle";
 const IN_DIRECTION: &str = "InDirection";
+const LOCKED: &str = "Locked";
+/// What clients get of the output slots (`processingOutputBuffer`): `Slot` and the stack.
+const OUTPUT_BUFFER: &str = "OutputBuffer";
+/// `DepotItemHandler.getSlots()`: the held item and the eight slots of `processingOutputBuffer`.
+const SLOTS: usize = 9;
+/// Ticks between looks for an item that landed on top.
+const LAND_SCAN: i64 = 2;
 /// `SharedDepotBlockMethods.onUse` never puts a Mechanical Arm down: the arm's item uses it.
 const MECHANICAL_ARM: &str = "create:mechanical_arm";
 const SPECTATOR: i32 = 3;
@@ -36,13 +54,35 @@ const SPECTATOR: i32 = 3;
 const BLOCKS: usize = 4;
 const PLAYERS: usize = 7;
 
-/// One slot, which no hopper reaches: Create's belts and funnels feed a depot, and neither
-/// exists here yet. Breaking the block drops it, as `DepotBehaviour.destroy` does.
+/// `DepotItemHandler`: the same from every side, put into slot 0 only and taken out of any.
+/// Breaking the block drops the slots, as `DepotBehaviour.destroy` does.
 pub fn container(block: &str) -> Option<ModContainer> {
-    (block == ID).then(|| ModContainer {
-        slots: 1,
-        ..ModContainer::default()
+    (block == ID).then(|| {
+        let all: Vec<usize> = (0..SLOTS).collect();
+        ModContainer {
+            slots: SLOTS,
+            faces: [(); 6].map(|()| all.clone()),
+            inputs: vec![0],
+            outputs: all,
+            menu: None,
+        }
     })
+}
+
+/// `DepotItemHandler.insertItem`: nothing goes in while the depot holds or has made anything.
+pub fn container_accepts(event: &mut ContainerAcceptsEvent<'_>) -> Flow {
+    if event.entity.id != ID {
+        return Flow::Continue;
+    }
+    if event.slot != 0 || !is_empty(&event.entity.items) {
+        return Flow::Cancel;
+    }
+    Flow::Continue
+}
+
+/// `DepotBehaviour.isEmpty`: nothing held and the output buffer empty.
+fn is_empty(items: &[Option<ItemStack>]) -> bool {
+    items.iter().all(Option::is_none)
 }
 
 /// The parts of Create's `TransportedItemStack` a depot uses, without the stack.
@@ -58,6 +98,8 @@ struct Transport {
     angle: i32,
     /// The side it came in from: `Up` drops it straight onto the centre.
     from: Dir,
+    /// A press holds it where it is.
+    locked: bool,
 }
 
 impl Transport {
@@ -71,13 +113,15 @@ impl Transport {
             prev_offset: offset,
             angle,
             from,
+            locked: false,
         }
     }
 
     /// `DepotBehaviour.tick`: the item eases a quarter of the way to the centre each tick,
     /// turning a degree a tick while it is still far off. (Create turns no item drawn
-    /// upright, `BeltHelper.isItemUpright`; no item here is drawn upright yet.)
-    fn tick(&mut self) {
+    /// upright, `BeltHelper.isItemUpright`; no item here is drawn upright yet.) True when it was
+    /// near enough to the centre for a processor to take it (`diff < 1 / 16`).
+    fn tick(&mut self) -> bool {
         self.prev_pos = self.pos;
         self.prev_offset = self.offset;
         let diff = 0.5 - self.pos;
@@ -87,6 +131,7 @@ impl Transport {
             }
             self.pos += diff / 4.0;
         }
+        diff < 1.0 / 16.0
     }
 
     fn at_rest(&self) -> bool {
@@ -105,6 +150,7 @@ impl Transport {
             angle: int(held, ANGLE),
             // `Direction.from3DDataValue`: down, up, north, south, west, east.
             from: Dir::ALL[int(held, IN_DIRECTION).rem_euclid(6) as usize],
+            locked: int(held, LOCKED) != 0,
         })
     }
 
@@ -118,6 +164,9 @@ impl Transport {
         tag.insert(ANGLE.into(), Tag::Int(self.angle));
         let from = Dir::ALL.iter().position(|d| *d == self.from).unwrap_or(1);
         tag.insert(IN_DIRECTION.into(), Tag::Int(from as i32));
+        if self.locked {
+            tag.insert(LOCKED.into(), Tag::Byte(1));
+        }
         tag
     }
 }
@@ -180,8 +229,9 @@ fn centre(pos: [i32; 3]) -> [f64; 3] {
     pos.map(|v| f64::from(v) + 0.5)
 }
 
-/// The server tick: slides the held item to the centre and keeps the saved state in step
-/// with the slot. Writes and syncs only when something changed.
+/// The server tick: slides the held item to the centre, offers it to a press above, takes in what
+/// landed on top, and keeps the saved state in step with the slots. Writes and syncs only when
+/// something changed.
 pub fn tick(host: &mut dyn Host, pos: [i32; 3], entity: &mut ModBlockEntity) {
     let holding = entity.items.first().is_some_and(Option::is_some);
     let saved = Transport::read(&entity.nbt);
@@ -190,13 +240,17 @@ pub fn tick(host: &mut dyn Host, pos: [i32; 3], entity: &mut ModBlockEntity) {
             remove(&mut entity.nbt, HELD);
             host.block_entity_sync(pos);
         }
+        landed(host, pos, entity);
         return;
     }
-    // A stack that arrived without its state (none can yet) sits in the centre, as
+    // A stack that arrived without its state (a hopper's) sits in the centre, as
     // `DepotBehaviour.setCenteredHeldItem` puts one.
     let mut transport =
         saved.unwrap_or_else(|| Transport::new((random() % 360) as i32, Dir::Up, 0.5));
-    transport.tick();
+    let near = transport.tick();
+    if near && let Some(Some(stack)) = entity.items.first() {
+        offer_to_press(host, pos, stack, &mut transport);
+    }
     if saved != Some(transport) {
         entity
             .nbt
@@ -205,7 +259,255 @@ pub fn tick(host: &mut dyn Host, pos: [i32; 3], entity: &mut ModBlockEntity) {
     }
 }
 
-/// What clients get: `HeldItem` with its stack.
+/// The second half of `DepotBehaviour.tick`: a press two blocks above takes or holds the item.
+fn offer_to_press(host: &mut dyn Host, pos: [i32; 3], stack: &ItemStack, transport: &mut Transport) {
+    let above = [pos[0], pos[1] + 2, pos[2]];
+    if host.block(above) != press::ID {
+        return;
+    }
+    if !transport.locked && crate::belt::blocked(host, pos) {
+        return;
+    }
+    let result = if transport.locked {
+        press::holding(host, above)
+    } else {
+        press::offered(host, above, stack)
+    };
+    if let Some(result) = result {
+        transport.locked = result == Processing::Hold;
+    }
+}
+
+/// `SharedDepotBlockMethods.onLanded`: an empty depot takes in an item entity lying on top,
+/// as a stack put on from above (`handleInsertion(stack, Direction.DOWN)`).
+fn landed(host: &mut dyn Host, pos: [i32; 3], entity: &mut ModBlockEntity) {
+    if util::game_time(host).rem_euclid(LAND_SCAN) != 0 || !is_empty(&entity.items) {
+        return;
+    }
+    let [x, y, z] = pos.map(f64::from);
+    let dimension = host.dimension();
+    for item in host.item_entities(dimension, [x, y, z], [x + 1.0, y + 1.0, z + 1.0]) {
+        let [px, py, pz] = item.position;
+        if !(x..x + 1.0).contains(&px) || !(z..z + 1.0).contains(&pz) || !(y..y + 1.0).contains(&py) {
+            continue;
+        }
+        let resting = host
+            .entity(item.id)
+            .and_then(|e| host.entity_on_ground(e))
+            .unwrap_or(false);
+        if !resting {
+            continue;
+        }
+        let max = host.max_stack_size(&item.stack.item).unwrap_or(64);
+        let mut taken = item.stack.clone();
+        taken.count = taken.count.min(max);
+        let mut rest = item.stack;
+        rest.count -= taken.count;
+        host.set_item_entity(dimension, item.id, rest);
+        let transport = Transport::new((random() % 360) as i32, Dir::Down, 0.5);
+        if entity.items.len() < SLOTS {
+            entity.items.resize(SLOTS, None);
+        }
+        entity.items[0] = Some(taken);
+        entity
+            .nbt
+            .insert(HELD.into(), Tag::Compound(transport.write()));
+        play_arrival(host, pos, Dir::Down);
+        host.block_entity_sync(pos);
+        return;
+    }
+}
+
+/// `DepotBehaviour.insert`'s sound: sliding in from the side, or landing from above.
+fn play_arrival(host: &mut dyn Host, pos: [i32; 3], from: Dir) {
+    if from.axis() != Axis::Y {
+        // AllSoundEvents.DEPOT_SLIDE.
+        host.play_sound("minecraft:block.sand.break", centre(pos), BLOCKS, 0.125, 1.5);
+    } else {
+        // AllSoundEvents.DEPOT_PLOP.
+        host.play_sound("minecraft:entity.item_frame.add_item", centre(pos), BLOCKS, 0.25, 1.25);
+    }
+}
+
+/// `DirectBeltInputBehaviour.handleInsertion` of a depot (`tryInsertingFromSide`): a belt, or a
+/// basin's spout, puts `item` on the depot moving towards `side`. Answers what did not go on
+/// (count 0: all of it). A depot already holding something takes nothing.
+pub(crate) fn insert_from_side(
+    host: &mut dyn Host,
+    pos: [i32; 3],
+    side: Dir,
+    item: &Item<ItemStack>,
+    simulate: bool,
+) -> ItemStack {
+    let at = if side.axis() == Axis::Y { 0.5 } else { 0.0 };
+    let transport = Transport {
+        pos: at,
+        prev_pos: at,
+        offset: item.side,
+        prev_offset: item.side,
+        angle: item.angle,
+        from: side,
+        locked: false,
+    };
+    insert(host, pos, item.stack.clone(), transport, simulate)
+}
+
+/// `DepotItemHandler.insertItem(0, ...)`: what a hopper or a basin's spout does.
+#[allow(dead_code)]
+pub(crate) fn handler_insert(
+    host: &mut dyn Host,
+    pos: [i32; 3],
+    stack: &ItemStack,
+    simulate: bool,
+) -> ItemStack {
+    // `new TransportedItemStack(stack)`: a random angle, from above, at the very start.
+    let angle = (random() % 360) as i32;
+    let mut transport = Transport::new(angle, Dir::Up, 0.0);
+    transport.locked = false;
+    insert(host, pos, stack.clone(), transport, simulate)
+}
+
+fn insert(
+    host: &mut dyn Host,
+    pos: [i32; 3],
+    whole: ItemStack,
+    transport: Transport,
+    simulate: bool,
+) -> ItemStack {
+    let Some(entity) = host.mod_block_entity(pos).filter(|e| e.id == ID) else {
+        return whole;
+    };
+    // `isOccupied`, without merging.
+    if !is_empty(&entity.items) {
+        return whole;
+    }
+    let max = host.max_stack_size(&whole.item).unwrap_or(64);
+    let mut taken = whole.clone();
+    taken.count = whole.count.min(max);
+    let mut rest = whole;
+    rest.count -= taken.count;
+    if simulate {
+        return rest;
+    }
+    let mut put = Some(taken);
+    host.change_mod_block_entity(pos, &mut |entity| {
+        if entity.items.len() < SLOTS {
+            entity.items.resize(SLOTS, None);
+        }
+        entity.items[0] = put.take();
+        entity
+            .nbt
+            .insert(HELD.into(), Tag::Compound(transport.write()));
+    });
+    play_arrival(host, pos, transport.from);
+    host.block_entity_sync(pos);
+    rest
+}
+
+/// What the press does at the bottom of its cycle to the item held on the depot at `pos`
+/// (`BeltPressingCallbacks.whenItemHeld` through `DepotBehaviour.applyToAllItems`): `results`
+/// gives what the press makes of a stack, or `None` where it takes none. The first result takes
+/// the held item's place, held until the press lets go; the rest go into the output buffer, and
+/// what does not fit there is dropped on top. A stack pressed one item at a time stays held with
+/// the results in the buffer. True when an item was pressed.
+pub(crate) fn process_held(
+    host: &mut dyn Host,
+    pos: [i32; 3],
+    results: &mut dyn FnMut(&mut dyn Host, &ItemStack) -> Option<Vec<ItemStack>>,
+) -> bool {
+    let Some(entity) = host.mod_block_entity(pos).filter(|e| e.id == ID) else {
+        return false;
+    };
+    let (Some(Some(stack)), Some(transport)) = (entity.items.first(), Transport::read(&entity.nbt))
+    else {
+        return false;
+    };
+    if !transport.locked {
+        return false;
+    }
+    let (take, left) = create_kinetics::press::belt_split(stack.count);
+    let mut probe = stack.clone();
+    probe.count = take;
+    let Some(made) = results(host, &probe) else {
+        // `PASS`: the press takes nothing of it after all.
+        let free = Transport {
+            locked: false,
+            ..transport
+        };
+        host.change_mod_block_entity(pos, &mut |entity| {
+            entity
+                .nbt
+                .insert(HELD.into(), Tag::Compound(free.write()));
+        });
+        host.block_entity_sync(pos);
+        return false;
+    };
+    let mut items = entity.items.clone();
+    items.resize(SLOTS, None);
+    items[0] = None;
+    let mut held: Option<Transport> = None;
+    if left > 0 {
+        let mut rest = stack.clone();
+        rest.count = left;
+        items[0] = Some(rest);
+        // `setCenteredHeldItem(left)`.
+        held = Some(Transport {
+            pos: 0.5,
+            prev_pos: 0.5,
+            locked: false,
+            ..transport
+        });
+    }
+    let mut dropped = Vec::new();
+    for stack in made {
+        if items[0].is_none() {
+            items[0] = Some(stack);
+            held = Some(Transport {
+                pos: 0.5,
+                prev_pos: 0.5,
+                angle: (random() % 360) as i32,
+                locked: true,
+                ..transport
+            });
+            continue;
+        }
+        let limit = host.max_stack_size(&stack.item).unwrap_or(64).min(64);
+        if let Some(rest) = insert_stacked(
+            &mut items[1..],
+            stack,
+            |s| s.count,
+            |s, n| s.count = n,
+            util::same_item,
+            limit,
+        ) {
+            dropped.push(rest);
+        }
+    }
+    host.change_mod_block_entity(pos, &mut |entity| {
+        entity.items = items.clone();
+        match held {
+            Some(held) => {
+                entity
+                    .nbt
+                    .insert(HELD.into(), Tag::Compound(held.write()));
+            }
+            None => {
+                remove(&mut entity.nbt, HELD);
+            }
+        }
+    });
+    // `Containers.dropItemStack(level, x, y + .5, z, remainder)` from the depot's centre.
+    for rest in dropped {
+        let [x, y, z] = pos;
+        let at = [f64::from(x) + 0.5, f64::from(y) + 1.0, f64::from(z) + 0.5];
+        util::spawn_item(host, at, &rest, [0.0; 3], 10);
+    }
+    host.block_entity_sync(pos);
+    true
+}
+
+/// What clients get: `HeldItem` with its stack, and the output buffer (always, so a client that
+/// had stacks there hears they are gone).
 pub fn update_tag(entity: &ModBlockEntity) -> Compound {
     let mut tag = Compound::new();
     if let (Some(Some(stack)), Some(transport)) =
@@ -215,6 +517,21 @@ pub fn update_tag(entity: &ModBlockEntity) -> Compound {
         held.insert(ITEM.into(), stack_tag(stack));
         tag.insert(HELD.into(), Tag::Compound(held));
     }
+    let outputs = entity
+        .items
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter_map(|(slot, stack)| {
+            let mut tag = match stack_tag(stack.as_ref()?) {
+                Tag::Compound(tag) => tag,
+                _ => return None,
+            };
+            tag.insert("Slot".into(), Tag::Int(slot as i32 - 1));
+            Some(Tag::Compound(tag))
+        })
+        .collect();
+    tag.insert(OUTPUT_BUFFER.into(), Tag::List(outputs));
     tag
 }
 
@@ -246,17 +563,19 @@ pub fn right_click(host: &mut dyn Host, pos: [i32; 3], face: [i32; 3]) -> Flow {
         return Flow::Continue;
     }
 
-    // Whatever is on it goes back to the player first.
-    let mut taken = None;
+    // Whatever is on it goes back to the player first, then what a press made
+    // (`processingOutputBuffer`).
+    let mut taken: Vec<ItemStack> = Vec::new();
     host.change_mod_block_entity(pos, &mut |entity| {
-        if entity.items.first().is_some_and(Option::is_some) {
-            taken = entity.items[0].take();
+        for slot in entity.items.iter_mut() {
+            taken.extend(slot.take());
         }
         if has(&entity.nbt, HELD) {
             remove(&mut entity.nbt, HELD);
         }
     });
-    if let Some(stack) = taken {
+    let took = !taken.is_empty();
+    for stack in taken {
         // `Inventory.placeItemBackInInventory`: what does not fit drops at the player.
         if let Some(rest) = host.give_stack(uuid, stack) {
             let dimension = host.dimension();
@@ -266,6 +585,8 @@ pub fn right_click(host: &mut dyn Host, pos: [i32; 3], face: [i32; 3]) -> Flow {
                 host.set_item_entity(&dimension, id, rest);
             }
         }
+    }
+    if took {
         let pitch = 1.0 + (random() % 1_000_000) as f32 / 1_000_000.0;
         host.play_sound(
             "minecraft:entity.item.pickup",
@@ -397,44 +718,81 @@ fn clockwise(dir: Dir) -> Dir {
 const UP: [f32; 3] = [0.0, 1.0, 0.0];
 const ORIGIN: [f32; 3] = [0.0; 3];
 
-/// `DepotRenderer.renderItemsOf` for the held item. The depot's body is in the chunk mesh.
+/// `DepotRenderer.renderItemsOf` for the held item and the output buffer. The depot's body is in
+/// the chunk mesh.
 pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, entity: &ModBlockEntity) {
-    let (Some(transport), Some(stack)) = (
+    let held = match (
         Transport::read(&entity.nbt),
         get(&entity.nbt, HELD)
             .and_then(|held| held.get(ITEM))
             .and_then(stack_of),
-    ) else {
+    ) {
+        (Some(transport), Some(stack)) => Some((transport, stack)),
+        _ => None,
+    };
+    let outputs: Vec<(i32, ItemStack)> = match get(&entity.nbt, OUTPUT_BUFFER) {
+        Some(Tag::List(list)) => list
+            .iter()
+            .filter_map(|tag| Some((int_of(tag.get("Slot")?), stack_of(tag)?)))
+            .collect(),
+        _ => Vec::new(),
+    };
+    if held.is_none() && outputs.is_empty() {
         draw.keep();
         return;
-    };
+    }
     let partial = draw.partial;
     let lerp = |from: f32, to: f32| from + (to - from) * partial;
 
     draw.push();
     draw.translate([0.5, 15.0 / 16.0, 0.5]);
-    draw.translate(nudge(0));
-    let along = lerp(transport.prev_pos, transport.pos);
-    let mut side = lerp(transport.prev_offset, transport.offset);
-    let from = transport.from;
-    if from.axis() != Axis::Y {
-        let normal = from.opposite().normal().map(|v| v as f32 * (0.5 - along));
-        draw.translate(normal);
-        let along_x = clockwise(from).axis() == Axis::X;
-        if !along_x {
-            side = -side;
+    let mut at_rest = true;
+    if let Some((transport, stack)) = held {
+        draw.push();
+        draw.translate(nudge(0));
+        let along = lerp(transport.prev_pos, transport.pos);
+        let mut side = lerp(transport.prev_offset, transport.offset);
+        let from = transport.from;
+        if from.axis() != Axis::Y {
+            let normal = from.opposite().normal().map(|v| v as f32 * (0.5 - along));
+            draw.translate(normal);
+            let along_x = clockwise(from).axis() == Axis::X;
+            if !along_x {
+                side = -side;
+            }
+            draw.translate(if along_x {
+                [side, 0.0, 0.0]
+            } else {
+                [0.0, 0.0, side]
+            });
         }
-        draw.translate(if along_x {
-            [side, 0.0, 0.0]
-        } else {
-            [0.0, 0.0, side]
-        });
+        draw_stack(host, draw, &stack, transport.angle, &mut JavaRandom::new(0));
+        draw.pop();
+        // Kept once it has stopped sliding: until then it reads the partial tick.
+        at_rest = transport.at_rest();
     }
-    draw_stack(host, draw, &stack, transport.angle, &mut JavaRandom::new(0));
+    // The output buffer: a ring of stacks round the middle, each at its own angle.
+    for (slot, stack) in outputs {
+        draw.push();
+        draw.translate(nudge(slot));
+        draw.rotate_about(UP, 360.0 / 8.0 * slot as f32, ORIGIN);
+        draw.translate([0.35, 0.0, 0.0]);
+        let mut r = JavaRandom::new(i64::from(slot) + 1);
+        let angle = (360.0 * r.next_float()) as i32;
+        draw_stack(host, draw, &stack, angle, &mut r);
+        draw.pop();
+    }
     draw.pop();
-    // Kept once it has stopped sliding: until then it reads the partial tick.
-    if transport.at_rest() {
+    if at_rest {
         draw.keep();
+    }
+}
+
+fn int_of(tag: &Tag) -> i32 {
+    match tag {
+        Tag::Int(value) => *value,
+        Tag::Byte(value) => i32::from(*value),
+        _ => 0,
     }
 }
 
@@ -503,6 +861,27 @@ mod tests {
         assert!(t.at_rest());
         // A degree a tick while more than 1/32 away: 0.25 * 0.75^n > 1/32 for n < 8.
         assert_eq!(t.angle, 208);
+    }
+
+    #[test]
+    fn a_held_item_is_offered_to_a_press_only_near_the_centre() {
+        let mut t = Transport::new(200, Dir::North, 0.0);
+        assert!(!t.tick());
+        let mut near = Transport::new(200, Dir::Up, 0.5);
+        assert!(near.tick());
+        // A locked state survives saving.
+        near.locked = true;
+        let mut nbt = Compound::new();
+        nbt.insert(HELD.into(), Tag::Compound(near.write()));
+        assert_eq!(Transport::read(&nbt).map(|t| t.locked), Some(true));
+    }
+
+    #[test]
+    fn only_an_empty_depot_takes_a_stack_in() {
+        let stack = ItemStack::new("minecraft:iron_ingot", 1);
+        assert!(is_empty(&[None, None]));
+        assert!(!is_empty(&[Some(stack.clone()), None]));
+        assert!(!is_empty(&[None, Some(stack)]));
     }
 
     #[test]

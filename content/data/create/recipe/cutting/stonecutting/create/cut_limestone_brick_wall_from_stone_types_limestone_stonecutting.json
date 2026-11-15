@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "tag": "create:stone_types/limestone"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 1,
+      "id": "create:cut_limestone_brick_wall"
+    }
+  ],
+  "type": "create:cutting"
+}

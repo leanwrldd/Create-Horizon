@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:cobbled_deepslate"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:deepslate_brick_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

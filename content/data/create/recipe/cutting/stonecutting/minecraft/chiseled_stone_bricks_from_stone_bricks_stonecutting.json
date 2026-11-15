@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:stone_bricks"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:chiseled_stone_bricks"
+    }
+  ],
+  "type": "create:cutting"
+}

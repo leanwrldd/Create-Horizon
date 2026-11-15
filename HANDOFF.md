@@ -66,12 +66,13 @@ Sonnet subagents in parallel: see `MODULES.md` for the layout, the shared helper
 (`tools/check_module.sh <owner>`, `build_content.py --owner <owner>`, with `tools/wip.txt` naming who writes
 what). Done this way so far: transmission (encased shafts and cogwheels, clutch, gearshift, chain drives,
 gauges), millstone, crushing wheels, encased fan and nozzle, basin, mixer, blaze burner, materials, building
-blocks. Each passes the unit tests, the type-check, the content build and the native build; **none has been
-tried in game**. The README lists them; each module file lists its known differences.
+blocks (wave 1); fluid tanks, pipes and pump, drill, saw, and Belts II (press over basin, belt and depot; belt
+hand-off; casings) (wave 2). Each passes the unit tests, the type-check, the content build and the native build.
+Wave 1 was tested in game through MCP on 2026-11-15 and worked (README has the details; the Blaze Burner's head
+didn't show). **Wave 2 has not been tried in game.** Each module file lists its known differences.
 
-**Paused, nothing written yet:** fluids (tanks, pipes, pump) and cutting (saw, drill), still listed in
-`tools/wip.txt`. **Not started:** funnels, tunnels, chutes, deployer, crafter, steam engine, belts beyond
-straight ones, contraptions, trains, logistics, schematics, goggles, Ponder.
+**Not started:** funnels, tunnels, chutes, deployer, crafter, steam engine, sloped belts, contraptions, trains,
+logistics, schematics, goggles, Ponder.
 
 **Agent waves:** the user wants at most 3 subagents at a time; after each wave, build, redraw the progress
 (`python tools/progress.py`), commit and push.
@@ -156,8 +157,8 @@ which installed version supplied the executable.
 
 ## Suggested next steps
 
-1. Launch `create-dev` and check the new modules in game: grep `logs\latest.log` for `content mods not
-   loaded` first, then each module's "most likely wrong" points (model orientation above all).
-2. Make the press compact over a basin (`machines/basin.rs` documents the API the press should call).
-3. Resume the paused slices, then funnels and chutes, deployer, and belts beyond straight ones.
+1. Test wave 2 in game (fluids, drill, saw, Belts II): grep `logs\latest.log` for `content mods not loaded`
+   first (the honey and chocolate fluid sprites are the risk), then each module's "most likely wrong" points.
+2. Look at the Blaze Burner head, which didn't show in the wave 1 test.
+3. Next slices: funnels and tunnels, chutes, deployer and crafter, steam engine, sloped belts.
 4. Keep the skill current: add each new gotcha in the session that finds it.

@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:cyan_concrete"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:cyan_concrete_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

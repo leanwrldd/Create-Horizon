@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "tag": "create:stone_types/scoria"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 1,
+      "id": "create:layered_scoria"
+    }
+  ],
+  "type": "create:cutting"
+}

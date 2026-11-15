@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:polished_tuff"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:polished_tuff_wall"
+    }
+  ],
+  "type": "create:cutting"
+}

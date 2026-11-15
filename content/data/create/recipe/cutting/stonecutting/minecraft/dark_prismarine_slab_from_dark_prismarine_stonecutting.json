@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:dark_prismarine"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 2,
+      "id": "minecraft:dark_prismarine_slab"
+    }
+  ],
+  "type": "create:cutting"
+}

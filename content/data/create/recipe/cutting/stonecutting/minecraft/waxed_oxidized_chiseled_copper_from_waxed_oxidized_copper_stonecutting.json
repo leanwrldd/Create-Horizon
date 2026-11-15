@@ -1,0 +1,13 @@
+{
+  "ingredients": [
+    "minecraft:waxed_oxidized_copper"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 4,
+      "id": "minecraft:waxed_oxidized_chiseled_copper"
+    }
+  ],
+  "type": "create:cutting"
+}

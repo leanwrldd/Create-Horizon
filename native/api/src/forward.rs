@@ -305,4 +305,37 @@ impl Hooks for Create {
             module.net_from_server(host, event);
         }
     }
+
+    fn custom_block_fluids(&self, host: &dyn Host, event: &mut CustomBlockFluidsEvent<'_>) {
+        for module in &self.modules {
+            module.custom_block_fluids(host, event);
+        }
+    }
+
+    fn custom_fluid_tanks(&self, host: &dyn Host, event: &mut CustomFluidTanksEvent) -> Option<Vec<NativeFluidTankView>> {
+        for module in &self.modules {
+            if let Some(answer) = module.custom_fluid_tanks(host, event) {
+                return Some(answer);
+            }
+        }
+        None
+    }
+
+    fn custom_fluid_fill(&self, host: &mut dyn Host, event: &mut CustomFluidFillEvent<'_>) -> Option<i32> {
+        for module in &self.modules {
+            if let Some(answer) = module.custom_fluid_fill(host, event) {
+                return Some(answer);
+            }
+        }
+        None
+    }
+
+    fn custom_fluid_drain(&self, host: &mut dyn Host, event: &mut CustomFluidDrainEvent<'_>) -> Option<NativeFluidStack> {
+        for module in &self.modules {
+            if let Some(answer) = module.custom_fluid_drain(host, event) {
+                return Some(answer);
+            }
+        }
+        None
+    }
 }

@@ -1,0 +1,100 @@
+{
+  "template": "minecraft:glass",
+  "item": false,
+  "properties": {
+    "hardness": 3.0,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:copper_block",
+    "map_color": 15,
+    "render_shape": "MODEL",
+    "occludes": false
+  },
+  "state_properties": {
+    "axis": {
+      "type": "enum",
+      "values": [
+        "x",
+        "y",
+        "z"
+      ]
+    },
+    "alt": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "axis": "y",
+    "alt": "false"
+  },
+  "shapes": {
+    "property": "axis",
+    "values": {
+      "x": [
+        [
+          0,
+          0.25,
+          0.25,
+          1,
+          0.75,
+          0.75
+        ]
+      ],
+      "y": [
+        [
+          0.25,
+          0,
+          0.25,
+          0.75,
+          1,
+          0.75
+        ]
+      ],
+      "z": [
+        [
+          0.25,
+          0.25,
+          0,
+          0.75,
+          0.75,
+          1
+        ]
+      ]
+    }
+  },
+  "collision_shapes": {
+    "property": "axis",
+    "values": {
+      "x": [
+        [
+          0,
+          0.25,
+          0.25,
+          1,
+          0.75,
+          0.75
+        ]
+      ],
+      "y": [
+        [
+          0.25,
+          0,
+          0.25,
+          0.75,
+          1,
+          0.75
+        ]
+      ],
+      "z": [
+        [
+          0.25,
+          0.25,
+          0,
+          0.75,
+          0.75,
+          1
+        ]
+      ]
+    }
+  }
+}

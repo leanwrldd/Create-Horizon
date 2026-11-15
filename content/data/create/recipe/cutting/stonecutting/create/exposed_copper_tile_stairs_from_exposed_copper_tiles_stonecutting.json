@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "item": "create:exposed_copper_tiles"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 1,
+      "id": "create:exposed_copper_tile_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}

@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:weathered_cut_copper"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:weathered_chiseled_copper"
+    }
+  ],
+  "type": "create:cutting"
+}

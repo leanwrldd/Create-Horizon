@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:polished_granite"
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:polished_granite_stairs"
+    }
+  ],
+  "type": "create:cutting"
+}
