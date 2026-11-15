@@ -11,11 +11,11 @@
 //!   cycles through them, as an unfiltered saw does.
 //! - Stonecutting recipes are baked into `create:cutting` recipes of 50 ticks
 //!   (`_saw_recipes_gen.py`): `Host` cannot list the game's stonecutting recipes. A data pack that
-//!   changes stonecutting is not seen. Woodcutting recipes of other mods are not cut.
+//!   changes stonecutting is not seen. The wood recipes Create writes at load time
+//!   (`RuntimeDataGenerator.cuttingRecipes`) are baked the same way, for vanilla woods only.
 //! - Items are taken from the world by a scan of what lies on the blade every 2 ticks, not when
-//!   they land (`updateEntityAfterFallOn`). Belts and funnels do not hand items to the saw, and
-//!   the saw does not hand its results to a belt, a funnel or a depot: it drops them
-//!   (`DirectBeltInputBehaviour` is a later slice).
+//!   they land (`updateEntityAfterFallOn`). Belts hand items to the saw (`belt::handle_insertion`)
+//!   and the saw hands its results to a belt or depot beyond it; with none it drops them.
 //! - One item at a time (`bulkCutting` is off); a package is cut like any other item.
 //! - Cut items keep Create's `ProcessingTime`, `RecipeTime`, `AppliedRecipe` and `RecipeIndex`
 //!   keys, but at the top of the block entity's data, and the stacks are the block entity's own

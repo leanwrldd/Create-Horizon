@@ -67,12 +67,17 @@ Sonnet subagents in parallel: see `MODULES.md` for the layout, the shared helper
 what). Done this way so far: transmission (encased shafts and cogwheels, clutch, gearshift, chain drives,
 gauges), millstone, crushing wheels, encased fan and nozzle, basin, mixer, blaze burner, materials, building
 blocks (wave 1); fluid tanks, pipes and pump, drill, saw, and Belts II (press over basin, belt and depot; belt
-hand-off; casings) (wave 2). Each passes the unit tests, the type-check, the content build and the native build.
-Wave 1 was tested in game through MCP on 2026-11-15 and worked (README has the details; the Blaze Burner's head
-didn't show). **Wave 2 has not been tried in game.** Each module file lists its known differences.
+hand-off; casings) (wave 2); chutes, smart chute, andesite and brass funnels (with belt funnels), the boiler,
+Steam Engine, Powered Shaft and Steam Whistle (wave 3). Each passes the unit tests, the type-check, the content
+build and the native build (`native-9f42064-184eb2b2db3e`). Waves 1 and 2 were tested in game through MCP on
+2026-11-15 and worked, apart from what the README lists (the Blaze Burner head shows in every lit state; the
+earlier report was an empty burner). Fixed after the wave 2 test, not yet re-tested: a bucket on a tank also
+poured water or filled twice, the saw had no log recipes (Create writes its wood cutting and concrete washing
+recipes at load time, `RuntimeDataGenerator`; now baked in), and the package now carries Create's sounds.
+**Wave 3 has not been tried in game.** Each module file lists its known differences.
 
-**Not started:** funnels, tunnels, chutes, deployer, crafter, steam engine, sloped belts, contraptions, trains,
-logistics, schematics, goggles, Ponder.
+**Not started:** tunnels, deployer, crafter, sloped belts, contraptions, trains, the rest of logistics,
+schematics, goggles, Ponder.
 
 **Agent waves:** the user wants at most 3 subagents at a time; after each wave, build, redraw the progress
 (`python tools/progress.py`), commit and push.
@@ -157,8 +162,7 @@ which installed version supplied the executable.
 
 ## Suggested next steps
 
-1. Test wave 2 in game (fluids, drill, saw, Belts II): grep `logs\latest.log` for `content mods not loaded`
-   first (the honey and chocolate fluid sprites are the risk), then each module's "most likely wrong" points.
-2. Look at the Blaze Burner head, which didn't show in the wave 1 test.
-3. Next slices: funnels and tunnels, chutes, deployer and crafter, steam engine, sloped belts.
+1. Test wave 3 in game (chutes, funnels and belt funnels, boiler, steam engine, whistle and its sound), and
+   re-test the tank buckets and the saw on logs.
+2. Next slices: tunnels, deployer and crafter, sloped belts, contraptions.
 4. Keep the skill current: add each new gotcha in the session that finds it.

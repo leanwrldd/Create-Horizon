@@ -100,6 +100,19 @@ def _fan_recipes():
 RECIPES.update({key: value for key, value in _fan_recipes().items()
                 if not key.startswith("splashing/industrial_iron")})
 
+# `RuntimeDataGenerator.washingRecipes`: Create writes a splashing recipe from each concrete
+# powder to its concrete at load time, so its datagen output has none. Vanilla's 16 colours.
+_COLOURS = ("white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
+            "light_gray", "cyan", "purple", "blue", "brown", "green", "red", "black")
+RECIPES.update({
+    f"splashing/runtime_generated/compat/minecraft/{c}_concrete_powder_to_{c}_concrete": {
+        "type": "create:splashing",
+        "ingredients": [{"item": f"minecraft:{c}_concrete_powder"}],
+        "results": [{"id": f"minecraft:{c}_concrete"}],
+    }
+    for c in _COLOURS
+})
+
 TAGS = {
     # `data/create/tags/block/fan_transparent.json`: what the air goes through. Ids nobody
     # declares yet are dropped by the game when it reads the tag.

@@ -9,6 +9,8 @@ pub mod basin;
 pub mod belts_ii;
 pub mod burner;
 pub mod chain_drive;
+pub mod chute;
+pub mod chute_inv;
 pub mod clutch;
 pub mod crushing_wheel;
 pub mod drill;
@@ -18,13 +20,17 @@ pub mod fan_nozzle;
 pub mod fluid_pipe;
 pub mod fluid_tank;
 pub mod fluids;
+pub mod funnel;
 pub mod gauges;
 pub mod gearshift;
 pub mod millstone;
 pub mod mixer;
 pub mod pump;
 pub mod saw;
+pub mod steam_engine;
+pub mod steam_engine_boiler;
+pub mod steam_engine_whistle;
 
 pub fn all() -> Vec<Box<dyn Hooks>> {
-    vec![basin::hooks(), belts_ii::hooks(), burner::hooks(), chain_drive::hooks(), clutch::hooks(), crushing_wheel::hooks(), drill::hooks(), encased::hooks(), fan::hooks(), fan_nozzle::hooks(), fluid_pipe::hooks(), fluid_tank::hooks(), fluids::hooks(), gauges::hooks(), gearshift::hooks(), millstone::hooks(), mixer::hooks(), pump::hooks(), saw::hooks()]
+    vec![basin::hooks(), belts_ii::hooks(), burner::hooks(), chain_drive::hooks(), chute::hooks(), chute_inv::hooks(), clutch::hooks(), crushing_wheel::hooks(), drill::hooks(), encased::hooks(), fan::hooks(), fan_nozzle::hooks(), fluid_pipe::hooks(), fluid_tank::hooks(), fluids::hooks(), funnel::hooks(), gauges::hooks(), gearshift::hooks(), millstone::hooks(), mixer::hooks(), pump::hooks(), saw::hooks(), steam_engine::hooks(), steam_engine_boiler::hooks(), steam_engine_whistle::hooks()]
 }

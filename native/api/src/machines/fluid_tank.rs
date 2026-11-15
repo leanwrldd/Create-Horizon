@@ -13,7 +13,7 @@
 //!   a wide tank is built block by block and joins when the blocks stand right.
 //! - A tank's fluid level is drawn as saved, with no easing (`LerpedFloat`), and sent to clients
 //!   at most every 8 ticks (`SYNC_RATE`).
-//! - No boiler (`BoilerData`), no light from the fluid (`luminosity`), no comparator output
+//! - The boiler (`BoilerData`) is `steam_engine_boiler.rs`; no light from the fluid (`luminosity`), no comparator output
 //!   (`getAnalogOutputSignal`), no rotation or mirroring of windows by structures.
 //! - A survival player fills and empties a tank with buckets too. Create leaves that to
 //!   NeoForge's bucket handling and does it only for creative players itself
@@ -31,7 +31,7 @@ use horizon_client::mod_api::{
     CustomBlockFluidsEvent, CustomFluidDrainEvent, CustomFluidFillEvent, CustomFluidTanksEvent,
     DestroyBlockEvent, EquipmentSlot, Flow, Hooks, Host, ItemStack, ModBlockEntity,
     NativeFluidAction, NativeFluidDrain, NativeFluidStack, NativeFluidTankView,
-    RightClickBlockEvent, Tag, UseItemOnEvent,
+    RightClickBlockEvent, Tag, UseItemEvent, UseItemOnEvent,
 };
 
 use super::fluids::{CREATIVE_FLUID_TANK, FLUID_TANK};
@@ -52,6 +52,29 @@ const SYNCED: &str = "Synced";
 const SYNC_RATE: i64 = 8;
 /// How often a block checks that the tank it belongs to is still whole.
 const VERIFY: i64 = 20;
+
+/// What the boiler module (`steam_engine_boiler.rs`) plugs in through [`BOILER`], so this file
+/// doesn't depend on it: while a Steam Engine or Whistle is attached to a tank it is a boiler
+/// (`FluidTankBlockEntity.handlerForCapability`), taking only water and keeping none.
+pub(crate) struct BoilerApi {
+    /// Whether the tank whose controller is at the position is an active boiler.
+    pub active: fn(&dyn Host, Pos) -> bool,
+    /// `BoilerFluidHandler.fill` into the controller at the position: the fluid, the amount and
+    /// whether to do it (else only ask). Answers the amount taken.
+    pub fill: fn(&mut dyn Host, Pos, &str, i32, bool) -> i32,
+    /// Adds the boiler's saved state to a block's update tag.
+    pub update_tag: fn(&ModBlockEntity, &mut Compound),
+    /// `BoilerFluidHandler.getTankCapacity`.
+    pub capacity: i32,
+}
+
+/// Set once by the boiler module's `hooks()`; empty if it isn't built in.
+pub(crate) static BOILER: std::sync::OnceLock<BoilerApi> = std::sync::OnceLock::new();
+
+/// The boiler module, if the tank whose controller is at `controller` is an active boiler.
+fn boiler(host: &dyn Host, controller: Pos) -> Option<&'static BoilerApi> {
+    BOILER.get().filter(|api| (api.active)(host, controller))
+}
 
 struct Tanks;
 
@@ -390,6 +413,20 @@ fn verify(
     false
 }
 
+/// `FluidTankBlockEntity.setWindows` for the controller ticking now (`entity`, which the world
+/// can't read while it ticks): for the boiler, which takes its windows away.
+pub(crate) fn set_windows(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, window: bool) {
+    let kind = entity.id.clone();
+    let part = read_part(&entity.nbt, pos, kind == CREATIVE_FLUID_TANK);
+    if !part.is_controller(pos) {
+        return;
+    }
+    let changes = solve(&*host, &kind, Some((pos, part)), |region| {
+        rules::set_windows(region, pos, window);
+    });
+    apply(host, Some((pos, entity)), changes);
+}
+
 fn update_tag(entity: &ModBlockEntity, pos: Pos) -> Compound {
     let creative = entity.id == CREATIVE_FLUID_TANK;
     let part = read_part(&entity.nbt, pos, creative);
@@ -400,6 +437,9 @@ fn update_tag(entity: &ModBlockEntity, pos: Pos) -> Compound {
     tag.insert(HEIGHT.into(), Tag::Int(part.height));
     tag.insert(WINDOW.into(), Tag::Byte(i8::from(part.window)));
     tag.insert(CONTENT.into(), content_tag(&part.fluid, part.amount));
+    if let Some(api) = BOILER.get() {
+        (api.update_tag)(entity, &mut tag);
+    }
     tag
 }
 
@@ -418,6 +458,10 @@ fn use_container(
     let Some((controller, part)) = controller_of(host, kind, pos) else {
         return false;
     };
+    // A boiler's handler takes water from pipes only (`BoilerData.BoilerFluidHandler`).
+    if boiler(&*host, controller).is_some() {
+        return false;
+    }
     let tank_creative = kind == CREATIVE_FLUID_TANK;
     // A creative player or a creative tank doesn't use the item up.
     let consume = !player_creative && !tank_creative;
@@ -477,6 +521,12 @@ fn use_container(
     host.block_entity_sync(controller);
     true
 }
+
+/// The player whose click a tank took, and when. The client doesn't know the tank used the click,
+/// so it goes on to send the bucket's own use (`Item.use`), which would pour a source beside the
+/// tank or fill the bucket a second time; `use_item` drops that use. Create's click is consumed on
+/// both sides, so this has no Create counterpart.
+static TAKEN_CLICK: std::sync::Mutex<Option<(u128, i64)>> = std::sync::Mutex::new(None);
 
 /// `level.random.nextFloat() - .5f`.
 fn jitter() -> f32 {
@@ -564,7 +614,21 @@ impl Hooks for Tanks {
         if !is_tank(&kind) {
             return None;
         }
-        Some(controller_of(host, &kind, event.pos).map(|(_, part)| vec![view(&part)]).unwrap_or_default())
+        Some(
+            controller_of(host, &kind, event.pos)
+                .map(|(controller, part)| match boiler(host, controller) {
+                    // `BoilerFluidHandler`: no fluid in it, room for 10 buckets of water.
+                    Some(api) => vec![NativeFluidTankView {
+                        tank: 0,
+                        content: None,
+                        capacity: api.capacity,
+                        can_fill: true,
+                        can_drain: false,
+                    }],
+                    None => vec![view(&part)],
+                })
+                .unwrap_or_default(),
+        )
     }
 
     /// `IFluidHandler.fill`: into the controller, whichever block of the tank is touched.
@@ -584,6 +648,10 @@ impl Hooks for Tanks {
         let Some((controller, part)) = controller_of(&*host, &kind, event.pos) else {
             return Some(0);
         };
+        if let Some(api) = boiler(&*host, controller) {
+            let execute = event.action == NativeFluidAction::Execute;
+            return Some((api.fill)(host, controller, &resource.fluid, resource.amount, execute));
+        }
         let mut after = part.clone();
         let accepted = after.fill(&resource.fluid, resource.amount);
         if event.action == NativeFluidAction::Execute && after != part {
@@ -603,6 +671,9 @@ impl Hooks for Tanks {
             return None;
         }
         let (controller, part) = controller_of(&*host, &kind, event.pos)?;
+        if boiler(&*host, controller).is_some() {
+            return None;
+        }
         let max = match event.request {
             NativeFluidDrain::Any(max) => *max,
             NativeFluidDrain::Exact(stack) => {
@@ -672,8 +743,32 @@ impl Hooks for Tanks {
             return Flow::Continue;
         }
         use_container(host, pos, &kind, &stack, player.game_mode == util::CREATIVE);
+        let now = util::game_time(&*host);
+        *TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((uuid, now));
         // `GenericItemEmptying.canItemBeEmptied || canItemBeFilled`: the click is the tank's.
         Flow::Cancel
+    }
+
+    /// The item use the client sends after a click a tank took (see `TAKEN_CLICK`).
+    fn use_item(&self, host: &mut dyn Host, event: &mut UseItemEvent<'_>) -> Flow {
+        let mut taken = TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some((uuid, at)) = *taken else {
+            return Flow::Continue;
+        };
+        let Some(player) = host.acting_player() else {
+            return Flow::Continue;
+        };
+        // The two packets arrive together; allow one tick between them.
+        if player.uuid != uuid || util::game_time(&*host) - at > 1 {
+            return Flow::Continue;
+        }
+        *taken = None;
+        let item: &str = &event.stack.item;
+        if fluid_rules::is_container(item) || fluid_rules::emptied(item).is_some() {
+            Flow::Cancel
+        } else {
+            Flow::Continue
+        }
     }
 
     /// The Wrench: sneak-click picks the tank up; a click toggles the windows of the whole tank
@@ -691,6 +786,10 @@ impl Hooks for Tanks {
             let Some((controller, part)) = controller_of(&*host, &kind, pos) else {
                 return;
             };
+            // `FluidTankBlockEntity.toggleWindows`: not on a boiler.
+            if boiler(&*host, controller).is_some() {
+                return;
+            }
             let window = !part.window;
             let changes = solve(&*host, &kind, None, |region| {
                 rules::set_windows(region, controller, window);

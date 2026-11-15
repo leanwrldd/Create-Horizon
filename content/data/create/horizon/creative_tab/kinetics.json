@@ -20,6 +20,8 @@
     "create:blaze_burner",
     "create:encased_chain_drive",
     "create:adjustable_chain_gearshift",
+    "create:chute",
+    "create:smart_chute",
     "create:clutch",
     "create:crushing_wheel",
     "create:mechanical_drill",
@@ -36,6 +38,8 @@
     "create:creative_fluid_tank",
     "create:honey_bucket",
     "create:chocolate_bucket",
+    "create:andesite_funnel",
+    "create:brass_funnel",
     "create:speedometer",
     "create:stressometer",
     "create:gearshift",
@@ -91,6 +95,8 @@
     "create:millstone",
     "create:mechanical_mixer",
     "create:mechanical_pump",
-    "create:mechanical_saw"
+    "create:mechanical_saw",
+    "create:steam_engine",
+    "create:steam_whistle"
   ]
 }

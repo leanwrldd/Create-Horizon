@@ -15,6 +15,8 @@
     "create:lit_blaze_burner",
     "create:encased_chain_drive",
     "create:adjustable_chain_gearshift",
+    "create:chute",
+    "create:smart_chute",
     "create:clutch",
     "create:crushing_wheel",
     "create:mechanical_drill",
@@ -30,6 +32,10 @@
     "create:glass_fluid_pipe",
     "create:fluid_tank",
     "create:creative_fluid_tank",
+    "create:andesite_funnel",
+    "create:andesite_belt_funnel",
+    "create:brass_funnel",
+    "create:brass_belt_funnel",
     "create:speedometer",
     "create:stressometer",
     "create:gearshift",
@@ -376,6 +382,10 @@
     "create:layered_veridium",
     "create:veridium_pillar",
     "create:mechanical_pump",
-    "create:mechanical_saw"
+    "create:mechanical_saw",
+    "create:steam_engine",
+    "create:powered_shaft",
+    "create:steam_whistle",
+    "create:steam_whistle_extension"
   ]
 }

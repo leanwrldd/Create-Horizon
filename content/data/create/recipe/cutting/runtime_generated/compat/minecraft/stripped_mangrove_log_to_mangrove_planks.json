@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "item": "minecraft:stripped_mangrove_log"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 6,
+      "id": "minecraft:mangrove_planks"
+    }
+  ],
+  "type": "create:cutting"
+}

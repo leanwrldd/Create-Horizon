@@ -21,6 +21,8 @@
   "item.create.empty_blaze_burner": "Empty Blaze Burner",
   "block.create.encased_chain_drive": "Encased Chain Drive",
   "block.create.adjustable_chain_gearshift": "Adjustable Chain Gearshift",
+  "block.create.chute": "Chute",
+  "block.create.smart_chute": "Smart Chute",
   "block.create.clutch": "Clutch",
   "block.create.crushing_wheel": "Crushing Wheel",
   "block.create.crushing_wheel_controller": "Crushing Wheel Controller",
@@ -53,6 +55,10 @@
   "fluid.create.chocolate": "Chocolate",
   "fluid.create.tea": "Builder's Tea",
   "fluid.create.potion": "Potion",
+  "block.create.andesite_funnel": "Andesite Funnel",
+  "block.create.andesite_belt_funnel": "Andesite Belt Funnel",
+  "block.create.brass_funnel": "Brass Funnel",
+  "block.create.brass_belt_funnel": "Brass Belt Funnel",
   "block.create.speedometer": "Speedometer",
   "block.create.stressometer": "Stressometer",
   "block.create.gearshift": "Gearshift",
@@ -483,5 +489,9 @@
   "block.create.mechanical_pump": "Mechanical Pump",
   "block.create.mechanical_saw": "Mechanical Saw",
   "death.attack.create.mechanical_saw": "%1$s got cut in half by a Mechanical Saw",
-  "death.attack.create.mechanical_saw.player": "%1$s was thrown into a Saw by %2$s"
+  "death.attack.create.mechanical_saw.player": "%1$s was thrown into a Saw by %2$s",
+  "block.create.steam_engine": "Steam Engine",
+  "block.create.powered_shaft": "Powered Shaft",
+  "block.create.steam_whistle": "Steam Whistle",
+  "block.create.steam_whistle_extension": "Steam Whistle Extension"
 }

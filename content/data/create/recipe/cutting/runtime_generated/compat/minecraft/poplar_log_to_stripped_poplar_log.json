@@ -1,0 +1,14 @@
+{
+  "ingredients": [
+    {
+      "item": "minecraft:poplar_log"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "id": "minecraft:stripped_poplar_log"
+    }
+  ],
+  "type": "create:cutting"
+}

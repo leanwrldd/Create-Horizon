@@ -306,15 +306,49 @@ fn face_full(host: &dyn Host, pos: Pos, side: Dir) -> bool {
     covered.iter().flatten().all(|c| *c)
 }
 
+/// A block of another module that takes the items a belt hands it
+/// (`DirectBeltInputBehaviour`): the chutes and the funnels. A module adds its blocks with
+/// [`register_input`] when it starts, so this file doesn't name it.
+#[derive(Clone, Copy)]
+pub(crate) struct BeltInput {
+    /// Whether the block named is one of its blocks.
+    pub claims: fn(&str) -> bool,
+    /// `canInsertFromSide`: whether the block at the position takes items moving towards the side.
+    pub can_insert: fn(&dyn Host, Pos, Dir) -> bool,
+    /// `handleInsertion`: gives the item, moving towards the side, to the block at the position
+    /// (`simulate`: only asks). What is left of the stack, count 0 where it all went.
+    pub insert: fn(&mut dyn Host, Pos, Dir, &Item<ItemStack>, bool) -> ItemStack,
+}
+
+static EXTRA_INPUTS: Mutex<Vec<BeltInput>> = Mutex::new(Vec::new());
+
+#[allow(dead_code)] // the chute and funnel modules call it; a build without them doesn't
+pub(crate) fn register_input(input: BeltInput) {
+    EXTRA_INPUTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(input);
+}
+
+/// The registered input that claims `block`.
+fn extra_input(block: &str) -> Option<BeltInput> {
+    EXTRA_INPUTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .find(|input| (input.claims)(block))
+        .copied()
+}
+
 /// Blocks that take items from a belt (`DirectBeltInputBehaviour`): a horizontal belt, a depot,
-/// a basin. Funnels, tunnels, saws and the like are not here yet.
+/// a basin, an upright saw, and what other modules register (chutes, funnels).
 fn takes_belt_input(host: &dyn Host, pos: Pos) -> bool {
     match host.block(pos).as_str() {
         ID => segment(host, pos).is_some(),
         depot::ID | "create:basin" => true,
         // An upright saw takes items onto its blade (`SawBlockEntity`'s `DirectBeltInputBehaviour`).
         SAW => crate::util::facing(host, pos, "facing") == Some(Dir::Up),
-        _ => false,
+        other => extra_input(other).is_some(),
     }
 }
 
@@ -525,7 +559,7 @@ pub(crate) fn can_insert_from_side(host: &dyn Host, pos: Pos, side: Dir) -> Opti
         }
         depot::ID | "create:basin" => Some(true),
         SAW => Some(crate::util::facing(host, pos, "facing") == Some(Dir::Up)),
-        _ => None,
+        other => extra_input(other).map(|input| (input.can_insert)(host, pos, side)),
     }
 }
 
@@ -556,7 +590,7 @@ pub(crate) fn handle_insertion(
             }))
         }
         SAW => Some(crate::machines::saw::insert_from_side(host, pos, &item.stack, simulate)),
-        _ => None,
+        other => extra_input(other).map(|input| (input.insert)(host, pos, side, item, simulate)),
     }
 }
 
@@ -672,6 +706,98 @@ fn belt_insert(
     };
     push_incoming(host, controller, vec![new]);
     Some(none)
+}
+
+/// `TransportedItemStackHandlerBehaviour.handleCenteredProcessingOnAllItems(.5, ...)` with a
+/// removing result, as a chute pulling from a belt does it: the first stack on the belt block at
+/// `pos` (within half a block of its middle) that `accept` takes is taken off the belt.
+#[allow(dead_code)] // the chute module's
+pub(crate) fn take_centered(
+    host: &mut dyn Host,
+    pos: Pos,
+    accept: &mut dyn FnMut(&ItemStack) -> bool,
+) -> Option<ItemStack> {
+    let (facing, _) = segment(host, pos)?;
+    let index = host.mod_block_entity(pos).map(|e| int(&e.nbt, INDEX))?;
+    let controller = segment_position(pos, facing, -index);
+    let ctl = host.mod_block_entity(controller)?;
+    let mut inventory = read_inventory(&ctl.nbt);
+    let middle = index as f32 + 0.5;
+    let at = inventory
+        .items
+        .iter()
+        .position(|i| (i.pos - middle).abs() < 0.5 && accept(&i.stack))?;
+    let item = inventory.items.remove(at);
+    host.change_mod_block_entity(controller, &mut |entity| {
+        entity.nbt.insert(INVENTORY.into(), inventory_tag(&inventory));
+    });
+    host.block_entity_sync(controller);
+    Some(item.stack)
+}
+
+/// Where the items of the belt block at `pos` are, for a block that works on them as they pass
+/// (a belt funnel: `BeltFunnelInteractionHandler`).
+#[derive(Clone, Copy, Debug)]
+#[allow(dead_code)] // the funnel module's
+pub(crate) struct Lane {
+    /// The belt block's index along the belt (`BeltBlockEntity.index`) and the belt's length.
+    pub index: i32,
+    pub length: i32,
+    /// `beltMovementPositive`: the items move towards the belt's end.
+    pub positive: bool,
+    /// Blocks an item moves each tick (the belt's `chain_speed`), negative towards its start.
+    pub speed: f32,
+    /// The way the belt's top moves (`getMovementFacing`).
+    pub movement: Dir,
+}
+
+/// Lets `edit` change the items of the belt that the block at `pos` is part of, with the stacks
+/// left empty dropped afterwards: it is given the world, where the belt block is, and the items
+/// (the one furthest along first). When it answers true the controller keeps the result and
+/// clients are sent it. True when the belt was changed.
+#[allow(dead_code)] // the funnel module's
+pub(crate) fn edit_items(
+    host: &mut dyn Host,
+    pos: Pos,
+    edit: &mut dyn FnMut(&mut dyn Host, &Lane, &mut Vec<Item<ItemStack>>) -> bool,
+) -> bool {
+    let Some((facing, _)) = segment(host, pos) else {
+        return false;
+    };
+    let Some(entity) = host.mod_block_entity(pos) else {
+        return false;
+    };
+    let index = int(&entity.nbt, INDEX);
+    let controller = segment_position(pos, facing, -index);
+    let Some(ctl) = host.mod_block_entity(controller) else {
+        return false;
+    };
+    let length = int(&ctl.nbt, LENGTH);
+    let rpm = float(&ctl.nbt, SPEED).unwrap_or(0.0);
+    if length == 0 || rpm == 0.0 {
+        return false;
+    }
+    let mut inventory = read_inventory(&ctl.nbt);
+    if inventory.items.is_empty() {
+        return false;
+    }
+    let speed = chain_speed(rpm, facing);
+    let lane = Lane {
+        index,
+        length,
+        positive: speed > 0.0,
+        speed,
+        movement: movement_facing(rpm, facing),
+    };
+    if !edit(host, &lane, &mut inventory.items) {
+        return false;
+    }
+    inventory.items.retain(|item| item.stack.count > 0);
+    host.change_mod_block_entity(controller, &mut |entity| {
+        entity.nbt.insert(INVENTORY.into(), inventory_tag(&inventory));
+    });
+    host.block_entity_sync(controller);
+    true
 }
 
 /// What the press does at the bottom of its cycle to the item it holds on the block of the belt

@@ -1,0 +1,231 @@
+{
+  "template": "minecraft:glass",
+  "item": false,
+  "properties": {
+    "hardness": 3.0,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:copper_block",
+    "map_color": 30,
+    "render_shape": "MODEL",
+    "occludes": false
+  },
+  "state_properties": {
+    "shape": {
+      "type": "enum",
+      "values": [
+        "single",
+        "double",
+        "double_connected"
+      ]
+    },
+    "size": {
+      "type": "enum",
+      "values": [
+        "small",
+        "medium",
+        "large"
+      ]
+    }
+  },
+  "default_state": {
+    "shape": "single",
+    "size": "medium"
+  },
+  "shapes": {
+    "properties": [
+      "shape",
+      "size"
+    ],
+    "values": {
+      "single,small": [
+        [
+          0.25,
+          0.0,
+          0.25,
+          0.75,
+          0.625,
+          0.75
+        ]
+      ],
+      "double,small": [
+        [
+          0.25,
+          0.0,
+          0.25,
+          0.75,
+          1.125,
+          0.75
+        ]
+      ],
+      "double_connected,small": [
+        [
+          0.25,
+          0.0,
+          0.25,
+          0.75,
+          1.0,
+          0.75
+        ]
+      ],
+      "single,medium": [
+        [
+          0.1875,
+          0.0,
+          0.1875,
+          0.8125,
+          0.625,
+          0.8125
+        ]
+      ],
+      "double,medium": [
+        [
+          0.1875,
+          0.0,
+          0.1875,
+          0.8125,
+          1.125,
+          0.8125
+        ]
+      ],
+      "double_connected,medium": [
+        [
+          0.1875,
+          0.0,
+          0.1875,
+          0.8125,
+          1.0,
+          0.8125
+        ]
+      ],
+      "single,large": [
+        [
+          0.125,
+          0.0,
+          0.125,
+          0.875,
+          0.625,
+          0.875
+        ]
+      ],
+      "double,large": [
+        [
+          0.125,
+          0.0,
+          0.125,
+          0.875,
+          1.125,
+          0.875
+        ]
+      ],
+      "double_connected,large": [
+        [
+          0.125,
+          0.0,
+          0.125,
+          0.875,
+          1.0,
+          0.875
+        ]
+      ]
+    }
+  },
+  "collision_shapes": {
+    "properties": [
+      "shape",
+      "size"
+    ],
+    "values": {
+      "single,small": [
+        [
+          0.25,
+          0.0,
+          0.25,
+          0.75,
+          0.625,
+          0.75
+        ]
+      ],
+      "double,small": [
+        [
+          0.25,
+          0.0,
+          0.25,
+          0.75,
+          1.125,
+          0.75
+        ]
+      ],
+      "double_connected,small": [
+        [
+          0.25,
+          0.0,
+          0.25,
+          0.75,
+          1.0,
+          0.75
+        ]
+      ],
+      "single,medium": [
+        [
+          0.1875,
+          0.0,
+          0.1875,
+          0.8125,
+          0.625,
+          0.8125
+        ]
+      ],
+      "double,medium": [
+        [
+          0.1875,
+          0.0,
+          0.1875,
+          0.8125,
+          1.125,
+          0.8125
+        ]
+      ],
+      "double_connected,medium": [
+        [
+          0.1875,
+          0.0,
+          0.1875,
+          0.8125,
+          1.0,
+          0.8125
+        ]
+      ],
+      "single,large": [
+        [
+          0.125,
+          0.0,
+          0.125,
+          0.875,
+          0.625,
+          0.875
+        ]
+      ],
+      "double,large": [
+        [
+          0.125,
+          0.0,
+          0.125,
+          0.875,
+          1.125,
+          0.875
+        ]
+      ],
+      "double_connected,large": [
+        [
+          0.125,
+          0.0,
+          0.125,
+          0.875,
+          1.0,
+          0.875
+        ]
+      ]
+    }
+  }
+}

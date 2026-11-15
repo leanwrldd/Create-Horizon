@@ -14,15 +14,15 @@ is not pinned to one Horizon commit.
 <!-- progress:start -->
 | Area | Done | Total | |
 |---|---:|---:|---:|
-| Kinetics | 34 | 57 | 60% |
+| Kinetics | 36 | 57 | 63% |
 | Materials | 18 | 20 | 90% |
-| Logistics | 0 | 52 | 0% |
-| Fluids | 5 | 18 | 28% |
+| Logistics | 4 | 52 | 8% |
+| Fluids | 9 | 18 | 50% |
 | Contraptions | 7 | 42 | 17% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 29 | 39 | 74% |
-| **All** | **93** | **246** | **37.8%** |
+| **All** | **103** | **246** | **41.9%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -98,7 +98,11 @@ content mod loading with no errors and every module below doing its main job: en
 on redstone, chain drives and the adjustable gearshift's ratio, the gauges, milling, crushing, fan pushing,
 pulling and washing, basin and mixer (unheated and heated brass), burner fuel and Blaze Cakes, ore drops and
 the building blocks. Not tested yet: mobs in crushing wheels, the fan on players, the nozzle's air, the
-stressometer under load, food, zinc generation; the Blaze Burner's head didn't show. Each module's own file
+stressometer under load, food, zinc generation. A second test the same day found wave 2 working: tanks and
+their windows, pipes and the pump, the drill, both saws, the press over a basin, belt and depot, belt hand-off
+and hoppers on a depot, and the Blaze Burner's head in every lit state. Fixed after it, not yet re-tested: a
+bucket on a tank also poured water beside it or filled twice, and the saw had no log recipes. Not tested yet:
+chutes, funnels and steam (wave 3). Each module's own file
 (`native/api/src/machines/<name>.rs`, `tools/content/<name>.py`) lists its known differences from Create at
 the top. [MODULES.md](MODULES.md) explains the layout.
 
@@ -115,6 +119,8 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Mechanical Drill | Breaks the block in front at Create's speed for its hardness, with the crack shown; hurts entities |
 | Mechanical Saw | Sideways: breaks blocks and fells whole trees (Create's `TreeCutter`). Upright: cuts items dropped on it or carried in by belts with `create:cutting` and stonecutting recipes, and hands results on |
 | Belts II | Compacting with the press over a basin; the press over a belt and a depot; belt hand-off; depot output slots and hoppers; belt casings and dye |
+| Chutes, Funnels | Chute and Smart Chute (items fall, fans push them up, hoppers and belts feed them); Andesite and Brass Funnels taking from and putting into the block behind, and on belts and depots as belt funnels; filters set by sneak-clicking with an item |
+| Steam | The boiler on a Fluid Tank, heated by Blaze Burners and fed water by pipes, with its gauge; the Steam Engine turning a Powered Shaft; the Steam Whistle and its extensions, pitched by size |
 | Building blocks | 364 blocks: metal ladders, bars, scaffolding and doors, copper shingles and tiles, glass and windows, 14 stone types in every pattern |
 
 Broad gaps across these modules:
@@ -125,13 +131,16 @@ Broad gaps across these modules:
   like vanilla doors, and no connected textures are drawn.
 - Redstone and neighbour changes are polled each tick rather than heard.
 - Vanilla stonecutting recipes are baked into the saw's data (678 of them), and block hardness for the drill is a
-  baked table: Horizon gives a mod neither.
-- The fluids, drill, saw and Belts II modules (wave 2) have not been tried in the game yet. The honey and chocolate
-  fluid sprites are the first thing to check: a missing one would stop the content mod loading.
+  baked table: Horizon gives a mod neither. The wood cutting and concrete washing recipes Create writes at load
+  time (`RuntimeDataGenerator`) are baked for vanilla's items.
+- Honey and chocolate flow and pour, but Horizon draws a mod fluid as its template (water), and an empty bucket
+  didn't pick them back up in the test.
+- A mod can't list another block's slots, so chutes and funnels read a container's saved items; the Smart Chute
+  and Brass Funnel have no filter slot (sneak-click with an item instead).
 
 ### Not done, and known differences from Create
 
-- Funnels, tunnels, chutes, deployers, the mechanical crafter, steam engines, open pipe ends and valves,
+- Tunnels, deployers, the mechanical crafter, open pipe ends and valves,
   contraptions, trains, logistics, schematics and Ponder.
 - The Creative Motor's speed is set with the Wrench, not Create's scroll-value box.
 - A network only includes loaded, ticking blocks: the part of a line in an unloaded chunk drops out.

@@ -142,6 +142,16 @@ def import_assets(jar: ZipFile, content: Path, c):
     model["textures"] = {"log": "block/spruce_log", "planks": "block/spruce_planks"}
     write(wheel, model)
 
+    # Create's sound events (`AllSoundEvents`) and the `.ogg` files they name, so a module may play
+    # `create:whistle` and the rest. Events that name vanilla sounds need no file.
+    sounds = json.loads(copy("sounds.json"))
+    for event in sounds.values():
+        for sound in event.get("sounds", []):
+            name = sound if isinstance(sound, str) else sound.get("name", "")
+            kind = "file" if isinstance(sound, str) else sound.get("type", "file")
+            if kind == "file" and name.startswith("create:"):
+                copy(f"sounds/{name.removeprefix('create:')}.ogg")
+
     for sprite in sorted(textures):
         name = f"textures/{sprite}.png"
         copy(name)

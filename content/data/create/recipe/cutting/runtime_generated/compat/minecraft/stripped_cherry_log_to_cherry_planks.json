@@ -1,0 +1,15 @@
+{
+  "ingredients": [
+    {
+      "item": "minecraft:stripped_cherry_log"
+    }
+  ],
+  "processing_time": 50,
+  "results": [
+    {
+      "count": 6,
+      "id": "minecraft:cherry_planks"
+    }
+  ],
+  "type": "create:cutting"
+}
