@@ -522,11 +522,22 @@ fn use_container(
     true
 }
 
-/// The player whose click a tank took, and when. The client doesn't know the tank used the click,
-/// so it goes on to send the bucket's own use (`Item.use`), which would pour a source beside the
-/// tank or fill the bucket a second time; `use_item` drops that use. Create's click is consumed on
-/// both sides, so this has no Create counterpart.
-static TAKEN_CLICK: std::sync::Mutex<Option<(u128, i64)>> = std::sync::Mutex::new(None);
+/// The player whose click a tank took, when, and on which block. The client doesn't know the tank
+/// used the click, so it goes on with the rest of it: the same click again for the off hand
+/// (`right_click_block` doesn't say which hand, and the tank reads the main hand, so a filled
+/// bucket would be poured straight back or a stack filled twice) and the bucket's own use
+/// (`Item.use`), which would pour a source beside the tank. Both are dropped while this is fresh.
+/// Create's click is consumed on both sides, so this has no Create counterpart.
+static TAKEN_CLICK: std::sync::Mutex<Option<(u128, i64, Pos)>> = std::sync::Mutex::new(None);
+
+/// Whether `uuid`'s click at `now` is the rest of a click a tank already took (within a tick: the
+/// packets of one click arrive together). `at` limits it to that block.
+fn click_taken(uuid: u128, now: i64, at: Option<Pos>) -> bool {
+    let taken = *TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    taken.is_some_and(|(who, when, pos)| {
+        who == uuid && now - when <= 1 && at.is_none_or(|at| at == pos)
+    })
+}
 
 /// `level.random.nextFloat() - .5f`.
 fn jitter() -> f32 {
@@ -742,27 +753,25 @@ impl Hooks for Tanks {
         if !fluid_rules::is_container(item) {
             return Flow::Continue;
         }
-        use_container(host, pos, &kind, &stack, player.game_mode == util::CREATIVE);
         let now = util::game_time(&*host);
-        *TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((uuid, now));
+        if click_taken(uuid, now, Some(pos)) {
+            // The off hand's turn of a click the main hand's turn already used.
+            return Flow::Cancel;
+        }
+        use_container(host, pos, &kind, &stack, player.game_mode == util::CREATIVE);
+        *TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((uuid, now, pos));
         // `GenericItemEmptying.canItemBeEmptied || canItemBeFilled`: the click is the tank's.
         Flow::Cancel
     }
 
     /// The item use the client sends after a click a tank took (see `TAKEN_CLICK`).
     fn use_item(&self, host: &mut dyn Host, event: &mut UseItemEvent<'_>) -> Flow {
-        let mut taken = TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some((uuid, at)) = *taken else {
-            return Flow::Continue;
-        };
         let Some(player) = host.acting_player() else {
             return Flow::Continue;
         };
-        // The two packets arrive together; allow one tick between them.
-        if player.uuid != uuid || util::game_time(&*host) - at > 1 {
+        if !click_taken(player.uuid, util::game_time(&*host), None) {
             return Flow::Continue;
         }
-        *taken = None;
         let item: &str = &event.stack.item;
         if fluid_rules::is_container(item) || fluid_rules::emptied(item).is_some() {
             Flow::Cancel
