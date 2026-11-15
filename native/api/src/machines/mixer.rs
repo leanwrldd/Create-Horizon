@@ -260,7 +260,8 @@ impl Hooks for MechanicalMixer {
         // `KineticBlockEntityRenderer.getRotationOffsetForPosition`: a cog is turned 22.5 degrees
         // where the other two coordinates add up even, so neighbours mesh.
         let phase = if (x + z).rem_euclid(2) == 0 { 22.5 } else { 0.0 };
-        draw.spin([0.0, 1.0, 0.0], CENTRE, rpm * 0.3, phase);
+        let angle = crate::float(nbt, crate::ponder::ANGLE);
+        crate::draw::spin(draw, [0.0, 1.0, 0.0], rpm * 0.3, phase, angle);
         host.draw_model(draw, COG, 0xFF_FFFF);
         draw.still();
 
@@ -282,7 +283,7 @@ impl Hooks for MechanicalMixer {
             draw.rotate_about([0.0, 1.0, 0.0], angle, CENTRE);
         } else {
             // At rest it turns at half the shaft's speed: 0.6 * rpm / 2 degrees a tick.
-            draw.spin([0.0, 1.0, 0.0], CENTRE, rpm * 0.3, 0.0);
+            crate::draw::spin(draw, [0.0, 1.0, 0.0], rpm * 0.3, 0.0, angle);
         }
         host.draw_model(draw, HEAD, 0xFF_FFFF);
         draw.pop();

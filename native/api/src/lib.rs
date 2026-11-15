@@ -8,7 +8,7 @@
 //!
 //! The blocks of the first slices (the kinetics core, the depot, the belt, the press) are handled
 //! by [`Core`] here. Every later machine is a module of its own under `machines/`, a `Hooks` of
-//! its own; `forward.rs` hands each hook to `Core` and then to every module.
+//! its own. The Ponder viewer is under `ponder/`. `forward.rs` hands each hook to the modules.
 
 mod belt;
 mod depot;
@@ -16,6 +16,7 @@ mod draw;
 mod forward;
 pub(crate) mod kinetic;
 mod machines;
+mod ponder;
 mod press;
 pub(crate) mod recipes;
 pub(crate) mod util;
@@ -39,6 +40,7 @@ use horizon_client::mod_api::{
 pub fn hooks() -> Box<dyn Hooks> {
     let mut modules: Vec<Box<dyn Hooks>> = vec![Box::new(Core)];
     modules.extend(machines::all());
+    modules.push(Box::new(ponder::Ponder::default()));
     Box::new(forward::Create { modules })
 }
 
@@ -159,6 +161,47 @@ struct Core;
 impl Core {
     fn networks(&self) -> MutexGuard<'static, Networks> {
         networks()
+    }
+
+    fn draw_entity(
+        host: &dyn Host,
+        draw: &mut horizon_client::mod_api::BlockEntityDraw,
+        name: &str,
+        pos: [i32; 3],
+        state: BlockStateId,
+        entity: &horizon_client::mod_api::ModBlockEntity,
+    ) {
+        if name == depot::ID {
+            depot::draw(host, draw, entity);
+            return;
+        }
+        if name == belt::ID {
+            let facing = host.block_state_property(state, "facing").and_then(Dir::from_name);
+            let part = host
+                .block_state_property(state, "part")
+                .and_then(create_kinetics::belt::Part::from_name);
+            if let (Some(facing), Some(part)) = (facing, part) {
+                belt::draw(host, draw, facing, part, entity);
+            }
+            return;
+        }
+        let Some(block) = Block::of(name) else {
+            return;
+        };
+        if block == Block::Press {
+            if let Some(facing) = host
+                .block_state_property(state, "facing")
+                .and_then(Dir::from_name)
+            {
+                press::draw(host, draw, facing, &entity.nbt);
+            }
+            return;
+        }
+        let Some(kind) = block.kind(|key| host.block_state_property(state, key)) else {
+            return;
+        };
+        let speed = float(&entity.nbt, SPEED).unwrap_or(0.0);
+        draw::block(host, draw, kind, pos, speed, float(&entity.nbt, ponder::ANGLE));
     }
 }
 
@@ -348,39 +391,7 @@ impl Hooks for Core {
     }
 
     fn block_entity_submit(&self, host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
-        if event.block == depot::ID {
-            depot::draw(host, &mut *event.draw, event.entity);
-            return;
-        }
-        if event.block == belt::ID {
-            let state = event.state;
-            let facing = host.block_state_property(state, "facing").and_then(Dir::from_name);
-            let part = host
-                .block_state_property(state, "part")
-                .and_then(create_kinetics::belt::Part::from_name);
-            if let (Some(facing), Some(part)) = (facing, part) {
-                belt::draw(host, &mut *event.draw, facing, part, event.entity);
-            }
-            return;
-        }
-        let Some(block) = Block::of(event.block) else {
-            return;
-        };
-        let state = event.state;
-        if block == Block::Press {
-            if let Some(facing) = host
-                .block_state_property(state, "facing")
-                .and_then(Dir::from_name)
-            {
-                press::draw(host, &mut *event.draw, facing, &event.entity.nbt);
-            }
-            return;
-        }
-        let Some(kind) = block.kind(|key| host.block_state_property(state, key)) else {
-            return;
-        };
-        let speed = float(&event.entity.nbt, SPEED).unwrap_or(0.0);
-        draw::block(host, &mut *event.draw, kind, event.pos, speed);
+        Self::draw_entity(host, event.draw, event.block, event.pos, event.state, event.entity);
     }
 
     fn state_for_placement(

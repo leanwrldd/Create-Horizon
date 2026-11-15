@@ -138,10 +138,47 @@ Broad gaps across these modules:
 - A mod can't list another block's slots, so chutes and funnels read a container's saved items; the Smart Chute
   and Brass Funnel have no filter slot (sneak-click with an item instead).
 
+### Ponder
+
+Press **K** during gameplay to browse the library. To open a tutorial directly, hover over a supported
+item in the inventory or Creative menu and hold **W**. **Esc** and **E** return to the previous
+screen.
+
+Use **A/D**, the left and right arrows, or the mouse wheel to change scenes. Click a keyframe marker
+to seek, press **S** or **R** to replay, and press **Q** to identify blocks. The lower-right button
+toggles Comfy Reading. **Space** pauses or resumes. Drag to orbit and use **Ctrl+scroll** to zoom.
+
+The original index contains all 169 registered storyboards and 18 Ponder tags from Create 6.0.10.
+The content build reads the original schematics, English captions, models, and Ponder 1.0.82 GUI
+textures from the local Create JAR. In the index, **Horizon tutorials** opens the 12 tutorials
+adapted to the mechanics in this port, and **All scenes** lists every storyboard.
+
+What was checked in game (`create-dev`, native build `9f42064`): the index, a tag page and its
+item grid, opening an original storyboard and a Horizon tutorial, timed captions with their pointer
+lines, blocks sliding in, pause, replay, seeking by keyframe marker, next and previous scene, the
+identify tooltip (Q), the "Up Next" box at the end, and Esc back out to the game. Holding W over an
+item opened its scene from the Creative menu. Not checked in game: orbiting by dragging, Ctrl+scroll
+zoom, Comfy Reading, and the scene slide when changing scenes (the test tool can't drag, hold a
+modifier, or hold W for the game). They are written as the Ponder rules say.
+
+The Rust player handles timed captions, block reveals and replacements, moving sections, camera
+changes, rotation, outlines and lines, item demonstrations, and the Mechanical Press's stroke (the
+head comes down in the mode the storyboard starts, at the press's own speed). Items without a block
+or model in this port, and blocks Create draws with its own renderers that this port doesn't have,
+show as a book icon in the grids and as a translucent gray block in a scene.
+
+What the player does not do yet. `python tools/ponder_storyboards.py` prints the Java operations it
+could not translate; the biggest groups are block entity data changes (water wheel planks, crafter
+and fluid contents), the breaking cracks of the drill and saw scenes, mechanical
+arm, deployer, bearing and pulley movement, train bogeys and stations, parrots and minecarts,
+particles, funnel flaps, and belt items that are removed again. A scene using those plays without
+that part. The hint boxes (`showControls`) draw only a small gold cross, not Create's mouse and
+item icons.
+
 ### Not done, and known differences from Create
 
 - Tunnels, deployers, the mechanical crafter, open pipe ends and valves,
-  contraptions, trains, logistics, schematics and Ponder.
+  contraptions, trains, logistics and schematics.
 - The Creative Motor's speed is set with the Wrench, not Create's scroll-value box.
 - A network only includes loaded, ticking blocks: the part of a line in an unloaded chunk drops out.
 - A speed change takes one tick to reach each block, and is not eased.
@@ -158,9 +195,12 @@ native/
   horizon-mixin.toml  the native bundle
   kinetics/           create-kinetics: the rotation rules, no game dependency, unit-tested
   api/                the hooks that put create-kinetics in the game
+    src/ponder/       Ponder's library, storyboard playback, and client hooks
 tools/
   gen_content.py      writes Horizon declarations and item definitions
   build_content.py    imports Create artwork from a local JAR and builds create.hmod
+  ponder_storyboards.py  regenerates the Ponder instructions from Create 6.0.10 source
+  ponder_assets.py    packages Create's schematics, captions and Ponder textures from the local JAR
   check_native.sh     type-checks native/ against a local Horizon checkout
 ```
 

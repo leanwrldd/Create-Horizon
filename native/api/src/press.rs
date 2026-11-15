@@ -593,12 +593,17 @@ fn recipe_for(host: &dyn Host, stack: &ItemStack) -> Option<Vec<Output>> {
 pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, nbt: &Compound) {
     let rpm = float(nbt, crate::SPEED).unwrap_or(0.0);
     let axis = facing.axis();
-    draw.spin(axis.unit(), CENTRE, rpm * 0.3, 0.0);
+    crate::draw::spin(draw, axis.unit(), rpm * 0.3, 0.0, float(nbt, crate::ponder::ANGLE));
     host.draw_block(draw, "create:shaft", &[("axis", axis.name())]);
     draw.still();
 
     let state = read(nbt);
-    let offset = if state.running {
+    let scene = float(nbt, crate::ponder::PRESS_PROGRESS);
+    let offset = if let Some(progress) = scene {
+        // A Ponder scene says how far into the stroke the head is, and in which mode.
+        let mode = press::Mode::from_id(int(nbt, crate::ponder::PRESS_MODE));
+        press::head_offset(true, progress * press::CYCLE as f32) * mode.head_travel()
+    } else if state.running {
         let now = draw.game_time as f64 + f64::from(draw.partial);
         let ticks = press::client_ticks(state.ticks, long(nbt, SINCE), now, rpm);
         // `getRenderedHeadOffset(partialTicks) * mode.headOffset`.
@@ -620,7 +625,7 @@ pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, nbt: &Comp
     host.draw_model(draw, HEAD, 0xFF_FFFF);
     draw.pop();
     // A head in motion is drawn each frame; one at rest is kept with the turning shaft.
-    if !state.running {
+    if !state.running && scene.is_none() {
         draw.keep();
     }
 }

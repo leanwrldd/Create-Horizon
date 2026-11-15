@@ -1,4 +1,4 @@
-# The Horizon hooks that reach the machine modules (native/api/src/machines/), one per line.
+# The Horizon hooks that reach Create's modules, one per line.
 # `python tools/gen_forward.py` rewrites native/api/src/forward.rs from this list and the
 # generated API (run the skill's apigen into target/apigen first). Add a hook here when a module
 # needs one that isn't listed; keep to hooks a block or item mod needs.
@@ -47,3 +47,13 @@ custom_block_fluids
 custom_fluid_tanks
 custom_fluid_fill
 custom_fluid_drain
+key
+tooltip_render_pre
+screen_render_post
+screen_closing
+screen_key_pressed_pre
+screen_char_typed_pre
+screen_mouse_button_pressed_pre
+screen_mouse_button_released_pre
+screen_mouse_scrolled_pre
+client_tick_post

@@ -197,6 +197,29 @@ pub fn head_offset(running: bool, ticks: f32) -> f32 {
     ((cycle - ticks) / cycle * 3.0).clamp(0.0, 1.0)
 }
 
+/// The progress of a press in a Ponder scene `elapsed` ticks after `start(...)`
+/// (`PressingBehaviour.tick`). A scene's world is virtual, so the client's wait at the item for the
+/// server's packet (`runningTicks = -CYCLE / 2`) doesn't happen: the head runs on through the
+/// half-way tick, which only holds the count at [`HALF`] for that tick. Fractional `elapsed` is
+/// the partial tick (`Mth.lerp(partialTicks, prevRunningTicks, runningTicks)`).
+pub fn virtual_ticks(rpm: f32, elapsed: f32) -> f32 {
+    let speed = progress_per_tick(rpm);
+    let whole = elapsed.max(0.0).floor() as i32;
+    let (mut previous, mut ticks) = (0, 0);
+    for _ in 0..whole {
+        if ticks > CYCLE {
+            // The head is back up for good: it reads 0 from here on, whatever the count.
+            return ticks as f32;
+        }
+        previous = ticks;
+        ticks += speed;
+        if previous < HALF && ticks >= HALF {
+            ticks = HALF;
+        }
+    }
+    previous as f32 + (ticks - previous) as f32 * (elapsed.max(0.0) - whole as f32)
+}
+
 /// The progress a client draws, from the last progress the server sent (`synced`, at game time
 /// `since`) and the speed then: it runs on at the press's pace but waits at the item until the
 /// server says it pressed, as Create's client pauses for the packet.
@@ -440,6 +463,23 @@ mod tests {
         let solution = solve(&two);
         assert!(solution.networks[0].overstressed);
         assert_eq!(solution.speeds[&[1, 0, 0]], 0.0);
+    }
+
+    #[test]
+    fn a_scene_press_runs_on_through_the_half_way_tick() {
+        // 32 RPM is 4 a tick: 30 ticks to HALF, then on to the cycle's end.
+        assert_eq!(progress_per_tick(32.0), 4);
+        assert_eq!(virtual_ticks(32.0, 0.0), 0.0);
+        // A frame shows the blend of the last two ticks, as Create's partial tick does.
+        assert_eq!(virtual_ticks(32.0, 10.0), 36.0);
+        assert_eq!(virtual_ticks(32.0, 10.5), 38.0);
+        assert_eq!(virtual_ticks(32.0, 30.0), (HALF - 4) as f32);
+        assert_eq!(virtual_ticks(32.0, 31.0), HALF as f32);
+        assert_eq!(virtual_ticks(32.0, 31.5), 122.0);
+        // Over the end the head is up (offset 0) and stays so.
+        assert_eq!(head_offset(true, virtual_ticks(32.0, 200.0)), 0.0);
+        // A press that doesn't turn never moves.
+        assert_eq!(virtual_ticks(0.0, 50.0), 0.0);
     }
 
     #[test]

@@ -76,8 +76,23 @@ poured water or filled twice, the saw had no log recipes (Create writes its wood
 recipes at load time, `RuntimeDataGenerator`; now baked in), and the package now carries Create's sounds.
 **Wave 3 has not been tried in game.** Each module file lists its known differences.
 
+**Ponder (2026-11-15, tested in game):** Rust client-side library with the 169 registered Create 6.0.10
+storyboards and 18 tags, plus 12 tutorials adapted to Horizon. K opens the index; holding W over a supported
+item opens its scenes (a person did this at the keyboard; the MCP tool can't hold W for the game). The index,
+tag pages, an original scene, a Horizon tutorial, captions, pause, replay, keyframe seek, next scene, identify
+and Esc all worked in `create-dev`. Not tried in game: orbit drag, Ctrl+scroll zoom, Comfy Reading and the slide
+between scenes (the test tool can't drag or hold a modifier). Found and fixed on the test: the checked-in
+`tools/ponder_storyboards.json` was older than `ponder_storyboards.py` (no tag main items, no slide-in
+directions): regenerate it with the `mc1.21.1-6.0.10` source tag and `tree-sitter`, `tree-sitter-java` in a
+venv; the 12 tutorials were drawn about twice as large as the original scenes and ran off the screen.
+Added: the Mechanical Press's stroke in original scenes (`pte.getPressingBehaviour().start(Mode.X)`, run at the
+press's speed with `press::virtual_ticks`) and 3-number `inflate`/`deflate` boxes, which brought 100 more
+outlines through. Still missing: see the README's Ponder section (block entity data changes, break cracks,
+arm, deployer, bearing and pulley movement, trains, parrots, particles, funnel flaps, Create's hint-box art).
+Build the content pack as usual to package the original schematics and captions locally.
+
 **Not started:** tunnels, deployer, crafter, sloped belts, contraptions, trains, the rest of logistics,
-schematics, goggles, Ponder.
+schematics and goggles.
 
 **Agent waves:** the user wants at most 3 subagents at a time; after each wave, build, redraw the progress
 (`python tools/progress.py`), commit and push.

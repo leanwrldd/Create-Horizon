@@ -319,9 +319,12 @@ impl Hooks for BlazeBurner {
             .and_then(Dir::from_name)
             .unwrap_or(Dir::South);
         let [x, y, z] = event.pos;
-        let above = host.block([x, y + 1, z]) == super::basin::ID;
         let draw = &mut *event.draw;
-        let time = draw.game_time as f32 + draw.partial;
+        let (time, above) = if let Some(tick) = crate::float(&event.entity.nbt, crate::ponder::TICK) {
+            (tick, util::boolean(&event.entity.nbt, crate::ponder::BASIN_ABOVE))
+        } else {
+            (draw.game_time as f32 + draw.partial, host.block([x, y + 1, z]) == super::basin::ID)
+        };
         // `headAnimation * .175`: the head lifts when a basin is above a burner that heats it.
         let animation = if above && heat.is_at_least(HeatLevel::Fading) { 0.175 } else { 0.0 };
         let block_above = animation > 0.125;

@@ -1097,7 +1097,7 @@ pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, part: Part
     }
     if part.has_pulley() {
         let axis = rotation_axis(facing);
-        draw.spin(axis.unit(), CENTRE, rpm * 0.3, 0.0);
+        crate::draw::spin(draw, axis.unit(), rpm * 0.3, 0.0, float(&entity.nbt, crate::ponder::ANGLE));
         draw.push();
         if axis == Axis::X {
             draw.rotate_about(UP, 90.0, CENTRE);

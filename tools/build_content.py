@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from zipfile import ZipFile
 
 from gen_content import ROOT, generate, write
+from ponder_assets import import_ponder
 
 
 CREATE_SHA256 = "ef87fe5709f1ba1f5b8bb20a2925b5afb4669e178fd6d8bf10c167759eefe37a"
@@ -57,7 +58,7 @@ def fit_blockstate(state, declared):
     return {"variants": out}
 
 
-def import_assets(jar: ZipFile, content: Path, c):
+def import_assets(jar: ZipFile, content: Path, c, ponder_models=()):
     """Copies what the declarations in `c` (gen_content.collect) draw with from Create's jar."""
     entries = set(jar.namelist())
 
@@ -72,7 +73,7 @@ def import_assets(jar: ZipFile, content: Path, c):
 
     models = {"block/shaft_half", "block/hand_crank/handle", "block/water_wheel/wheel",
               "block/mechanical_press/head", *BELT_MODELS,
-              *(name.removeprefix("create:") for name in c.models)}
+              *(name.removeprefix("create:") for name in c.models), *ponder_models}
     for path in (content / PREFIX / "items").glob("*.json"):
         find_models(json.loads(path.read_text(encoding="utf-8")), models)
     for name, declaration in c.blocks.items():
@@ -191,7 +192,8 @@ def main():
                 shutil.copy2(ROOT / "horizon-mod.toml", content)
                 shutil.copytree(generated / "assets", content / "assets")
                 shutil.copytree(generated / "data", content / "data")
-                import_assets(jar, content, collected)
+                models = import_ponder(jar, content)
+                import_assets(jar, content, collected, models)
                 subprocess.run([str(Path(tool).resolve()), "horizon-mod", "build"],
                                cwd=content, check=True)
                 (content / "target" / "horizon-mod" / "create.hmod").replace(output)

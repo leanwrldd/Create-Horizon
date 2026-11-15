@@ -11,3 +11,4 @@ publish = false
 horizon-client = { git = "https://github.com/horizon-rust/horizon" }
 # The bundle's own `[[crate]]` (horizon-mixin.toml).
 create-kinetics = { path = "../kinetics" }
+serde = { version = "1", features = ["derive"] }
