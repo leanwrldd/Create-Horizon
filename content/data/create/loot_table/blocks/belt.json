@@ -1,0 +1,45 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "create:belt_connector"
+        }
+      ],
+      "condition": {
+        "type": "minecraft:survives_explosion"
+      }
+    },
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "create:shaft"
+        }
+      ],
+      "condition": {
+        "type": "minecraft:all_of",
+        "terms": [
+          {
+            "type": "minecraft:survives_explosion"
+          },
+          {
+            "type": "minecraft:inverted",
+            "term": {
+              "type": "minecraft:block_state_property",
+              "block": "create:belt",
+              "properties": {
+                "part": "middle"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "random_sequence": "create:blocks/belt"
+}

@@ -1,0 +1,45 @@
+# The Horizon hooks that reach the machine modules (native/api/src/machines/), one per line.
+# `python tools/gen_forward.py` rewrites native/api/src/forward.rs from this list and the
+# generated API (run the skill's apigen into target/apigen first). Add a hook here when a module
+# needs one that isn't listed; keep to hooks a block or item mod needs.
+standalone_models
+block_entity
+block_entity_ticks
+block_entity_tick
+block_entity_update_tag
+block_entity_submit
+block_entity_render_bounding_box
+block_entity_container
+block_entity_fluids
+block_entity_accepts_fluid
+container_accepts
+destroy_block
+place_block
+right_click_block
+left_click_block
+use_item_on
+use_item
+interact_entity
+state_for_placement
+can_survive
+update_shape
+neighbor_changed
+block_changed
+tick_block
+block_signal
+is_signal_source
+has_analog_output
+analog_output
+block_entity_inside
+block_step_on
+server_tick
+level_tick_post
+player_tick
+inventory_tick
+tooltip
+hud
+menu_clicked
+menu_closed
+item_model_property
+loot_drops
+net_from_server

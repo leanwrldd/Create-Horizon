@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "CCC",
+    "CCC",
+    "CCC"
+  ],
+  "key": {
+    "C": "create:raw_zinc"
+  },
+  "result": {
+    "id": "create:raw_zinc_block"
+  }
+}

@@ -15,7 +15,7 @@ use create_kinetics::{Axis, Dir, looking};
 use horizon_client::item_data::{decode_components, encode_components};
 use horizon_client::mod_api::{
     BlockEntityDraw, Compound, DisplayContext, EquipmentSlot, Flow, Host, ItemStack,
-    ModBlockEntity, ModContainer, NativeInventoryKind, Tag,
+    ModBlockEntity, ModContainer, NativeInventoryKind, NativeServerPlayer, Tag,
 };
 
 use crate::{float, int, set_float};
@@ -281,15 +281,7 @@ pub fn right_click(host: &mut dyn Host, pos: [i32; 3], face: [i32; 3]) -> Flow {
     if main.is_some()
         && let Some(stack) = host.player_equipment(uuid, EquipmentSlot::MainHand)
         && &*stack.item != MECHANICAL_ARM
-        && host
-            .set_inventory_slot_typed(
-                uuid,
-                NativeInventoryKind::Player,
-                usize::from(player.selected_slot),
-                Some(&stack),
-                None,
-            )
-            .is_ok()
+        && empty_main_hand(host, &player, &stack)
     {
         // `player.getDirection()`, starting a quarter of the way in.
         let transport = Transport::new((random() % 360) as i32, looking(player.yaw, 0.0), 0.25);
@@ -314,6 +306,49 @@ pub fn right_click(host: &mut dyn Host, pos: [i32; 3], face: [i32; 3]) -> Flow {
     }
     host.block_entity_sync(pos);
     Flow::Cancel
+}
+
+/// `player.setItemInHand(hand, ItemStack.EMPTY)`; false when the hand could not be emptied,
+/// and then nothing may go down. Inside the player's own hook (a right-click is one) the
+/// `native_inventory` calls always refuse (`InsidePlayerTurn`), and in a single-player click
+/// the acting player isn't found as an entity either, so a `LivingRef` can't be had there.
+/// What works there is `take_items` on the acting player, for plain stacks only (no
+/// components; a damaged tool may not count). The `LivingRef` path is kept for where the
+/// lookup succeeds, and outside a player's turn the slot is set by number, only if it still
+/// holds `stack`. A stack none of these can take stays in the hand.
+fn empty_main_hand(host: &mut dyn Host, player: &NativeServerPlayer, stack: &ItemStack) -> bool {
+    let living = u32::try_from(player.entity_id)
+        .ok()
+        .filter(|id| *id != 0)
+        .and_then(|id| host.entity(id))
+        .and_then(|entity| host.living(entity));
+    if let Some(living) = living
+        && host.living_set_equipment(living, EquipmentSlot::MainHand, None)
+    {
+        return true;
+    }
+    // In a single-player world's click the lookup above finds no entity (tested in game:
+    // `entity(1)` gives None), but `take_items` edits the acting player's own inventory,
+    // main hand first. It only takes plain stacks (no components), whole or not at all here.
+    if stack.extra.is_none() {
+        let taken = host.take_items(&stack.item, stack.count);
+        if taken == stack.count {
+            return true;
+        }
+        if taken > 0 {
+            // Partly taken: give it back rather than lose it, and put nothing down.
+            host.give_items(&stack.item, taken);
+            return false;
+        }
+    }
+    host.set_inventory_slot_typed(
+        player.uuid,
+        NativeInventoryKind::Player,
+        usize::from(player.selected_slot),
+        Some(stack),
+        None,
+    )
+    .is_ok()
 }
 
 /// `java.util.Random`, for the scatter of a block item's copies (`DepotRenderer` seeds it with 0).

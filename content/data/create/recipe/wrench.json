@@ -7,9 +7,9 @@
     " S"
   ],
   "key": {
-    "G": "minecraft:gold_ingot",
+    "G": "#c:plates/gold",
     "C": "create:cogwheel",
-    "S": "minecraft:stick"
+    "S": "#c:rods/wooden"
   },
   "result": {
     "id": "create:wrench"

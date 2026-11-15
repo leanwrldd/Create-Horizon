@@ -5,12 +5,23 @@
 //! server tick whenever a block appeared, changed or went away. Clients get the speed in the
 //! block entity's update tag and draw the block turning.
 
+//!
+//! The blocks of the first slices (the kinetics core, the depot, the belt, the press) are handled
+//! by [`Core`] here. Every later machine is a module of its own under `machines/`, a `Hooks` of
+//! its own; `forward.rs` hands each hook to `Core` and then to every module.
+
+mod belt;
 mod depot;
 mod draw;
+mod forward;
+pub(crate) mod kinetic;
+mod machines;
 mod press;
+pub(crate) mod recipes;
+pub(crate) mod util;
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use create_kinetics::generators::{
     CRANK_CAPACITY, CRANK_EXHAUSTION, CRANK_TICKS, WHEEL_CAPACITY, crank_speed, preferred_shaft,
@@ -18,7 +29,7 @@ use create_kinetics::generators::{
 };
 use create_kinetics::{Axis, Dir, Kind, Networks, Node, looking};
 use horizon_client::mod_api::{
-    BlockEntityContainerEvent, BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
+    BlockEntityContainerEvent, BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, DestroyBlockEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
     BlockEntityTicksEvent, BlockEntityUpdateTagEvent, BlockStateId, Compound, Direction,
     EquipmentSlot, Flow, Hooks, Host, LevelHost, ModContainer, PlaceBlockEvent,
     RightClickBlockEvent, ServerTickEvent, ServerTickPhase, StandaloneModelsEvent,
@@ -26,7 +37,19 @@ use horizon_client::mod_api::{
 };
 
 pub fn hooks() -> Box<dyn Hooks> {
-    Box::new(Create::default())
+    let mut modules: Vec<Box<dyn Hooks>> = vec![Box::new(Core)];
+    modules.extend(machines::all());
+    Box::new(forward::Create { modules })
+}
+
+/// Every kinetic block the server ticks, whichever module it belongs to.
+static NETWORKS: LazyLock<Mutex<Networks>> = LazyLock::new(Mutex::default);
+
+/// The table, never held across a call into the game: a block breaking runs hooks again.
+pub(crate) fn networks() -> MutexGuard<'static, Networks> {
+    NETWORKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The block entity's speed in RPM, saved and sent to clients.
@@ -129,24 +152,21 @@ fn dir(direction: Direction) -> Dir {
     }
 }
 
-#[derive(Default)]
-struct Create {
-    networks: Mutex<Networks>,
-}
+/// The first slices: shafts, cogwheels, the gearbox, the generators, the depot, the belt and the
+/// press.
+struct Core;
 
-impl Create {
-    /// The table, never held across a call into the game: a block breaking runs hooks again.
-    fn networks(&self) -> std::sync::MutexGuard<'_, Networks> {
-        self.networks
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+impl Core {
+    fn networks(&self) -> MutexGuard<'static, Networks> {
+        networks()
     }
 }
 
-impl Hooks for Create {
+impl Hooks for Core {
     fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
         event.models.extend(draw::MODELS.map(str::to_owned));
         event.models.extend(press::MODELS.map(str::to_owned));
+        event.models.extend(belt::MODELS.map(str::to_owned));
     }
 
     fn block_entity(
@@ -156,6 +176,9 @@ impl Hooks for Create {
     ) -> Option<(String, Compound)> {
         if event.block == depot::ID {
             return Some((depot::ID.to_owned(), Compound::new()));
+        }
+        if event.block == belt::ID {
+            return Some(belt::new_entity());
         }
         let block = Block::of(event.block)?;
         let mut nbt = Compound::new();
@@ -173,9 +196,29 @@ impl Hooks for Create {
     }
 
     fn block_entity_ticks(&self, _: &dyn Host, event: &mut BlockEntityTicksEvent<'_>) {
-        if Block::of(event.block).is_some() || event.block == depot::ID {
+        if Block::of(event.block).is_some() || event.block == depot::ID || event.block == belt::ID {
             event.ticks = true;
         }
+    }
+
+    fn block_entity_render_bounding_box(
+        &self,
+        host: &dyn Host,
+        event: &mut BlockEntityRenderBoundingBoxEvent<'_>,
+    ) {
+        if event.block == belt::ID
+            && let Some(facing) = host
+                .block_state_property(event.state, "facing")
+                .and_then(Dir::from_name)
+        {
+            belt::bounds(facing, event.entity, event.bounds);
+        }
+    }
+
+    /// A player breaking a belt block: its items drop first (`BeltBlock.spawnAfterBreak`).
+    fn destroy_block(&self, host: &mut dyn Host, event: &mut DestroyBlockEvent) -> Flow {
+        belt::destroyed(host, event.pos);
+        Flow::Continue
     }
 
     fn block_entity_container(
@@ -198,6 +241,10 @@ impl Hooks for Create {
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         if event.entity.id == depot::ID {
             depot::tick(host, event.pos, event.entity);
+            return;
+        }
+        if event.entity.id == belt::ID {
+            belt::tick(host, event.pos, event.entity, &NETWORKS);
             return;
         }
         let Some(block) = Block::of(&event.entity.id) else {
@@ -279,6 +326,9 @@ impl Hooks for Create {
         if event.entity.id == depot::ID {
             return Some(depot::update_tag(event.entity));
         }
+        if event.entity.id == belt::ID {
+            return Some(belt::update_tag(event.entity));
+        }
         let block = Block::of(&event.entity.id)?;
         let mut tag = Compound::new();
         set_float(
@@ -295,6 +345,17 @@ impl Hooks for Create {
     fn block_entity_submit(&self, host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
         if event.block == depot::ID {
             depot::draw(host, &mut *event.draw, event.entity);
+            return;
+        }
+        if event.block == belt::ID {
+            let state = event.state;
+            let facing = host.block_state_property(state, "facing").and_then(Dir::from_name);
+            let part = host
+                .block_state_property(state, "part")
+                .and_then(create_kinetics::belt::Part::from_name);
+            if let (Some(facing), Some(part)) = (facing, part) {
+                belt::draw(host, &mut *event.draw, facing, part, event.entity);
+            }
             return;
         }
         let Some(block) = Block::of(event.block) else {
@@ -390,6 +451,9 @@ impl Hooks for Create {
         if let Flow::Cancel = depot::right_click(host, event.pos, event.face) {
             return Flow::Cancel;
         }
+        if let Flow::Cancel = belt::right_click(host, event.pos) {
+            return Flow::Cancel;
+        }
         let pos = event.pos;
         if Block::of(&host.block(pos)) != Some(Block::HandCrank) {
             return Flow::Continue;
@@ -435,6 +499,9 @@ impl Hooks for Create {
 
     /// The wrench picks blocks up while sneaking and adjusts them otherwise.
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
+        if &*event.stack.item == belt::CONNECTOR {
+            return belt::use_connector(host, event.pos);
+        }
         if &*event.stack.item != WRENCH {
             return Flow::Continue;
         }

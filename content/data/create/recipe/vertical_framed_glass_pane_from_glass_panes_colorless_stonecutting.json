@@ -1,0 +1,7 @@
+{
+  "type": "minecraft:stonecutting",
+  "ingredient": "#c:glass_panes/colorless",
+  "result": {
+    "id": "create:vertical_framed_glass_pane"
+  }
+}

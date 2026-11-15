@@ -1,0 +1,7 @@
+{
+  "type": "minecraft:stonecutting",
+  "ingredient": "create:waxed_exposed_copper_shingles",
+  "result": {
+    "id": "create:waxed_exposed_copper_shingle_stairs"
+  }
+}

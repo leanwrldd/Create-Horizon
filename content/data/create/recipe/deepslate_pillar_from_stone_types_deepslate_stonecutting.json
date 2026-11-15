@@ -1,0 +1,7 @@
+{
+  "type": "minecraft:stonecutting",
+  "ingredient": "#create:stone_types/deepslate",
+  "result": {
+    "id": "create:deepslate_pillar"
+  }
+}

@@ -8,7 +8,7 @@
   ],
   "key": {
     "C": "create:cogwheel",
-    "A": "create:andesite_alloy"
+    "A": "create:andesite_casing"
   },
   "result": {
     "id": "create:gearbox"

@@ -1,0 +1,11 @@
+{
+  "template": "minecraft:deepslate_gold_ore",
+  "item": true,
+  "properties": {
+    "hardness": 4.5,
+    "explosion_resistance": 3.0,
+    "requires_tool": true,
+    "map_color": 11,
+    "sounds": "minecraft:deepslate"
+  }
+}

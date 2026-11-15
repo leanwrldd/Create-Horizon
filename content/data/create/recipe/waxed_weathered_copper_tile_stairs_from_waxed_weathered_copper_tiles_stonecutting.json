@@ -1,0 +1,7 @@
+{
+  "type": "minecraft:stonecutting",
+  "ingredient": "create:waxed_weathered_copper_tiles",
+  "result": {
+    "id": "create:waxed_weathered_copper_tile_stairs"
+  }
+}

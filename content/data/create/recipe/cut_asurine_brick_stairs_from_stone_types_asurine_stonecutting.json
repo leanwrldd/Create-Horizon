@@ -1,0 +1,7 @@
+{
+  "type": "minecraft:stonecutting",
+  "ingredient": "#create:stone_types/asurine",
+  "result": {
+    "id": "create:cut_asurine_brick_stairs"
+  }
+}

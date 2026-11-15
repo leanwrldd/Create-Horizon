@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:smelting",
+  "category": "misc",
+  "ingredient": "#c:ores/zinc",
+  "experience": 1.0,
+  "cookingtime": 200,
+  "result": {
+    "id": "create:zinc_ingot"
+  }
+}

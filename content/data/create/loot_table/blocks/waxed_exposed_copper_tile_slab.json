@@ -1,0 +1,31 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "create:waxed_exposed_copper_tile_slab",
+          "modifier": [
+            {
+              "type": "minecraft:set_count",
+              "count": 2,
+              "condition": {
+                "type": "minecraft:match_block",
+                "blocks": "create:waxed_exposed_copper_tile_slab",
+                "state": {
+                  "type": "double"
+                }
+              }
+            },
+            {
+              "type": "minecraft:explosion_decay"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "random_sequence": "create:blocks/waxed_exposed_copper_tile_slab"
+}

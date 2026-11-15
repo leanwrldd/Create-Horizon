@@ -1,0 +1,20 @@
+{
+  "template": "minecraft:iron_nugget",
+  "max_stack_size": 64,
+  "rarity": "epic",
+  "components": {
+    "minecraft:cooking_fuel": {
+      "burn_time": {
+        "type": "minecraft:div",
+        "left": 2147483647,
+        "right": {
+          "type": "minecraft:conditional",
+          "condition": "minecraft:block/fast_cooking",
+          "on_false": "minecraft:cooking/normal_burn_time_reduction_factor",
+          "on_true": "minecraft:cooking/fast_burn_time_reduction_factor"
+        }
+      },
+      "speed_multiplier": "minecraft:cooking/speed_default"
+    }
+  }
+}

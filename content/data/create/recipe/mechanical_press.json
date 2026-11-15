@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "S",
+    "C",
+    "I"
+  ],
+  "key": {
+    "S": "create:shaft",
+    "C": "create:andesite_casing",
+    "I": "#c:storage_blocks/iron"
+  },
+  "result": {
+    "id": "create:mechanical_press"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "building",
+  "ingredients": [
+    "create:exposed_copper_tile_slab",
+    "minecraft:honeycomb"
+  ],
+  "result": {
+    "id": "create:waxed_exposed_copper_tile_slab"
+  }
+}

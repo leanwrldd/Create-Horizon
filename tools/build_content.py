@@ -9,15 +9,61 @@ import subprocess
 from tempfile import TemporaryDirectory
 from zipfile import ZipFile
 
-from gen_content import BLOCKS, ITEMS, ROOT, main as generate, write
+from gen_content import ROOT, generate, write
 
 
 CREATE_SHA256 = "ef87fe5709f1ba1f5b8bb20a2925b5afb4669e178fd6d8bf10c167759eefe37a"
 PREFIX = "assets/create/"
+# What the belt's block entity draws (`BeltRenderer`, `AllPartialModels.BELT_*`).
+BELT_MODELS = [f"block/belt/{part}{half}" for part in ("start", "middle", "end")
+               for half in ("", "_bottom")] + ["block/belt_pulley"]
 
 
-def import_assets(jar: ZipFile, content: Path):
+def find_models(value, found):
+    """Every `create:` model a blockstate or item definition names."""
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            if key == "model" and isinstance(inner, str):
+                if inner.startswith("create:"):
+                    found.add(inner.removeprefix("create:"))
+            else:
+                find_models(inner, found)
+    elif isinstance(value, list):
+        for inner in value:
+            find_models(inner, found)
+
+
+def fit_blockstate(state, declared):
+    """Create's blockstate file for a block declared here with only the `declared` state
+    properties: variants are kept where every other property (`waterlogged`, `powered`...) is
+    `false` or, for one that is never `false`, its first value, and those properties are dropped
+    from the keys. A multipart file is passed on as it is."""
+    variants = state.get("variants")
+    if variants is None:
+        return state
+    seen = {}
+    for key in variants:
+        for pair in filter(None, key.split(",")):
+            name, _, value = pair.partition("=")
+            seen.setdefault(name, []).append(value)
+    resting = {name: "false" if "false" in values else values[0]
+               for name, values in seen.items() if name not in declared}
+    out = {}
+    for key, value in variants.items():
+        pairs = [pair.partition("=") for pair in filter(None, key.split(","))]
+        if any(resting.get(name, v) != v for name, _, v in pairs):
+            continue
+        out[",".join(f"{name}={v}" for name, _, v in pairs if name in declared)] = value
+    return {"variants": out}
+
+
+def import_assets(jar: ZipFile, content: Path, c):
+    """Copies what the declarations in `c` (gen_content.collect) draw with from Create's jar."""
+    entries = set(jar.namelist())
+
     def copy(name):
+        if PREFIX + name not in entries:
+            raise SystemExit(f"Create's jar has no {PREFIX}{name}")
         data = jar.read(PREFIX + name)
         path = content / PREFIX / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -25,19 +71,45 @@ def import_assets(jar: ZipFile, content: Path):
         return data
 
     models = {"block/shaft_half", "block/hand_crank/handle", "block/water_wheel/wheel",
-              "item/wrench/gear", *(f"item/{name}" for name in [*BLOCKS, *ITEMS])}
-    for name in BLOCKS:
+              "block/mechanical_press/head", *BELT_MODELS,
+              *(name.removeprefix("create:") for name in c.models)}
+    for path in (content / PREFIX / "items").glob("*.json"):
+        find_models(json.loads(path.read_text(encoding="utf-8")), models)
+    for name, declaration in c.blocks.items():
         path = f"blockstates/{name}.json"
-        variants = json.loads(copy(path))["variants"]
-        if name == "hand_crank":
-            variants = {key.split(",")[0]: value for key, value in variants.items()
-                        if key.endswith("waterlogged=false")}
-            write(content / PREFIX / path, {"variants": variants})
+        if name in c.blockstates:
+            # A plugin's own mapping: a blockstate file, or a function of Create's (None if
+            # Create has none) that answers one.
+            custom = c.blockstates[name]
+            if callable(custom):
+                custom = custom(json.loads(jar.read(PREFIX + path)) if PREFIX + path in entries
+                                else None)
+            write(content / PREFIX / path, custom)
+            find_models(custom, models)
+            continue
+        state = json.loads(copy(path))
+        if name == "belt":
+            # Every state draws the empty particle model; the block entity draws the belt.
+            variants = state["variants"]
+            state = {"variants": {key.replace(",waterlogged=false", ""): value
+                                  for key, value in variants.items()
+                                  if key.endswith("waterlogged=false")}}
+        elif name == "hand_crank":
+            variants = state["variants"]
+            state = {"variants": {key.split(",")[0]: value for key, value in variants.items()
+                                  if key.endswith("waterlogged=false")}}
         elif name == "water_wheel":
-            variants = {f"axis={axis}": variants[f"facing={face}"]
-                        for axis, face in {"x": "east", "y": "up", "z": "south"}.items()}
-            write(content / PREFIX / path, {"variants": variants})
-        models.update(value["model"].removeprefix("create:") for value in variants.values())
+            variants = state["variants"]
+            state = {"variants": {f"axis={axis}": variants[f"facing={face}"]
+                                  for axis, face in {"x": "east", "y": "up", "z": "south"}.items()}}
+        elif name not in c.base_blocks and declaration.get("template") == "minecraft:glass":
+            # A `block()` declaration has only the states it declares. A block on any other
+            # template (a door, a slab, a ladder) has its template's states, as Create's has.
+            state = fit_blockstate(state, set(declaration.get("state_properties", {})))
+            write(content / PREFIX / path, state)
+        if name in ("belt", "hand_crank", "water_wheel"):
+            write(content / PREFIX / path, state)
+        find_models(state, models)
 
     copied = set()
     textures = set()
@@ -55,9 +127,11 @@ def import_assets(jar: ZipFile, content: Path):
         parent = model.get("parent", "")
         if parent.startswith("create:"):
             models.add(parent.removeprefix("create:"))
+        # An item model's overrides name models too.
+        find_models(model.get("overrides", []), models)
         textures.update(
             sprite.removeprefix("create:") for sprite in model.get("textures", {}).values()
-            if sprite.startswith("create:")
+            if isinstance(sprite, str) and sprite.startswith("create:")
         )
 
     # Create draws a placed wheel in its material, spruce until changed, by swapping the oak
@@ -68,7 +142,6 @@ def import_assets(jar: ZipFile, content: Path):
     model["textures"] = {"log": "block/spruce_log", "planks": "block/spruce_planks"}
     write(wheel, model)
 
-    entries = set(jar.namelist())
     for sprite in sorted(textures):
         name = f"textures/{sprite}.png"
         copy(name)
@@ -80,6 +153,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("create_jar", type=Path, help="Create 6.0.10 for Minecraft 1.21.1 (NeoForge)")
     parser.add_argument("--tool", type=Path, help="path to cargo-horizon-mod")
+    parser.add_argument("--owner", help="build a private package under target/content-check-<owner>/ "
+                        "without the plugins other owners are still writing (tools/wip.txt); "
+                        "content/ is left alone")
     args = parser.parse_args()
     bundled = ROOT.parent / "target" / "horizon-tools" / "debug" / "cargo-horizon-mod.exe"
     tool = args.tool or (bundled if bundled.is_file() else shutil.which("cargo-horizon-mod"))
@@ -90,15 +166,22 @@ def main():
         with args.create_jar.open("rb") as source:
             if hashlib.file_digest(source, "sha256").hexdigest() != CREATE_SHA256:
                 parser.error("Expected the original Create 6.0.10 for Minecraft 1.21.1 (NeoForge) JAR.")
-            output = ROOT / "target" / "horizon-mod" / "create.hmod"
+            if args.owner:
+                private = ROOT.parent / "target" / f"content-check-{args.owner}"
+                generated = private / "content"
+                shutil.rmtree(generated, ignore_errors=True)
+                output = private / "create.hmod"
+            else:
+                generated = ROOT
+                output = ROOT / "target" / "horizon-mod" / "create.hmod"
             output.parent.mkdir(parents=True, exist_ok=True)
-            generate()
+            collected = generate(generated, args.owner)
             with ZipFile(source) as jar, TemporaryDirectory(dir=output.parent) as staging:
                 content = Path(staging)
                 shutil.copy2(ROOT / "horizon-mod.toml", content)
-                shutil.copytree(ROOT / "assets", content / "assets")
-                shutil.copytree(ROOT / "data", content / "data")
-                import_assets(jar, content)
+                shutil.copytree(generated / "assets", content / "assets")
+                shutil.copytree(generated / "data", content / "data")
+                import_assets(jar, content, collected)
                 subprocess.run([str(Path(tool).resolve()), "horizon-mod", "build"],
                                cwd=content, check=True)
                 (content / "target" / "horizon-mod" / "create.hmod").replace(output)

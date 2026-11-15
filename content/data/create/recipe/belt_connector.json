@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "DDD",
+    "DDD"
+  ],
+  "key": {
+    "D": "minecraft:dried_kelp"
+  },
+  "result": {
+    "id": "create:belt_connector"
+  }
+}

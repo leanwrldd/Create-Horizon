@@ -1,0 +1,38 @@
+{
+  "template": "minecraft:oak_planks",
+  "item": true,
+  "properties": {
+    "hardness": 0.2,
+    "explosion_resistance": 0.2,
+    "requires_tool": false,
+    "map_color": 26,
+    "sounds": "minecraft:chiseled_bookshelf"
+  },
+  "components": {
+    "minecraft:cooking_fuel": {
+      "burn_time": {
+        "type": "minecraft:div",
+        "left": 4000,
+        "right": {
+          "type": "minecraft:conditional",
+          "condition": "minecraft:block/fast_cooking",
+          "on_false": "minecraft:cooking/normal_burn_time_reduction_factor",
+          "on_true": "minecraft:cooking/fast_burn_time_reduction_factor"
+        }
+      },
+      "speed_multiplier": "minecraft:cooking/speed_default"
+    }
+  },
+  "state_properties": {
+    "axis": {
+      "type": "enum",
+      "values": [
+        "x",
+        "z"
+      ]
+    }
+  },
+  "default_state": {
+    "axis": "x"
+  }
+}

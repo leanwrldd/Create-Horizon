@@ -1,0 +1,18 @@
+{
+  "ingredients": [
+    {
+      "tag": "c:raw_materials/iron"
+    }
+  ],
+  "processing_time": 400,
+  "results": [
+    {
+      "id": "create:crushed_raw_iron"
+    },
+    {
+      "chance": 0.75,
+      "id": "create:experience_nugget"
+    }
+  ],
+  "type": "create:crushing"
+}

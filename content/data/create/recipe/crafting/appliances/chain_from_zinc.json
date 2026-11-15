@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "S",
+    "C",
+    "S"
+  ],
+  "key": {
+    "C": "#c:ingots/zinc",
+    "S": "#c:nuggets/zinc"
+  },
+  "result": {
+    "id": "minecraft:chain"
+  }
+}

@@ -50,17 +50,34 @@ Placement in the game needs a check on the next native build.
 **Known differences from Create, not done yet:**
 - A crank doesn't break when the block behind it goes (`HandCrankBlock.canSurvive`).
 - The crank handle doesn't ease its spin (`HandCrankBlockEntity.independentAngle`).
+- Right-clicking the Hand Crank with a placeable block can briefly show that block next to it.
+  Horizon predicts ordinary placement on the client, while the crank consumes the click in the
+  server-side `right_click_block` hook. The modding fork already handles this (`arismoko/horizon#171`).
+  For builds from the official launcher, see `horizon-rust/horizon#16451` and draft PR `#16455`.
 - The wheel checks the water every tick; Create checks every 60 ticks and on neighbour changes.
 - No wheel materials (right-click with planks), no waterlogging, no Large Water Wheel.
 - Recipes: the Gearbox uses Andesite Alloy for the missing Andesite Casing; the Wrench uses gold ingots and a
   stick for Create's `c:plates/gold` and `c:rods/wooden` tags, which nothing provides here.
+  (Fixed 2026-11-15: the casing and the tags exist now, and the recipes use them.)
 
-**Not started:** everything past kinetics (belts, presses, mixers, fans, fluids, contraptions, trains, Ponder),
-encased shafts, goggles, stress consumers, the motor's scroll-value UI. Known differences from Create are listed in
-`README.md`.
+**Modules (2026-11-15).** Machines past the first slices are modules, one set of files each, written by
+Sonnet subagents in parallel: see `MODULES.md` for the layout, the shared helpers (`kinetic.rs`, `recipes.rs`,
+`util.rs`), the generated hook forwarder (`forward.rs` from `tools/forward_hooks.txt`) and the per-owner checks
+(`tools/check_module.sh <owner>`, `build_content.py --owner <owner>`, with `tools/wip.txt` naming who writes
+what). Done this way so far: transmission (encased shafts and cogwheels, clutch, gearshift, chain drives,
+gauges), millstone, crushing wheels, encased fan and nozzle, basin, mixer, blaze burner, materials, building
+blocks. Each passes the unit tests, the type-check, the content build and the native build; **none has been
+tried in game**. The README lists them; each module file lists its known differences.
 
-**Git:** the folder is not a repository. Nothing is committed. If you commit, author as leanwrldd with no AI
-attribution (the user's global rule).
+**Paused, nothing written yet:** fluids (tanks, pipes, pump) and cutting (saw, drill), still listed in
+`tools/wip.txt`. **Not started:** funnels, tunnels, chutes, deployer, crafter, steam engine, belts beyond
+straight ones, contraptions, trains, logistics, schematics, goggles, Ponder.
+
+**Agent waves:** the user wants at most 3 subagents at a time; after each wave, build, redraw the progress
+(`python tools/progress.py`), commit and push.
+
+**Git:** `origin` is `github.com/leanwrldd/Create-Horizon`, branch `main`. Author commits as leanwrldd with no
+AI attribution (the user's global rule).
 
 ## Where things are
 
@@ -139,6 +156,8 @@ which installed version supplied the executable.
 
 ## Suggested next steps
 
-1. Add a first stress consumer (Mechanical Press with Depot is the smallest full machine), then belts.
-2. `git init` and a first commit, if the user wants one.
-3. Keep the skill current: add each new gotcha in the session that finds it.
+1. Launch `create-dev` and check the new modules in game: grep `logs\latest.log` for `content mods not
+   loaded` first, then each module's "most likely wrong" points (model orientation above all).
+2. Make the press compact over a basin (`machines/basin.rs` documents the API the press should call).
+3. Resume the paused slices, then funnels and chutes, deployer, and belts beyond straight ones.
+4. Keep the skill current: add each new gotcha in the session that finds it.

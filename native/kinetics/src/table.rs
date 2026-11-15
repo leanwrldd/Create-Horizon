@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::{Dir, Node, Pos, solve};
+use crate::{Dir, Kind, Network, Node, Pos, solve};
 
 /// `Direction.getNearest` of a player's look (`getNearestLookingDirection`).
 pub fn looking(yaw: f32, pitch: f32) -> Dir {
@@ -38,6 +38,9 @@ pub struct Networks {
     speeds: HashMap<&'static str, BTreeMap<Pos, f32>>,
     /// Blocks the last solve found jammed: each breaks in its next tick.
     breaks: HashMap<&'static str, BTreeSet<Pos>>,
+    /// The network each block was in at the last solve, and what each added up to
+    /// (`Solution::network_of`, `Solution::networks`).
+    stress: HashMap<&'static str, (BTreeMap<Pos, usize>, Vec<Network>)>,
     /// A block appeared, changed or went away since the last solve.
     dirty: bool,
 }
@@ -63,6 +66,24 @@ impl Networks {
         (speed, breaks)
     }
 
+    /// What the block at `pos` last reported to be, if it ticked lately: a placing block
+    /// reads its neighbours' shaft ends from it (`has_shaft`).
+    pub fn kind_at(&self, dimension: &str, pos: Pos) -> Option<Kind> {
+        Some(self.nodes.get(dimension)?.get(&pos)?.0.kind)
+    }
+
+    /// The speed the last solve gave the block at `pos`, in RPM.
+    pub fn speed_at(&self, dimension: &str, pos: Pos) -> Option<f32> {
+        self.speeds.get(dimension)?.get(&pos).copied()
+    }
+
+    /// The stress, capacity and overstress of the network the block at `pos` was in at the
+    /// last solve: what Create's stressometer reads (`KineticNetwork`).
+    pub fn network_at(&self, dimension: &str, pos: Pos) -> Option<Network> {
+        let (network_of, networks) = self.stress.get(dimension)?;
+        networks.get(*network_of.get(&pos)?).copied()
+    }
+
     /// The start of a server tick: forgets blocks that stopped ticking (broken, or their chunk
     /// unloaded) and solves again if anything changed.
     pub fn advance(&mut self) {
@@ -78,12 +99,15 @@ impl Networks {
         }
         self.speeds.clear();
         self.breaks.clear();
+        self.stress.clear();
         for (&dimension, nodes) in &self.nodes {
             let nodes = nodes.iter().map(|(pos, (node, _))| (*pos, *node)).collect();
             let solution = solve(&nodes);
             self.breaks
                 .insert(dimension, solution.breaks.into_iter().collect());
             self.speeds.insert(dimension, solution.speeds);
+            self.stress
+                .insert(dimension, (solution.network_of, solution.networks));
         }
     }
 }
@@ -133,6 +157,28 @@ mod tests {
         assert_eq!(networks.report(dimension, [1, 0, 0], shaft), (16.0, false));
         networks.advance();
         assert_eq!(networks.report(dimension, [1, 0, 0], shaft), (0.0, false));
+    }
+
+    #[test]
+    fn a_block_can_ask_what_its_neighbour_is_and_what_its_network_carries() {
+        let dimension = "minecraft:overworld";
+        let shaft = Node::passive(Kind::Shaft(Axis::X));
+        let mut load = shaft;
+        load.impact = 256.0;
+        let mut networks = Networks::default();
+        networks.advance();
+        networks.report(dimension, [0, 0, 0], motor());
+        networks.report(dimension, [1, 0, 0], load);
+        networks.report(dimension, [2, 0, 0], shaft);
+        assert_eq!(networks.network_at(dimension, [2, 0, 0]), None);
+        networks.advance();
+        assert_eq!(networks.kind_at(dimension, [1, 0, 0]), Some(Kind::Shaft(Axis::X)));
+        assert_eq!(networks.kind_at(dimension, [5, 0, 0]), None);
+        let network = networks.network_at(dimension, [2, 0, 0]).unwrap();
+        assert_eq!(network.capacity, MOTOR_CAPACITY * 16.0);
+        assert_eq!(network.stress, 256.0 * 16.0);
+        assert!(!network.overstressed);
+        assert_eq!(networks.network_at(dimension, [9, 9, 9]), None);
     }
 
     #[test]

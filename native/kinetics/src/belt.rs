@@ -563,7 +563,7 @@ mod tests {
 
     #[test]
     fn a_drop_waits_for_the_last_drop_on_that_segment_to_move_on() {
-        let mut inventory = Inventory::default();
+        let mut inventory = belt(&[], true);
         assert!(inventory.can_insert_at(1));
         inventory.insert(Item::dropped(1u32, 1, 180, true));
         assert!(!inventory.can_insert_at(1));
@@ -634,6 +634,40 @@ mod tests {
         // Slopes and vertical belts come later.
         assert_eq!(connect([0, 0, 0], [2, 2, 0], Axis::Z, Axis::Z), Err(Refusal::NotHorizontal));
         assert_eq!(connect([0, 0, 0], [0, 3, 0], Axis::Z, Axis::Z), Err(Refusal::NotHorizontal));
+    }
+
+    #[test]
+    fn a_belt_turns_as_one_and_drives_shafts_at_its_pulleys() {
+        use crate::{Kind, Node, solve};
+        use std::collections::BTreeMap;
+        let belt = |part| Node::passive(Kind::Belt(Dir::East, part));
+        let mut motor = Node::passive(Kind::Motor(Dir::South));
+        motor.generated = 16.0;
+        motor.capacity = 16384.0;
+        let nodes: BTreeMap<Pos, Node> = [
+            ([0, 0, -1], motor),
+            ([0, 0, 0], belt(Part::Start)),
+            ([1, 0, 0], belt(Part::Middle)),
+            ([2, 0, 0], belt(Part::End)),
+            // Beside the middle block: no pulley there.
+            ([1, 0, 1], Node::passive(Kind::Shaft(Axis::Z))),
+            // Beside the end's pulley.
+            ([2, 0, 1], Node::passive(Kind::Shaft(Axis::Z))),
+            // Another belt starting right after the end is a belt of its own.
+            ([3, 0, 0], belt(Part::Start)),
+            ([4, 0, 0], belt(Part::End)),
+        ]
+        .into_iter()
+        .collect();
+        let solution = solve(&nodes);
+        assert!(solution.breaks.is_empty());
+        let speeds = solution.speeds;
+        for pos in [[0, 0, 0], [1, 0, 0], [2, 0, 0], [2, 0, 1]] {
+            assert_eq!(speeds[&pos], 16.0, "{pos:?}");
+        }
+        for pos in [[1, 0, 1], [3, 0, 0], [4, 0, 0]] {
+            assert_eq!(speeds[&pos], 0.0, "{pos:?}");
+        }
     }
 
     #[test]

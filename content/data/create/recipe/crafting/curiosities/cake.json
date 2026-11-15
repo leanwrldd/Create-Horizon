@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " M ",
+    "SES",
+    " P "
+  ],
+  "key": {
+    "E": "#c:eggs",
+    "M": "minecraft:milk_bucket",
+    "P": "#c:foods/dough",
+    "S": "minecraft:sugar"
+  },
+  "result": {
+    "id": "minecraft:cake"
+  }
+}

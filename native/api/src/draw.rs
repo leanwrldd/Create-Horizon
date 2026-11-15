@@ -10,7 +10,7 @@ const WHEEL: &str = "create:block/water_wheel/wheel";
 pub const MODELS: [&str; 3] = [SHAFT_HALF, CRANK_HANDLE, WHEEL];
 
 /// The half-shaft and crank handle models point south at rest.
-fn face_south(draw: &mut BlockEntityDraw, face: Dir) {
+pub(crate) fn face_south(draw: &mut BlockEntityDraw, face: Dir) {
     let (axis, angle) = match face {
         Dir::South => (Axis::Y, 0.0),
         Dir::East => (Axis::Y, 90.0),
@@ -22,7 +22,7 @@ fn face_south(draw: &mut BlockEntityDraw, face: Dir) {
     draw.rotate_about(axis.unit(), angle, CENTRE);
 }
 
-fn draw_shaft_half(host: &dyn Host, draw: &mut BlockEntityDraw, face: Dir, turn: f32) {
+pub(crate) fn draw_shaft_half(host: &dyn Host, draw: &mut BlockEntityDraw, face: Dir, turn: f32) {
     draw.spin(face.axis().unit(), CENTRE, turn, 0.0);
     draw.push();
     face_south(draw, face);
@@ -84,6 +84,10 @@ pub fn block(host: &dyn Host, draw: &mut BlockEntityDraw, kind: Kind, pos: Pos, 
             host.draw_model(draw, WHEEL, 0xFF_FFFF);
             draw.pop();
         }
+        // Drawn with its items by `belt::draw`.
+        Kind::Belt(..) => {}
+        // A machine draws itself (`machines/`).
+        Kind::Shafts(_) => {}
     }
     draw.still();
     draw.keep();

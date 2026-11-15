@@ -1,0 +1,11 @@
+{
+  "template": "minecraft:granite_wall",
+  "item": true,
+  "properties": {
+    "hardness": 1.5,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:granite",
+    "map_color": 10
+  }
+}

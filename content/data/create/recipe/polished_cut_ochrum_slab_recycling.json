@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "building",
+  "ingredients": [
+    "create:polished_cut_ochrum_slab",
+    "create:polished_cut_ochrum_slab"
+  ],
+  "result": {
+    "id": "create:polished_cut_ochrum"
+  }
+}

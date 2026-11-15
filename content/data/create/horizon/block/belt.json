@@ -1,0 +1,141 @@
+{
+  "template": "minecraft:glass",
+  "item": false,
+  "properties": {
+    "hardness": 0.8,
+    "explosion_resistance": 0.8,
+    "requires_tool": false,
+    "sounds": "minecraft:white_wool",
+    "map_color": 21,
+    "render_shape": "ENTITYBLOCK_ANIMATED"
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    },
+    "slope": {
+      "type": "enum",
+      "values": [
+        "horizontal",
+        "upward",
+        "downward",
+        "vertical",
+        "sideways"
+      ]
+    },
+    "part": {
+      "type": "enum",
+      "values": [
+        "start",
+        "middle",
+        "end",
+        "pulley"
+      ]
+    },
+    "casing": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "facing": "north",
+    "slope": "horizontal",
+    "part": "start",
+    "casing": "false"
+  },
+  "shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0.0625,
+          0.1875,
+          0,
+          0.9375,
+          0.8125,
+          1
+        ]
+      ],
+      "south": [
+        [
+          0.0625,
+          0.1875,
+          0,
+          0.9375,
+          0.8125,
+          1
+        ]
+      ],
+      "west": [
+        [
+          0,
+          0.1875,
+          0.0625,
+          1,
+          0.8125,
+          0.9375
+        ]
+      ],
+      "east": [
+        [
+          0,
+          0.1875,
+          0.0625,
+          1,
+          0.8125,
+          0.9375
+        ]
+      ]
+    }
+  },
+  "collision_shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0.0625,
+          0.1875,
+          0,
+          0.9375,
+          0.8125,
+          1
+        ]
+      ],
+      "south": [
+        [
+          0.0625,
+          0.1875,
+          0,
+          0.9375,
+          0.8125,
+          1
+        ]
+      ],
+      "west": [
+        [
+          0,
+          0.1875,
+          0.0625,
+          1,
+          0.8125,
+          0.9375
+        ]
+      ],
+      "east": [
+        [
+          0,
+          0.1875,
+          0.0625,
+          1,
+          0.8125,
+          0.9375
+        ]
+      ]
+    }
+  }
+}

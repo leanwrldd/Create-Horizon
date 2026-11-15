@@ -102,6 +102,26 @@ def block(extra_states, default, base, map_color, shapes=None, sounds=None,
 
 AXIS_STATE = {"axis": {"type": "enum", "values": AXES}}
 FACING_STATE = {"facing": {"type": "enum", "values": FACINGS}}
+HORIZONTAL_FACING_STATE = {"facing": {"type": "enum", "values": ["north", "south", "west", "east"]}}
+# `BeltBlock`: HORIZONTAL_FACING, SLOPE, PART and CASING (waterlogging left out, as elsewhere).
+# Only horizontal belts are placed so far; the other slopes are declared so ids line up.
+BELT_STATES = {
+    **HORIZONTAL_FACING_STATE,
+    "slope": {"type": "enum",
+              "values": ["horizontal", "upward", "downward", "vertical", "sideways"]},
+    "part": {"type": "enum", "values": ["start", "middle", "end", "pulley"]},
+    "casing": {"type": "boolean"},
+}
+BELT_DEFAULT = {"facing": "north", "slope": "horizontal", "part": "start", "casing": "false"}
+# `AllBlocks.BELT`: `strength(0.8f)`, `SoundType.WOOL`, no tool needed.
+BELT = {"hardness": 0.8, "explosion_resistance": 0.8, "requires_tool": False,
+        "sounds": "minecraft:white_wool"}
+# `BeltShapes.FLAT_FULL`, box(1, 3, 0, 15, 13, 16) along the facing. Create rounds the two ends
+# off by a texel; here every part is the full box.
+BELT_SHAPES = {"property": "facing", "values": {
+    f: [[1 / 16, 3 / 16, 0, 15 / 16, 13 / 16, 1] if f in ("north", "south")
+        else [0, 3 / 16, 1 / 16, 1, 13 / 16, 15 / 16]]
+    for f in ("north", "south", "west", "east")}}
 BLOCKS = {
     "shaft": block(AXIS_STATE, {"axis": "y"}, ANDESITE, METAL, axis_shapes(SHAPES["shaft"])),
     "cogwheel": block(AXIS_STATE, {"axis": "y"}, ANDESITE, DIRT,
@@ -120,11 +140,21 @@ BLOCKS = {
     # draws only the stack on top. No waterlogging yet, as for the other blocks.
     "depot": block({}, {}, ANDESITE, GRAY, {"default": [[0, 0, 0, 1, 13 / 16, 1]]},
                    render_shape="MODEL"),
+    # `AllShapes.CASING_14PX` facing down, what players meet (`MechanicalPressBlock.getShape`);
+    # other entities get the hollow `MECHANICAL_PROCESSOR_SHAPE`, not modelled here. The casing
+    # sits in the chunk mesh; the block entity draws the shaft and the moving head.
+    "mechanical_press": block(HORIZONTAL_FACING_STATE, {"facing": "north"}, ANDESITE, PODZOL,
+                              {"default": [[0, 2 / 16, 0, 1, 1, 1]]}, render_shape="MODEL"),
+    "belt": block(BELT_STATES, BELT_DEFAULT, BELT, GRAY, BELT_SHAPES),
 }
+# The belt has no item of its own: the Belt Connector places it (`BeltConnectorItem`).
+BLOCKS["belt"]["item"] = False
 # `pickaxeOnly()` in Create; every other block here is `axeOrPickaxe()`.
 PICKAXE_ONLY = {"shaft", "creative_motor"}
 ITEMS = {
     "andesite_alloy": {"template": "minecraft:iron_ingot", "max_stack_size": 64},
+    "iron_sheet": {"template": "minecraft:iron_ingot", "max_stack_size": 64},
+    "belt_connector": {"template": "minecraft:iron_ingot", "max_stack_size": 64},
     "wrench": {
         "template": "minecraft:iron_ingot",
         "max_stack_size": 1,
@@ -140,6 +170,7 @@ ITEMS = {
     },
 }
 NAMES = {
+    "itemGroup.create.palettes": "Create's Building Blocks",
     "block.create.shaft": "Shaft",
     "block.create.cogwheel": "Cogwheel",
     "block.create.large_cogwheel": "Large Cogwheel",
@@ -148,7 +179,11 @@ NAMES = {
     "block.create.hand_crank": "Hand Crank",
     "block.create.water_wheel": "Water Wheel",
     "block.create.depot": "Depot",
+    "block.create.mechanical_press": "Mechanical Press",
     "item.create.andesite_alloy": "Andesite Alloy",
+    "item.create.iron_sheet": "Iron Sheet",
+    "block.create.belt": "Mechanical Belt",
+    "item.create.belt_connector": "Mechanical Belt",
     "item.create.wrench": "Wrench",
     "itemGroup.create.base": "Create",
 }
@@ -157,8 +192,8 @@ NAMES = {
 RECIPES = {
     "andesite_alloy": {
         "type": "minecraft:crafting_shaped", "category": "misc",
-        "pattern": ["AN", "NA"],
-        "key": {"A": "minecraft:andesite", "N": "minecraft:iron_nugget"},
+        "pattern": ["NA", "AN"],
+        "key": {"A": "minecraft:andesite", "N": "#c:nuggets/iron"},
         "result": {"id": "create:andesite_alloy"},
     },
     "shaft": {
@@ -176,17 +211,17 @@ RECIPES = {
         "ingredients": ["create:shaft", "#minecraft:planks", "#minecraft:planks"],
         "result": {"id": "create:large_cogwheel"},
     },
-    # Create puts an Andesite Casing in the middle; this slice has no casing yet.
+    # `crafting/kinetics/gearbox`. The casing is declared in tools/content/materials.py.
     "gearbox": {
         "type": "minecraft:crafting_shaped", "category": "misc",
         "pattern": [" C ", "CAC", " C "],
-        "key": {"C": "create:cogwheel", "A": "create:andesite_alloy"},
+        "key": {"C": "create:cogwheel", "A": "create:andesite_casing"},
         "result": {"id": "create:gearbox"},
     },
     "wrench": {
         "type": "minecraft:crafting_shaped", "category": "equipment",
         "pattern": ["GG", "GC", " S"],
-        "key": {"G": "minecraft:gold_ingot", "C": "create:cogwheel", "S": "minecraft:stick"},
+        "key": {"G": "#c:plates/gold", "C": "create:cogwheel", "S": "#c:rods/wooden"},
         "result": {"id": "create:wrench"},
     },
     "hand_crank": {
@@ -201,6 +236,79 @@ RECIPES = {
         "key": {"P": "#minecraft:planks", "S": "create:shaft"},
         "result": {"id": "create:water_wheel"},
     },
+    # `crafting/kinetics/mechanical_press`.
+    "mechanical_press": {
+        "type": "minecraft:crafting_shaped", "category": "misc",
+        "pattern": ["S", "C", "I"],
+        "key": {"S": "create:shaft", "C": "create:andesite_casing",
+                "I": "#c:storage_blocks/iron"},
+        "result": {"id": "create:mechanical_press"},
+    },
+    # `crafting/kinetics/depot`.
+    "depot": {
+        "type": "minecraft:crafting_shapeless", "category": "misc",
+        "ingredients": ["create:andesite_alloy", "create:andesite_casing"],
+        "result": {"id": "create:depot"},
+    },
+    # `crafting/kinetics/belt_connector`.
+    "belt_connector": {
+        "type": "minecraft:crafting_shaped", "category": "misc",
+        "pattern": ["DDD", "DDD"], "key": {"D": "minecraft:dried_kelp"},
+        "result": {"id": "create:belt_connector"},
+    },
+    # Create's `pressing/iron_ingot`, as its datagen writes it. The press reads this type itself
+    # (`native/api/src/press.rs`), so it keeps Create's 1.21.1 form.
+    "pressing/iron_ingot": {
+        "type": "create:pressing",
+        "ingredients": [{"tag": "c:ingots/iron"}],
+        "results": [{"id": "create:iron_sheet"}],
+    },
+    # The other sheets (tools/content/materials.py declares them).
+    "pressing/gold_ingot": {
+        "type": "create:pressing",
+        "ingredients": [{"tag": "c:ingots/gold"}],
+        "results": [{"id": "create:golden_sheet"}],
+    },
+    "pressing/copper_ingot": {
+        "type": "create:pressing",
+        "ingredients": [{"tag": "c:ingots/copper"}],
+        "results": [{"id": "create:copper_sheet"}],
+    },
+    "pressing/brass_ingot": {
+        "type": "create:pressing",
+        "ingredients": [{"tag": "c:ingots/brass"}],
+        "results": [{"id": "create:brass_sheet"}],
+    },
+    "pressing/cardboard": {
+        "type": "create:pressing",
+        "ingredients": [{"item": "create:pulp"}],
+        "results": [{"id": "create:cardboard"}],
+    },
+    "pressing/path": {
+        "type": "create:pressing",
+        "ingredients": [[{"item": "minecraft:dirt"}, {"item": "minecraft:coarse_dirt"},
+                         {"item": "minecraft:rooted_dirt"}, {"item": "minecraft:mycelium"},
+                         {"item": "minecraft:podzol"}]],
+        "results": [{"id": "minecraft:dirt_path"}],
+    },
+    "pressing/path_from_grass": {
+        "type": "create:pressing",
+        "ingredients": [{"item": "minecraft:grass_block"}],
+        "results": [{"id": "minecraft:dirt_path"}],
+    },
+    "pressing/sugar_cane": {
+        "type": "create:pressing",
+        "ingredients": [{"item": "minecraft:sugar_cane"}],
+        "results": [{"id": "minecraft:paper"}],
+    },
+}
+# The convention tags those recipes name, with what NeoForge puts in them.
+C_ITEM_TAGS = {
+    "ingots/iron": ["minecraft:iron_ingot"],
+    "ingots/gold": ["minecraft:gold_ingot"],
+    "ingots/copper": ["minecraft:copper_ingot"],
+    "nuggets/iron": ["minecraft:iron_nugget"],
+    "storage_blocks/iron": ["minecraft:iron_block"],
 }
 
 
@@ -213,36 +321,166 @@ def item_model(name):
     return model
 
 
+def loot_pools(name):
+    if name != "belt":
+        return [{
+            "rolls": 1,
+            "entries": [{"type": "minecraft:item", "name": f"create:{name}"}],
+            "condition": {"type": "minecraft:survives_explosion"},
+        }]
+    # Create's `blocks/belt` drops a Belt Connector; `BeltBlock.getDrops` adds a Shaft for a
+    # part with a pulley. The other blocks of the belt go without drops (`BeltBlock.onRemove`).
+    return [{
+        "rolls": 1,
+        "entries": [{"type": "minecraft:item", "name": "create:belt_connector"}],
+        "condition": {"type": "minecraft:survives_explosion"},
+    }, {
+        "rolls": 1,
+        "entries": [{"type": "minecraft:item", "name": "create:shaft"}],
+        "condition": {"type": "minecraft:all_of", "terms": [
+            {"type": "minecraft:survives_explosion"},
+            {"type": "minecraft:inverted", "term": {
+                "type": "minecraft:block_state_property", "block": "create:belt",
+                "properties": {"part": "middle"}}},
+        ]},
+    }]
+
+
+# --- plugins: tools/content/<module>.py --------------------------------------------------------
+
+PLUGINS = Path(__file__).resolve().parent / "content"
+BASE_TAB = ["creative_motor", "shaft", "cogwheel", "large_cogwheel", "gearbox", "hand_crank",
+            "water_wheel", "depot", "mechanical_press", "belt_connector", "wrench",
+            "andesite_alloy", "iron_sheet"]
+# What a plugin may define; see tools/content/README.md.
+PLUGIN_KEYS = {"BLOCKS", "ITEMS", "NAMES", "RECIPES", "TAGS", "TAB", "PALETTES_TAB",
+               "PICKAXE_ONLY", "MINEABLE", "LOOT", "MODELS", "BLOCKSTATES", "ITEM_MODELS", "FILES"}
+
+
+def others_wip(owner):
+    """The module names tools/wip.txt gives to owners other than `owner` (none for no owner)."""
+    wip = Path(__file__).resolve().parent / "wip.txt"
+    names = set()
+    if owner in (None, "all") or not wip.is_file():
+        return names
+    for line in wip.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#") or ":" not in line:
+            continue
+        who, _, modules = line.partition(":")
+        if who.strip() != owner:
+            names.update(modules.split())
+    return names
+
+
+def collect(owner=None):
+    """Everything the mod declares: this file's own tables with every plugin's merged in.
+    With an `owner`, the plugins other owners are still writing (tools/wip.txt) are left out."""
+    import copy
+    import importlib.util
+    from types import SimpleNamespace
+
+    c = SimpleNamespace(
+        blocks=copy.deepcopy(BLOCKS), items=copy.deepcopy(ITEMS), names=dict(NAMES),
+        recipes=copy.deepcopy(RECIPES), tab=list(BASE_TAB), palettes_tab=[],
+        tags={f"c:item/{name}": list(values) for name, values in C_ITEM_TAGS.items()},
+        pickaxe_only=set(PICKAXE_ONLY), mineable={}, loot={}, models=[], blockstates={},
+        item_models={}, files={}, base_blocks=set(BLOCKS), source={})
+    skip = others_wip(owner)
+    for path in sorted(PLUGINS.glob("*.py")) if PLUGINS.is_dir() else []:
+        stem = path.stem
+        if stem.startswith("_") or any(stem == name or stem.startswith(name + "_") for name in skip):
+            continue
+        spec = importlib.util.spec_from_file_location(f"create_content_{stem}", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        def merge(target, key, kind):
+            for name, value in getattr(module, key, {}).items():
+                if name in target:
+                    raise SystemExit(f"tools/content/{stem}.py: {kind} {name} is already declared"
+                                     f" by {c.source.get((kind, name), 'gen_content.py')}")
+                target[name] = value
+                c.source[(kind, name)] = f"tools/content/{stem}.py"
+
+        merge(c.blocks, "BLOCKS", "block")
+        merge(c.items, "ITEMS", "item")
+        merge(c.names, "NAMES", "name")
+        merge(c.recipes, "RECIPES", "recipe")
+        merge(c.loot, "LOOT", "loot table")
+        merge(c.mineable, "MINEABLE", "mineable entry")
+        merge(c.blockstates, "BLOCKSTATES", "blockstate")
+        merge(c.item_models, "ITEM_MODELS", "item model")
+        merge(c.files, "FILES", "file")
+        for tag, values in getattr(module, "TAGS", {}).items():
+            have = c.tags.setdefault(tag, [])
+            have.extend(value for value in values if value not in have)
+        c.tab.extend(name for name in getattr(module, "TAB", []) if name not in c.tab)
+        c.palettes_tab.extend(name for name in getattr(module, "PALETTES_TAB", [])
+                              if name not in c.palettes_tab)
+        c.pickaxe_only.update(getattr(module, "PICKAXE_ONLY", ()))
+        c.models.extend(getattr(module, "MODELS", []))
+    # The wrench is the right tool for every block of the mod that needs one.
+    c.items["wrench"]["components"]["minecraft:tool"]["rules"][0]["blocks"] = [
+        f"create:{name}" for name, value in c.blocks.items()
+        if value.get("properties", {}).get("requires_tool")]
+    return c
+
+
+def full_id(name):
+    return name if ":" in name else f"create:{name}"
+
+
+def generate(root=ROOT, owner=None):
+    """Writes the declarations under `root` and answers what was collected."""
+    c = collect(owner)
+    assets, data = root / "assets" / "create", root / "data" / "create"
+    for name, value in c.blocks.items():
+        write(data / "horizon" / "block" / f"{name}.json", value)
+        pools = c.loot[name] if name in c.loot else loot_pools(name) if value.get("item", True) \
+            or name == "belt" else None
+        if pools is not None:
+            write(data / "loot_table" / "blocks" / f"{name}.json", {
+                "type": "minecraft:block",
+                "pools": pools,
+                "random_sequence": f"create:blocks/{name}",
+            })
+    for name, value in c.items.items():
+        write(data / "horizon" / "item" / f"{name}.json", value)
+    for name in [*(b for b, value in c.blocks.items() if value.get("item", True)), *c.items]:
+        write(assets / "items" / f"{name}.json",
+              c.item_models.get(name) or {"model": item_model(name)})
+    for name, value in c.recipes.items():
+        write(data / "recipe" / f"{name}.json", value)
+    tabs = [("kinetics", "itemGroup.create.base", "create:cogwheel", c.tab)]
+    if c.palettes_tab:
+        # `AllCreativeModeTabs.PALETTES_CREATIVE_TAB`: the Ornate Iron Window, once declared.
+        icon = "ornate_iron_window" if "ornate_iron_window" in c.blocks else c.palettes_tab[0]
+        tabs.append(("palettes", "itemGroup.create.palettes", full_id(icon), c.palettes_tab))
+    for file, title, icon, items in tabs:
+        write(data / "horizon" / "creative_tab" / f"{file}.json", {
+            "title": title, "icon": icon, "items": [full_id(name) for name in items]})
+    tags = {key: list(values) for key, values in c.tags.items()}
+    for name in c.blocks:
+        tools = c.mineable.get(name, ["pickaxe"] if name in c.pickaxe_only else ["pickaxe", "axe"])
+        for tool in tools:
+            have = tags.setdefault(f"minecraft:block/mineable/{tool}", [])
+            if f"create:{name}" not in have:
+                have.append(f"create:{name}")
+    for key, values in tags.items():
+        namespace, _, path = key.partition(":")
+        write(root / "data" / namespace / "tags" / f"{path}.json", {"values": values})
+    for path, value in c.files.items():
+        if isinstance(value, str):
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            (root / path).write_text(value, encoding="utf-8", newline="\n")
+        else:
+            write(root / path, value)
+    write(assets / "lang" / "en_us.json", c.names)
+    return c
+
+
 def main():
-    for name, value in BLOCKS.items():
-        write(DATA / "horizon" / "block" / f"{name}.json", value)
-        write(DATA / "loot_table" / "blocks" / f"{name}.json", {
-            "type": "minecraft:block",
-            "pools": [{
-                "rolls": 1,
-                "entries": [{"type": "minecraft:item", "name": f"create:{name}"}],
-                "condition": {"type": "minecraft:survives_explosion"},
-            }],
-            "random_sequence": f"create:blocks/{name}",
-        })
-    for name, value in ITEMS.items():
-        write(DATA / "horizon" / "item" / f"{name}.json", value)
-    for name in [*BLOCKS, *ITEMS]:
-        write(ASSETS / "items" / f"{name}.json", {"model": item_model(name)})
-    for name, value in RECIPES.items():
-        write(DATA / "recipe" / f"{name}.json", value)
-    write(DATA / "horizon" / "creative_tab" / "kinetics.json", {
-        "title": "itemGroup.create.base",
-        "icon": "create:cogwheel",
-        "items": [f"create:{name}" for name in ["creative_motor", "shaft", "cogwheel",
-                  "large_cogwheel", "gearbox", "hand_crank", "water_wheel", "depot", "wrench",
-                  "andesite_alloy"]],
-    })
-    write(ROOT / "data" / "minecraft" / "tags" / "block" / "mineable" / "pickaxe.json",
-          {"values": [f"create:{name}" for name in BLOCKS]})
-    write(ROOT / "data" / "minecraft" / "tags" / "block" / "mineable" / "axe.json",
-          {"values": [f"create:{name}" for name in BLOCKS if name not in PICKAXE_ONLY]})
-    write(ASSETS / "lang" / "en_us.json", NAMES)
+    generate()
 
 
 if __name__ == "__main__":

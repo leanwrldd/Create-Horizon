@@ -1,0 +1,31 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "create:waxed_weathered_copper_shingle_slab",
+          "modifier": [
+            {
+              "type": "minecraft:set_count",
+              "count": 2,
+              "condition": {
+                "type": "minecraft:match_block",
+                "blocks": "create:waxed_weathered_copper_shingle_slab",
+                "state": {
+                  "type": "double"
+                }
+              }
+            },
+            {
+              "type": "minecraft:explosion_decay"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "random_sequence": "create:blocks/waxed_weathered_copper_shingle_slab"
+}

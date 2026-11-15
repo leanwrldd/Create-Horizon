@@ -1,0 +1,57 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "create:empty_blaze_burner"
+        }
+      ],
+      "condition": {
+        "type": "minecraft:all_of",
+        "terms": [
+          {
+            "type": "minecraft:survives_explosion"
+          },
+          {
+            "type": "minecraft:block_state_property",
+            "block": "create:blaze_burner",
+            "properties": {
+              "blaze": "none"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rolls": 1,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "create:blaze_burner"
+        }
+      ],
+      "condition": {
+        "type": "minecraft:all_of",
+        "terms": [
+          {
+            "type": "minecraft:survives_explosion"
+          },
+          {
+            "type": "minecraft:inverted",
+            "term": {
+              "type": "minecraft:block_state_property",
+              "block": "create:blaze_burner",
+              "properties": {
+                "blaze": "none"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "random_sequence": "create:blocks/blaze_burner"
+}

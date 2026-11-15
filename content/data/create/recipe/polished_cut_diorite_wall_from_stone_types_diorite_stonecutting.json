@@ -1,0 +1,7 @@
+{
+  "type": "minecraft:stonecutting",
+  "ingredient": "#create:stone_types/diorite",
+  "result": {
+    "id": "create:polished_cut_diorite_wall"
+  }
+}

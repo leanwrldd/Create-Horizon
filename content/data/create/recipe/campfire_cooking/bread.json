@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:campfire_cooking",
+  "category": "food",
+  "ingredient": "create:dough",
+  "experience": 0.0,
+  "cookingtime": 600,
+  "result": {
+    "id": "minecraft:bread"
+  }
+}

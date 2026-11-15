@@ -1,0 +1,11 @@
+{
+  "template": "minecraft:apple",
+  "max_stack_size": 64,
+  "components": {
+    "minecraft:food": {
+      "nutrition": 6,
+      "saturation": 3.6
+    },
+    "!minecraft:compostable": {}
+  }
+}

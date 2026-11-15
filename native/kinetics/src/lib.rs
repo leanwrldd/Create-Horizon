@@ -17,6 +17,8 @@
 pub mod belt;
 pub mod generators;
 pub mod press;
+/// One file per machine's rules (`tools/gen_modules.py` writes its `mod.rs`).
+pub mod rules;
 mod table;
 
 pub use table::{Networks, looking};
@@ -163,9 +165,199 @@ pub enum Kind {
     /// turns with the next (`BeltBlockEntity.propagateRotationTo`); those with a pulley also
     /// take a shaft on both sides, across the belt.
     Belt(Dir, belt::Part),
+    /// A machine with shaft ends on some faces and a rule for how they relate ([`Ends`]).
+    /// What a press, a fan or a mixer is to its network ([`Kind::shafts`]: every end turning as
+    /// one), and the casings of the transmission blocks ([`Kind::gearshift`], [`Kind::clutch`],
+    /// [`Kind::encased_cog`], [`Kind::chain`]).
+    Shafts(Ends),
+}
+
+/// A part of an encased chain drive (`ChainDriveBlock.Part`): which way along its connection
+/// axis the chain runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChainPart {
+    Start,
+    Middle,
+    End,
+    /// Create's `NONE`: no chain to a neighbour.
+    Alone,
+}
+
+impl ChainPart {
+    pub const ALL: [ChainPart; 4] = [
+        ChainPart::Start,
+        ChainPart::Middle,
+        ChainPart::End,
+        ChainPart::Alone,
+    ];
+
+    /// The state's `part` value.
+    pub const fn name(self) -> &'static str {
+        match self {
+            ChainPart::Start => "start",
+            ChainPart::Middle => "middle",
+            ChainPart::End => "end",
+            ChainPart::Alone => "none",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.name() == name)
+    }
+}
+
+/// An encased chain drive or adjustable chain gearshift as the network sees it
+/// (`ChainDriveBlock`, `ChainGearshiftBlockEntity`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Chain {
+    pub axis: Axis,
+    /// The state's `axis_along_first`.
+    pub along_first: bool,
+    pub part: ChainPart,
+    /// The redstone signal an adjustable chain gearshift reads, 0 to 15 (0 for a plain drive).
+    pub signal: u8,
+}
+
+impl Chain {
+    /// `ChainDriveBlock.getConnectionAxis`: the axis the chain runs along.
+    pub const fn connection_axis(self) -> Axis {
+        if self.along_first {
+            if matches!(self.axis, Axis::X) {
+                Axis::Y
+            } else {
+                Axis::X
+            }
+        } else if matches!(self.axis, Axis::Z) {
+            Axis::Y
+        } else {
+            Axis::Z
+        }
+    }
+
+    /// The part test of `ChainDriveBlock.areBlocksConnected`: whether this block's chain runs
+    /// out of its `face`.
+    pub fn runs_towards(self, face: Dir) -> bool {
+        if face.axis() != self.connection_axis() {
+            return false;
+        }
+        if face.sign() > 0 {
+            matches!(self.part, ChainPart::Middle | ChainPart::Start)
+        } else {
+            matches!(self.part, ChainPart::Middle | ChainPart::End)
+        }
+    }
+
+    /// `ChainGearshiftBlockEntity.getModifierForSignal`; a plain chain drive is 1.
+    pub fn modifier(self) -> f32 {
+        if self.signal == 0 {
+            1.0
+        } else {
+            1.0 + (f32::from(self.signal) + 1.0) / 16.0
+        }
+    }
+}
+
+/// How the shaft ends of a [`Kind::Shafts`] block relate to one another and to its neighbours.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Joint {
+    /// Every end turns as one.
+    Plain,
+    /// A powered gearshift: the two ends on its axis turn opposite ways
+    /// (`GearshiftBlockEntity.getRotationSpeedModifier`).
+    Reversing,
+    /// A powered clutch: it takes rotation from whichever side reaches it first and passes none
+    /// on (`ClutchBlockEntity.getRotationSpeedModifier`). An unpowered one is a [`Kind::Shaft`].
+    Disengaged,
+    /// A cogwheel in a casing: meshes as a small or a large cogwheel on `axis`, with shaft ends
+    /// only where `faces` says (`EncasedCogwheelBlock`).
+    Cog { axis: Axis, large: bool },
+    /// An encased chain drive: ends on its axis, and a chain to the next drive.
+    Chain(Chain),
+}
+
+/// The shaft ends of a [`Kind::Shafts`] block: a bit per face, in [`Dir::ALL`] order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Ends {
+    pub faces: u8,
+    pub joint: Joint,
 }
 
 impl Kind {
+    /// A machine with a shaft end on each of `faces` and nothing else.
+    pub fn shafts(faces: &[Dir]) -> Self {
+        Kind::Shafts(Ends {
+            faces: Self::face_bits(faces),
+            joint: Joint::Plain,
+        })
+    }
+
+    fn face_bits(faces: &[Dir]) -> u8 {
+        faces.iter().fold(0, |bits, face| bits | 1 << *face as u8)
+    }
+
+    fn axis_ends(axis: Axis) -> [Dir; 2] {
+        match axis {
+            Axis::X => [Dir::West, Dir::East],
+            Axis::Y => [Dir::Down, Dir::Up],
+            Axis::Z => [Dir::North, Dir::South],
+        }
+    }
+
+    /// A gearshift with redstone power on it (`GearshiftBlock`): unpowered it is a [`Kind::Shaft`].
+    pub fn gearshift(axis: Axis) -> Self {
+        Kind::Shafts(Ends {
+            faces: Self::face_bits(&Self::axis_ends(axis)),
+            joint: Joint::Reversing,
+        })
+    }
+
+    /// A clutch with redstone power on it (`ClutchBlock`): unpowered it is a [`Kind::Shaft`].
+    pub fn clutch(axis: Axis) -> Self {
+        Kind::Shafts(Ends {
+            faces: Self::face_bits(&Self::axis_ends(axis)),
+            joint: Joint::Disengaged,
+        })
+    }
+
+    /// An encased cogwheel (`EncasedCogwheelBlock`); `top` and `bottom` are its `top_shaft` and
+    /// `bottom_shaft`, the shaft ends at the positive and the negative end of its axis.
+    pub fn encased_cog(axis: Axis, large: bool, top: bool, bottom: bool) -> Self {
+        let [negative, positive] = Self::axis_ends(axis);
+        let mut faces = 0;
+        if top {
+            faces |= Self::face_bits(&[positive]);
+        }
+        if bottom {
+            faces |= Self::face_bits(&[negative]);
+        }
+        Kind::Shafts(Ends {
+            faces,
+            joint: Joint::Cog { axis, large },
+        })
+    }
+
+    /// An encased chain drive or adjustable chain gearshift.
+    pub fn chain(chain: Chain) -> Self {
+        Kind::Shafts(Ends {
+            faces: Self::face_bits(&Self::axis_ends(chain.axis)),
+            joint: Joint::Chain(chain),
+        })
+    }
+
+    /// The cogwheel this block meshes as: its axis, and whether it is a large one
+    /// (`ICogWheel.isSmallCog`, `isLargeCog`).
+    pub fn cog(self) -> Option<(Axis, bool)> {
+        match self {
+            Kind::Cogwheel(axis) => Some((axis, false)),
+            Kind::LargeCogwheel(axis) => Some((axis, true)),
+            Kind::Shafts(Ends {
+                joint: Joint::Cog { axis, large },
+                ..
+            }) => Some((axis, large)),
+            _ => None,
+        }
+    }
+
     /// Whether the block has a shaft end on `face`.
     pub fn has_shaft(self, face: Dir) -> bool {
         match self {
@@ -180,6 +372,7 @@ impl Kind {
             Kind::Belt(facing, part) => {
                 part.has_pulley() && face.axis() == belt::rotation_axis(facing)
             }
+            Kind::Shafts(ends) => ends.faces & (1 << face as u8) != 0,
         }
     }
 }
@@ -190,6 +383,15 @@ impl Kind {
 /// face the power comes in by: opposite faces differ, and of the two shaft axes one counts its
 /// positive face as 1 and the other its negative face.
 pub fn face_sign(kind: Kind, face: Dir) -> f32 {
+    // A powered gearshift reverses the end opposite the one power comes in by, whichever it is:
+    // the two ends turn opposite ways (`GearshiftBlockEntity.getRotationSpeedModifier`).
+    if let Kind::Shafts(Ends {
+        joint: Joint::Reversing,
+        ..
+    }) = kind
+    {
+        return face.sign() as f32;
+    }
     let Kind::Gearbox(axis) = kind else {
         return 1.0;
     };
@@ -238,7 +440,29 @@ pub fn ratio(a: Kind, b: Kind, diff: Pos) -> Option<f32> {
                 return Some(face_sign(a, face) * face_sign(b, face.opposite()));
             }
             match (a, b) {
-                (Kind::Cogwheel(x), Kind::Cogwheel(y)) if x == y && face.axis() != x => Some(-1.0),
+                // Small cogwheels, bare or encased (`ICogWheel.isSmallCog`), side by side.
+                _ if matches!((a.cog(), b.cog()), (Some((x, false)), Some((y, false)))
+                    if x == y && face.axis() != x) =>
+                {
+                    Some(-1.0)
+                }
+                // Encased chain drives joined by their chain (`ChainDriveBlock.areBlocksConnected`
+                // and `getRotationSpeedModifier`): `from` and `to` turn with speeds in the
+                // inverse ratio of their modifiers.
+                (
+                    Kind::Shafts(Ends {
+                        joint: Joint::Chain(ca),
+                        ..
+                    }),
+                    Kind::Shafts(Ends {
+                        joint: Joint::Chain(cb),
+                        ..
+                    }),
+                ) if ca.connection_axis() == cb.connection_axis()
+                    && (ca.runs_towards(face) || cb.runs_towards(face.opposite())) =>
+                {
+                    Some(ca.modifier() / cb.modifier())
+                }
                 // The next block of the same belt: `b` follows `a`, or `a` follows `b`.
                 (Kind::Belt(x, pa), Kind::Belt(y, pb)) if x == y => {
                     let follows = |from: belt::Part, to: belt::Part| {
@@ -252,13 +476,18 @@ pub fn ratio(a: Kind, b: Kind, diff: Pos) -> Option<f32> {
             }
         }
         2 => match (a, b) {
-            (Kind::LargeCogwheel(x), Kind::Cogwheel(y)) if x == y && diff[x.index()] == 0 => {
+            _ if matches!((a.cog(), b.cog()), (Some((x, true)), Some((y, false)))
+                if x == y && diff[x.index()] == 0) =>
+            {
                 Some(-2.0)
             }
-            (Kind::Cogwheel(x), Kind::LargeCogwheel(y)) if x == y && diff[x.index()] == 0 => {
+            _ if matches!((a.cog(), b.cog()), (Some((x, false)), Some((y, true)))
+                if x == y && diff[x.index()] == 0) =>
+            {
                 Some(-0.5)
             }
-            (Kind::LargeCogwheel(x), Kind::LargeCogwheel(y)) if x != y => {
+            _ if matches!((a.cog(), b.cog()), (Some((x, true)), Some((y, true))) if x != y) => {
+                let ((x, _), (y, _)) = (a.cog().unwrap(), b.cog().unwrap());
                 let (along_a, along_b) = (diff[x.index()], diff[y.index()]);
                 if along_a == 0 || along_b == 0 {
                     return None;
@@ -313,6 +542,17 @@ fn offsets() -> impl Iterator<Item = Pos> {
     })
 }
 
+/// A powered clutch (`ClutchBlock`).
+fn is_cut(kind: Kind) -> bool {
+    matches!(
+        kind,
+        Kind::Shafts(Ends {
+            joint: Joint::Disengaged,
+            ..
+        })
+    )
+}
+
 fn close(a: f32, b: f32) -> bool {
     (a - b).abs() <= 1e-4 * a.abs().max(b.abs()).max(1.0)
 }
@@ -322,7 +562,17 @@ fn close(a: f32, b: f32) -> bool {
 pub fn solve(nodes: &BTreeMap<Pos, Node>) -> Solution {
     let mut solution = Solution::default();
     let mut seen = BTreeSet::new();
-    for &root in nodes.keys() {
+    // Generators first, and powered clutches last: a clutch belongs to the first network that
+    // reaches it, which should be one that turns (see [`Joint::Disengaged`]).
+    let cut = |pos: &Pos| is_cut(nodes[pos].kind);
+    let mut order: Vec<Pos> = nodes
+        .iter()
+        .filter(|(pos, node)| node.generated != 0.0 && !cut(pos))
+        .map(|(pos, _)| *pos)
+        .collect();
+    order.extend(nodes.keys().filter(|pos| !cut(pos)));
+    order.extend(nodes.keys().filter(|pos| cut(pos)));
+    for root in order {
         if !seen.insert(root) {
             continue;
         }
@@ -333,6 +583,10 @@ pub fn solve(nodes: &BTreeMap<Pos, Node>) -> Solution {
         while let Some(pos) = queue.pop_front() {
             let kind = nodes[&pos].kind;
             let factor = factors[&pos];
+            // A powered clutch is a dead end: it passes nothing on.
+            if is_cut(kind) {
+                continue;
+            }
             for offset in offsets() {
                 let next = add(pos, offset);
                 let Some(node) = nodes.get(&next) else {
@@ -341,6 +595,10 @@ pub fn solve(nodes: &BTreeMap<Pos, Node>) -> Solution {
                 let Some(ratio) = ratio(kind, node.kind, offset) else {
                     continue;
                 };
+                // A powered clutch already in a network (this one or another) isn't joined again.
+                if is_cut(node.kind) && seen.contains(&next) {
+                    continue;
+                }
                 let wanted = factor * ratio;
                 match factors.get(&next) {
                     Some(&had) if !close(had, wanted) => {
@@ -642,6 +900,172 @@ mod tests {
         strong.capacity = 8.0;
         let nodes = world([([0, 0, 0], strong), ([1, 0, 0], consumer)]);
         assert_eq!(solve(&nodes).speeds[&[1, 0, 0]], 16.0);
+    }
+
+    fn line(x: Axis, middle: Kind) -> BTreeMap<Pos, Node> {
+        world([
+            ([-2, 0, 0], motor(Dir::East, 16.0)),
+            passive([-1, 0, 0], Kind::Shaft(x)),
+            passive([0, 0, 0], middle),
+            passive([1, 0, 0], Kind::Shaft(x)),
+            passive([2, 0, 0], Kind::Shaft(x)),
+        ])
+    }
+
+    #[test]
+    fn a_powered_gearshift_reverses_whichever_side_the_power_comes_from() {
+        let speeds = solve(&line(Axis::X, Kind::gearshift(Axis::X))).speeds;
+        assert_eq!(speeds[&[-1, 0, 0]], 16.0);
+        assert_eq!(speeds[&[1, 0, 0]], -16.0);
+        assert_eq!(speeds[&[2, 0, 0]], -16.0);
+        // From the other end the same: the far side turns against the near one.
+        let mut nodes = world([
+            ([-1, 0, 0], passive([0, 0, 0], Kind::Shaft(Axis::X)).1),
+            ([0, 0, 0], passive([0, 0, 0], Kind::gearshift(Axis::X)).1),
+            ([1, 0, 0], passive([0, 0, 0], Kind::Shaft(Axis::X)).1),
+            ([2, 0, 0], motor(Dir::West, 16.0)),
+        ]);
+        let speeds = solve(&nodes).speeds;
+        assert_eq!(speeds[&[1, 0, 0]], 16.0);
+        assert_eq!(speeds[&[-1, 0, 0]], -16.0);
+        // Unpowered it is a shaft.
+        nodes.insert([0, 0, 0], Node::passive(Kind::Shaft(Axis::X)));
+        assert_eq!(solve(&nodes).speeds[&[-1, 0, 0]], 16.0);
+        // Not turned along its axis: no connection.
+        assert_eq!(
+            solve(&line(Axis::X, Kind::gearshift(Axis::Z))).speeds[&[1, 0, 0]],
+            0.0
+        );
+    }
+
+    #[test]
+    fn a_powered_clutch_passes_rotation_only_from_the_side_that_turns() {
+        let clutch = Kind::clutch(Axis::X);
+        let speeds = solve(&line(Axis::X, clutch)).speeds;
+        assert_eq!(speeds[&[-1, 0, 0]], 16.0);
+        assert_eq!(speeds[&[0, 0, 0]], 16.0);
+        assert_eq!(speeds[&[1, 0, 0]], 0.0);
+        assert_eq!(speeds[&[2, 0, 0]], 0.0);
+        // The motor on the other side: that side turns, this one stops.
+        let mut nodes = line(Axis::X, clutch);
+        nodes.remove(&[-2, 0, 0]);
+        nodes.insert([3, 0, 0], motor(Dir::West, 32.0));
+        let speeds = solve(&nodes).speeds;
+        assert_eq!(speeds[&[1, 0, 0]], 32.0);
+        assert_eq!(speeds[&[0, 0, 0]], 32.0);
+        assert_eq!(speeds[&[-1, 0, 0]], 0.0);
+        // Motors on both sides: each turns its own side, and nothing breaks.
+        nodes.insert([-2, 0, 0], motor(Dir::East, -16.0));
+        let solution = solve(&nodes);
+        assert!(solution.breaks.is_empty());
+        assert_eq!(solution.speeds[&[-1, 0, 0]], -16.0);
+        assert_eq!(solution.speeds[&[1, 0, 0]], 32.0);
+        // A clutch nothing reaches stands alone.
+        let alone = world([passive([0, 0, 0], clutch)]);
+        assert_eq!(solve(&alone).speeds[&[0, 0, 0]], 0.0);
+    }
+
+    #[test]
+    fn an_encased_cogwheel_meshes_like_a_cogwheel_and_shows_only_its_shafts() {
+        let y = Axis::Y;
+        let encased = Kind::encased_cog(y, false, true, false);
+        assert!(encased.has_shaft(Dir::Up));
+        assert!(!encased.has_shaft(Dir::Down));
+        assert!(!encased.has_shaft(Dir::East));
+        let nodes = world([
+            ([0, -1, 0], motor(Dir::Up, 16.0)),
+            passive([0, 0, 0], Kind::Cogwheel(y)),
+            passive([1, 0, 0], encased),
+            passive([1, 1, 0], Kind::Shaft(y)),
+            passive([1, -1, 0], Kind::Shaft(y)),
+        ]);
+        let speeds = solve(&nodes).speeds;
+        assert_eq!(speeds[&[1, 0, 0]], -16.0);
+        // Only its top end has a shaft.
+        assert_eq!(speeds[&[1, 1, 0]], -16.0);
+        assert_eq!(speeds[&[1, -1, 0]], 0.0);
+        // Large and encased, driving a small one on the diagonal.
+        let nodes = world([
+            ([0, -1, 0], motor(Dir::Up, 16.0)),
+            passive([0, 0, 0], Kind::encased_cog(y, true, false, false)),
+            passive([1, 0, 1], Kind::encased_cog(y, false, false, false)),
+        ]);
+        assert_eq!(solve(&nodes).speeds[&[1, 0, 1]], 0.0);
+        let nodes = world([
+            ([0, -1, 0], motor(Dir::Up, 16.0)),
+            passive([0, 0, 0], Kind::encased_cog(y, true, false, true)),
+            passive([1, 0, 1], Kind::encased_cog(y, false, false, false)),
+        ]);
+        assert_eq!(solve(&nodes).speeds[&[1, 0, 1]], -32.0);
+        // Stacked along the axis they only join through shafts.
+        let stacked = |top| {
+            world([
+                ([0, -1, 0], motor(Dir::Up, 16.0)),
+                passive([0, 0, 0], Kind::encased_cog(y, false, top, true)),
+                passive([0, 1, 0], Kind::encased_cog(y, false, true, true)),
+            ])
+        };
+        assert_eq!(solve(&stacked(true)).speeds[&[0, 1, 0]], 16.0);
+        assert_eq!(solve(&stacked(false)).speeds[&[0, 1, 0]], 0.0);
+    }
+
+    fn drive(part: ChainPart, signal: u8) -> Kind {
+        Kind::chain(Chain {
+            axis: Axis::Y,
+            along_first: true,
+            part,
+            signal,
+        })
+    }
+
+    #[test]
+    fn chain_drives_turn_together_and_a_gearshift_scales_the_far_one() {
+        // Axis Y, along the first coordinate: the chain runs along X.
+        assert_eq!(
+            Chain {
+                axis: Axis::Y,
+                along_first: true,
+                part: ChainPart::Start,
+                signal: 0
+            }
+            .connection_axis(),
+            Axis::X
+        );
+        let nodes = world([
+            ([0, -1, 0], motor(Dir::Up, 16.0)),
+            passive([0, 0, 0], drive(ChainPart::Start, 0)),
+            passive([1, 0, 0], drive(ChainPart::Middle, 0)),
+            passive([2, 0, 0], drive(ChainPart::End, 0)),
+            passive([3, 0, 0], drive(ChainPart::Alone, 0)),
+        ]);
+        let speeds = solve(&nodes).speeds;
+        assert_eq!(speeds[&[1, 0, 0]], 16.0);
+        assert_eq!(speeds[&[2, 0, 0]], 16.0);
+        // The next one has no chain to it.
+        assert_eq!(speeds[&[3, 0, 0]], 0.0);
+        // Signal 15 is a modifier of 2: the gearshift end turns at half the other's speed.
+        let mut nodes = nodes;
+        nodes.insert([2, 0, 0], passive([2, 0, 0], drive(ChainPart::End, 15)).1);
+        let speeds = solve(&nodes).speeds;
+        assert_eq!(speeds[&[2, 0, 0]], 8.0);
+        // Chain drives side by side along their axis still share the shaft.
+        let nodes = world([
+            ([0, -1, 0], motor(Dir::Up, 16.0)),
+            passive([0, 0, 0], drive(ChainPart::Alone, 0)),
+            passive([0, 1, 0], drive(ChainPart::Alone, 0)),
+        ]);
+        assert_eq!(solve(&nodes).speeds[&[0, 1, 0]], 16.0);
+        assert_eq!(drive_modifier(1), 1.0 + 2.0 / 16.0);
+    }
+
+    fn drive_modifier(signal: u8) -> f32 {
+        Chain {
+            axis: Axis::Y,
+            along_first: false,
+            part: ChainPart::Alone,
+            signal,
+        }
+        .modifier()
     }
 
     #[test]

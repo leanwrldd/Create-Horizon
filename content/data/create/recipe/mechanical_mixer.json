@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "S",
+    "C",
+    "I"
+  ],
+  "key": {
+    "S": "create:cogwheel",
+    "C": "create:andesite_casing",
+    "I": "create:whisk"
+  },
+  "result": {
+    "id": "create:mechanical_mixer"
+  }
+}

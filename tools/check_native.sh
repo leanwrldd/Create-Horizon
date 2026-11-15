@@ -11,6 +11,8 @@ work="$root/target/native-check"
 rm -rf "$work/native"
 mkdir -p "$work"
 cp -r "$root/native" "$work/native"
+find "$work/native" -name Cargo.lock -delete
+python "$root/tools/gen_modules.py" "$work/native"
 # Horizon's own lock, so dependencies resolve to the versions the game is built with.
 cp "$horizon/Cargo.lock" "$work/native/api/Cargo.lock"
 cd "$work/native/api"

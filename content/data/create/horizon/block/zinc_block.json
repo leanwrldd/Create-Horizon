@@ -1,0 +1,11 @@
+{
+  "template": "minecraft:iron_block",
+  "item": true,
+  "properties": {
+    "hardness": 5.0,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "map_color": 61,
+    "sounds": "minecraft:iron_block"
+  }
+}

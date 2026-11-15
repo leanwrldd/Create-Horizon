@@ -4,6 +4,8 @@ param([string]$Instance = "create-dev", [ValidateSet("performance", "dev", "rele
 
 $launcher = Join-Path $env:LOCALAPPDATA "Programs\Horizon Launcher\horizon-launcher.exe"
 $native = Join-Path (Split-Path $PSScriptRoot -Parent) "native"
+# The module lists follow the files that exist.
+python (Join-Path $PSScriptRoot "gen_modules.py")
 # A bundle may not ship a Cargo.lock (it builds against Horizon's); `cargo test` leaves one behind.
 Get-ChildItem $native -Recurse -Filter Cargo.lock | Remove-Item -Force
 $done = Join-Path (Split-Path $PSScriptRoot -Parent) "target\native-build.exit"
