@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="316" viewBox="0 0 640 316" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
 <style>.t{fill:#24292f}.m{fill:#57606a}.track{fill:#d0d7de}.fill{fill:#c98a2b}@media (prefers-color-scheme:dark){.t{fill:#e6edf3}.m{fill:#8d96a0}.track{fill:#30363d}.fill{fill:#e3a64a}}</style>
-<text class="t" x="16" y="30" font-size="18" font-weight="600">Create ported to Horizon: 49.6%</text>
-<text class="m" x="16" y="50" font-size="12">122 of 246 Create blocks and items declared</text>
+<text class="t" x="16" y="30" font-size="18" font-weight="600">Create ported to Horizon: 52.8%</text>
+<text class="m" x="16" y="50" font-size="12">130 of 246 Create blocks and items declared</text>
 <rect class="track" x="16" y="60" width="608" height="12" rx="6"/>
-<rect class="fill" x="16" y="60" width="301.5" height="12" rx="6"/>
+<rect class="fill" x="16" y="60" width="321.3" height="12" rx="6"/>
 <text class="t" x="16" y="105" font-size="13">Kinetics</text>
 <rect class="track" x="120" y="95" width="400" height="12" rx="3"/>
-<rect class="fill" x="120" y="95" width="252.6" height="12" rx="3"/>
-<text class="m" x="530" y="105" font-size="12">36 / 57  (63%)</text>
+<rect class="fill" x="120" y="95" width="308.8" height="12" rx="3"/>
+<text class="m" x="530" y="105" font-size="12">44 / 57  (77%)</text>
 <text class="t" x="16" y="131" font-size="13">Materials</text>
 <rect class="track" x="120" y="121" width="400" height="12" rx="3"/>
 <rect class="fill" x="120" y="121" width="360.0" height="12" rx="3"/>

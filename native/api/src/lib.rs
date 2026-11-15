@@ -387,6 +387,10 @@ impl Hooks for Core {
         if block == Block::Press {
             press::update_tag(&event.entity.nbt, &mut tag);
         }
+        // A bracket on a shaft or a cogwheel (`BracketedBlockEntityBehaviour`).
+        if matches!(block, Block::Shaft | Block::Cogwheel | Block::LargeCogwheel) {
+            util::copy_bracket(&mut tag, &event.entity.nbt);
+        }
         Some(tag)
     }
 

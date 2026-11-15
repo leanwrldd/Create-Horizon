@@ -1,0 +1,116 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 2.0,
+    "explosion_resistance": 2.0,
+    "requires_tool": false,
+    "sounds": "minecraft:stripped_spruce_wood",
+    "map_color": 40,
+    "render_shape": "MODEL"
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    }
+  },
+  "default_state": {
+    "facing": "north"
+  },
+  "shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "south": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "east": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "west": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ]
+    }
+  },
+  "collision_shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "south": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "east": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "west": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ]
+    }
+  }
+}

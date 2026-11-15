@@ -13,6 +13,8 @@
     "create:analog_lever",
     "create:basin",
     "create:mechanical_bearing",
+    "create:wooden_bracket",
+    "create:metal_bracket",
     "create:blaze_burner",
     "create:lit_blaze_burner",
     "create:encased_chain_drive",
@@ -21,6 +23,8 @@
     "create:smart_chute",
     "create:clutch",
     "create:crushing_wheel",
+    "create:cuckoo_clock",
+    "create:mysterious_cuckoo_clock",
     "create:pulse_repeater",
     "create:pulse_extender",
     "create:pulse_timer",
@@ -65,6 +69,8 @@
     "create:stressometer",
     "create:gearshift",
     "create:item_drain",
+    "create:large_water_wheel",
+    "create:water_wheel_structure",
     "create:andesite_casing",
     "create:brass_casing",
     "create:copper_casing",
@@ -421,6 +427,8 @@
     "create:steam_engine",
     "create:powered_shaft",
     "create:steam_whistle",
-    "create:steam_whistle_extension"
+    "create:steam_whistle_extension",
+    "create:turntable",
+    "create:weighted_ejector"
   ]
 }

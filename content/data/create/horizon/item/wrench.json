@@ -406,7 +406,8 @@
             "create:steam_engine",
             "create:powered_shaft",
             "create:steam_whistle",
-            "create:steam_whistle_extension"
+            "create:steam_whistle_extension",
+            "create:weighted_ejector"
           ],
           "correct_for_drops": true
         }

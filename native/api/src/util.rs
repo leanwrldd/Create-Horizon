@@ -59,6 +59,16 @@ pub fn put(nbt: &mut Compound, key: &str, value: Tag) {
     nbt.insert(key.into(), value);
 }
 
+/// The bracket a shaft, cogwheel or pipe holds (`BracketedBlockEntityBehaviour`, saved as `Bracket`),
+/// copied into an update tag: an empty compound when there is none, so a client that had one drops it.
+pub fn copy_bracket(tag: &mut Compound, nbt: &Compound) {
+    let bracket = match get(nbt, "Bracket") {
+        Some(Tag::Compound(bracket)) => bracket.clone(),
+        _ => Compound::new(),
+    };
+    tag.insert("Bracket".into(), Tag::Compound(bracket));
+}
+
 /// Whether `nbt` holds something other than `value` under `key`: check before any write to a
 /// block entity.
 pub fn differs<K: Ord + for<'a> From<&'a str>>(

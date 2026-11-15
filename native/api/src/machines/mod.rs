@@ -9,6 +9,7 @@ pub mod analog_lever;
 pub mod basin;
 pub mod bearing;
 pub mod belts_ii;
+pub mod bracket;
 pub mod burner;
 pub mod chain_drive;
 pub mod chute;
@@ -16,6 +17,7 @@ pub mod chute_inv;
 pub mod clutch;
 pub mod contraption;
 pub mod crushing_wheel;
+pub mod cuckoo_clock;
 pub mod diodes;
 pub mod diodes_signal;
 pub mod drill;
@@ -31,6 +33,7 @@ pub mod funnel;
 pub mod gauges;
 pub mod gearshift;
 pub mod item_drain;
+pub mod large_water_wheel;
 pub mod millstone;
 pub mod mixer;
 pub mod piston;
@@ -45,7 +48,9 @@ pub mod spout_fill;
 pub mod steam_engine;
 pub mod steam_engine_boiler;
 pub mod steam_engine_whistle;
+pub mod turntable;
+pub mod weighted_ejector;
 
 pub fn all() -> Vec<Box<dyn Hooks>> {
-    vec![analog_lever::hooks(), basin::hooks(), bearing::hooks(), belts_ii::hooks(), burner::hooks(), chain_drive::hooks(), chute::hooks(), chute_inv::hooks(), clutch::hooks(), contraption::hooks(), crushing_wheel::hooks(), diodes::hooks(), diodes_signal::hooks(), drill::hooks(), encased::hooks(), fan::hooks(), fan_nozzle::hooks(), fluid_pipe::hooks(), fluid_tank::hooks(), fluid_valve::hooks(), fluid_valve_handle::hooks(), fluids::hooks(), funnel::hooks(), gauges::hooks(), gearshift::hooks(), item_drain::hooks(), millstone::hooks(), mixer::hooks(), piston::hooks(), pump::hooks(), redstone_link::hooks(), rose_quartz_lamp::hooks(), saw::hooks(), smart_fluid_pipe::hooks(), smart_fluid_pipe_encased::hooks(), spout::hooks(), spout_fill::hooks(), steam_engine::hooks(), steam_engine_boiler::hooks(), steam_engine_whistle::hooks()]
+    vec![analog_lever::hooks(), basin::hooks(), bearing::hooks(), belts_ii::hooks(), bracket::hooks(), burner::hooks(), chain_drive::hooks(), chute::hooks(), chute_inv::hooks(), clutch::hooks(), contraption::hooks(), crushing_wheel::hooks(), cuckoo_clock::hooks(), diodes::hooks(), diodes_signal::hooks(), drill::hooks(), encased::hooks(), fan::hooks(), fan_nozzle::hooks(), fluid_pipe::hooks(), fluid_tank::hooks(), fluid_valve::hooks(), fluid_valve_handle::hooks(), fluids::hooks(), funnel::hooks(), gauges::hooks(), gearshift::hooks(), item_drain::hooks(), large_water_wheel::hooks(), millstone::hooks(), mixer::hooks(), piston::hooks(), pump::hooks(), redstone_link::hooks(), rose_quartz_lamp::hooks(), saw::hooks(), smart_fluid_pipe::hooks(), smart_fluid_pipe_encased::hooks(), spout::hooks(), spout_fill::hooks(), steam_engine::hooks(), steam_engine_boiler::hooks(), steam_engine_whistle::hooks(), turntable::hooks(), weighted_ejector::hooks()]
 }

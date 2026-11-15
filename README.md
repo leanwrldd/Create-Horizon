@@ -14,7 +14,7 @@ is not pinned to one Horizon commit.
 <!-- progress:start -->
 | Area | Done | Total | |
 |---|---:|---:|---:|
-| Kinetics | 36 | 57 | 63% |
+| Kinetics | 44 | 57 | 77% |
 | Materials | 18 | 20 | 90% |
 | Logistics | 12 | 52 | 23% |
 | Fluids | 15 | 18 | 83% |
@@ -22,7 +22,7 @@ is not pinned to one Horizon commit.
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 29 | 39 | 74% |
-| **All** | **122** | **246** | **49.6%** |
+| **All** | **130** | **246** | **52.8%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -123,6 +123,7 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Steam | The boiler on a Fluid Tank, heated by Blaze Burners and fed water by pipes, with its gauge; the Steam Engine turning a Powered Shaft; the Steam Whistle and its extensions, pitched by size |
 | Spout, Item Drain | The Spout fills items on a belt or depot below it from its tank (`create:filling` recipes, buckets, bottles); the Item Drain empties items brought by belt, funnel or hand into its tank |
 | Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter (sneak-click with an item); a fluid pipe encased with a copper casing |
+| Small kinetics | Weighted Ejector (throws items and entities along Create's arc to a target picked with the item), Turntable, Cuckoo Clock and Mysterious Cuckoo Clock, Large Water Wheel, Wooden and Metal Brackets on shafts, cogwheels and pipes |
 | Redstone parts | Redstone Link (frequency set by clicking each half with an item), Analog Lever, Pulse Repeater, Pulse Extender and Pulse Timer (the Wrench on a side steps the delay), Powered Latch and Toggle Latch, Rose Quartz Lamp |
 | Building blocks | 364 blocks: metal ladders, bars, scaffolding and doors, copper shingles and tiles, glass and windows, 14 stone types in every pattern |
 
@@ -203,7 +204,8 @@ item icons.
 
 - Tunnels, deployers, the mechanical crafter, open pipe ends, most contraptions, trains, the rest of logistics
   and schematics.
-- The Spout, Item Drain, valves, smart pipes and redstone parts (2026-11-15) have not been tried in game. Their
+- The Spout, Item Drain, valves, smart pipes, redstone parts and small kinetic blocks (2026-11-15) have not been
+  tried in game. Their
   filters and settings use click stand-ins until Create's value boxes are ported, and redstone is polled
   every tick rather than heard.
 - The Creative Motor's speed is set with the Wrench, not Create's scroll-value box.

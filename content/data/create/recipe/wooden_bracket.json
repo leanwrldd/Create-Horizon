@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "SSS",
+    "PCP"
+  ],
+  "key": {
+    "S": "#c:rods/wooden",
+    "P": "#minecraft:planks",
+    "C": "create:andesite_alloy"
+  },
+  "result": {
+    "id": "create:wooden_bracket",
+    "count": 4
+  }
+}

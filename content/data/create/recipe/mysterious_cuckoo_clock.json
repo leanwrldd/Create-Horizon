@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " C ",
+    "CBC",
+    " C "
+  ],
+  "key": {
+    "C": "#c:gunpowders",
+    "B": "create:cuckoo_clock"
+  },
+  "result": {
+    "id": "create:mysterious_cuckoo_clock"
+  }
+}

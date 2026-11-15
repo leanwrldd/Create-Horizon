@@ -142,6 +142,15 @@ def import_assets(jar: ZipFile, content: Path, c, ponder_models=()):
     model = json.loads(wheel.read_text(encoding="utf-8"))
     model["textures"] = {"log": "block/spruce_log", "planks": "block/spruce_planks"}
     write(wheel, model)
+    # The Large Water Wheel's models likewise (its item model, `large_water_wheel/item`, names spruce
+    # for `log`, `planks` and `log_top`).
+    for part in ("block", "block_extension"):
+        large = content / PREFIX / f"models/block/large_water_wheel/{part}.json"
+        if large.is_file():
+            model = json.loads(large.read_text(encoding="utf-8"))
+            model["textures"] = {"log": "block/spruce_log", "planks": "block/spruce_planks",
+                                 "log_top": "block/spruce_log_top"}
+            write(large, model)
 
     # Create's sound events (`AllSoundEvents`) and the `.ogg` files they name, so a module may play
     # `create:whistle` and the rest. Events that name vanilla sounds need no file.

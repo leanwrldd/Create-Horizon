@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "SSS",
+    "PCP"
+  ],
+  "key": {
+    "S": "#c:nuggets/iron",
+    "P": "#c:ingots/iron",
+    "C": "create:andesite_alloy"
+  },
+  "result": {
+    "id": "create:metal_bracket",
+    "count": 4
+  }
+}
