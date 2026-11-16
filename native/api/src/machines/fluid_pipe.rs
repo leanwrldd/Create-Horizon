@@ -6,7 +6,8 @@
 //!
 //! Known differences from Create: see `rules/fluid_pipe.rs`. Also, a pipe block entity only
 //! refreshes its sides every ten ticks (and at once when a pipe is placed), where Create reacts
-//! to each neighbour's update; brackets and waterlogging are not done. The Fluid Valve, the Smart
+//! to each neighbour's update; waterlogging is not done. The arms, rims and casing are drawn by the
+//! block entity (`fluid_pipe_attachments.rs`, Create's `PipeAttachmentModel`). The Fluid Valve, the Smart
 //! Fluid Pipe and the Encased Fluid Pipe (`EncasedPipeBlock`) are modules of their own
 //! (`fluid_valve`, `smart_fluid_pipe`), joined to the pipes here through `fluids::transport_faces`.
 

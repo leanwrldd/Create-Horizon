@@ -4,8 +4,9 @@ Create: `AllBlocks.FLUID_PIPE` (`SharedProperties.copperMetal`, `forceSolidOff`,
 `FluidPipeBlock` (a `PipeBlock` with apothem 4/16: `down` .. `east`), `GLASS_FLUID_PIPE`
 (`GlassFluidPipeBlock`: `axis` and `alt`, `noOcclusion`, drops a Fluid Pipe, no item of its own),
 `recipe/crafting/kinetics/fluid_pipe` and `fluid_pipe_vertical`. Both are in the chunk mesh
-(Create's multipart and window models); the shapes are written out for each combination of sides.
-The Encased Fluid Pipe and the Smart Fluid Pipe are not declared.
+(Create's multipart and window models, which hold only the core); the arms, rims and drains are
+partial models the block entities draw (`MODELS`). The shapes are written out for each combination
+of sides. The Encased Fluid Pipe and the Smart Fluid Pipe are in `smart_fluid_pipe.py`.
 """
 
 import itertools
@@ -56,6 +57,12 @@ NAMES = {
     "block.create.glass_fluid_pipe": "Glass Fluid Pipe",
 }
 TAB = ["fluid_pipe"]
+# `AllPartialModels.PIPE_ATTACHMENTS` and `FLUID_PIPE_CASING`: what `PipeAttachmentModel` adds to the pipes, the
+# glass and encased pipes, the smart pipe, the valve and the pump. The block entities draw them
+# (`fluid_pipe_attachments.rs`); the chunk model has only the core.
+MODELS = ["block/fluid_pipe/casing"] + [
+    f"block/fluid_pipe/{part}/{side}"
+    for part in ("connection", "rim_connector", "rim", "drain") for side in SIDES]
 # `.loot((p, b) -> p.dropOther(b, FLUID_PIPE.get()))`.
 LOOT = {"glass_fluid_pipe": [{
     "rolls": 1,

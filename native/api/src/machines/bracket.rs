@@ -12,7 +12,8 @@
 //! (`block_entity_submit`, after the block's own drawing).
 //!
 //! Known differences from Create, for the README:
-//! - A Glass Fluid Pipe takes no bracket (it has no block entity here), and a bracketed pipe still
+//! - A Glass Fluid Pipe takes no bracket (its block entity, made in `fluid_pipe_attachments.rs`, is
+//!   not asked for one), and a bracketed pipe still
 //!   changes its sides with its neighbours (Create freezes them while the bracket is on,
 //!   `FluidPipeBlock.updateBlockState`, and a neighbouring pipe joins it only along its straight
 //!   axis). Nothing else brackets: the Encased and Powered Shafts don't in Create either.
@@ -179,6 +180,8 @@ impl Hooks for Brackets {
         }
         let mut tag = Compound::new();
         util::copy_bracket(&mut tag, &event.entity.nbt);
+        // This answer shadows the pipe's own: the arms and rims go with it.
+        super::fluid_pipe_attachments::copy_rims(&mut tag, &event.entity.nbt);
         Some(tag)
     }
 

@@ -5,9 +5,10 @@
 //! `shouldDrawCasing`), `FluidPropagator.getStraightPipeAxis` and `GlassFluidPipeBlock` /
 //! `AxisPipeBlock`.
 //!
-//! Known differences from Create: a pipe has no bracket and no casing, no waterlogging, and
-//! it is never rotated or mirrored by a structure; the glue refreshes the sides from its
-//! neighbours every few ticks instead of on each neighbour's update.
+//! Known differences from Create: no waterlogging, and a pipe is never rotated or mirrored by a
+//! structure; the glue refreshes the sides from its neighbours every few ticks instead of on each
+//! neighbour's update. The arms, rims and casing a pipe draws are `fluid_pipe_attachments`; brackets
+//! are `bracket`.
 
 use crate::{Axis, Dir};
 

@@ -68,25 +68,35 @@ pub fn is_filtered(host: &dyn Host, pos: Pos) -> bool {
             .is_some_and(|e| crate::util::get(&e.nbt, FILTER_FLUID).is_some())
 }
 
-/// `FluidTransportBehaviour.canHaveFlowToward` of a Fluid Valve, a Smart Fluid Pipe or an Encased
-/// Fluid Pipe at `pos`, whether or not it lets fluid through now: the faces its pipe is open on.
-pub fn transport_faces(host: &dyn Host, pos: Pos) -> Option<Faces> {
+/// `IAxisPipe.getAxisOf`: the axis a Glass Fluid Pipe, a Fluid Valve or a Smart Fluid Pipe at `pos`
+/// carries fluid along; `None` for anything else.
+pub fn pipe_axis(host: &dyn Host, pos: Pos) -> Option<Axis> {
     let property = |key: &str| host.block_property(pos, key);
     match host.block(pos).as_str() {
+        GLASS_FLUID_PIPE => property("axis").as_deref().and_then(Axis::from_name),
         FLUID_VALVE => {
             let facing = property("facing").as_deref().and_then(Dir::from_name)?;
             let along_first = property("axis_along_first").as_deref() == Some("true");
-            Some(Faces::axis(create_kinetics::rules::fluid_pipe::valve_pipe_axis(facing, along_first)))
+            Some(create_kinetics::rules::fluid_pipe::valve_pipe_axis(facing, along_first))
         }
         SMART_FLUID_PIPE => {
             let face = property("face")?;
             let facing = property("facing").as_deref().and_then(Dir::from_name)?;
-            Some(Faces::axis(create_kinetics::rules::fluid_pipe::smart_pipe_axis(&face, facing)))
+            Some(create_kinetics::rules::fluid_pipe::smart_pipe_axis(&face, facing))
         }
+        _ => None,
+    }
+}
+
+/// `FluidTransportBehaviour.canHaveFlowToward` of a Fluid Valve, a Smart Fluid Pipe or an Encased
+/// Fluid Pipe at `pos`, whether or not it lets fluid through now: the faces its pipe is open on.
+pub fn transport_faces(host: &dyn Host, pos: Pos) -> Option<Faces> {
+    match host.block(pos).as_str() {
+        FLUID_VALVE | SMART_FLUID_PIPE => pipe_axis(host, pos).map(Faces::axis),
         ENCASED_FLUID_PIPE => {
             let open: Vec<Dir> = Dir::ALL
                 .into_iter()
-                .filter(|d| property(d.name()).as_deref() == Some("true"))
+                .filter(|d| host.block_property(pos, d.name()).as_deref() == Some("true"))
                 .collect();
             Some(Faces::of(&open))
         }

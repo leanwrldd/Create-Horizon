@@ -118,6 +118,8 @@ impl Hooks for Valves {
         }
         let mut tag = kinetic::update_tag(event.entity);
         set_float(&mut tag, POINTER_KEY, float(&event.entity.nbt, POINTER_KEY).unwrap_or(0.0));
+        // `PipeAttachmentModel`: the arms and rims (`fluid_pipe_attachments.rs`).
+        super::fluid_pipe_attachments::copy_rims(&mut tag, &event.entity.nbt);
         Some(tag)
     }
 
