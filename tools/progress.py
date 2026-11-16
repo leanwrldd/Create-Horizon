@@ -48,6 +48,8 @@ def scan(path: Path, first_section: str) -> list[dict]:
         window = " ".join(lines[i:i + 6]).split(";")[0]
         q = QUOTED.search(window)
         ident = q.group(1) if q and m.group(1) in ("BlockEntry", "ItemEntry") else m.group(2).lower()
+        if q and "createBars(" in window:  # MetalBarsGen.createBars("andesite") registers andesite_bars
+            ident = f"{q.group(1)}_bars"
         out.append({"id": ident, "field": m.group(2), "section": section})
     return out
 
@@ -72,6 +74,11 @@ def declared() -> set[str]:
         d = DECLS / kind
         if d.is_dir():
             ids.update(p.stem for p in d.glob("*.json"))
+    # A dyed set (`DyedBlockList`: `seats`, `dyed_valve_handles`) is declared once its white member is.
+    for stem in list(ids):
+        if stem.startswith("white_"):
+            ids.add(stem.removeprefix("white_") + "s")
+            ids.add("dyed_" + stem.removeprefix("white_") + "s")
     return ids
 
 

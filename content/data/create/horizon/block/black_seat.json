@@ -1,0 +1,51 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 2.0,
+    "explosion_resistance": 2.0,
+    "requires_tool": false,
+    "sounds": "minecraft:stripped_spruce_wood",
+    "map_color": 29,
+    "render_shape": "MODEL",
+    "occludes": false
+  },
+  "shapes": {
+    "default": [
+      [
+        0,
+        0,
+        0,
+        1,
+        0.5,
+        1
+      ]
+    ]
+  },
+  "collision_shapes": {
+    "default": [
+      [
+        0,
+        0,
+        0,
+        1,
+        0.375,
+        1
+      ]
+    ]
+  },
+  "collision_context_shapes": {
+    "player": {
+      "default": [
+        [
+          0,
+          0,
+          0,
+          1,
+          0.1875,
+          1
+        ]
+      ]
+    }
+  }
+}
