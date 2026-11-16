@@ -30,7 +30,6 @@
 //!   updates, the scan for the blade's damage.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 use create_kinetics::rules::drill as drill_rules;
 use create_kinetics::rules::saw::{self as rules, Cut, SLOTS, Step, TOP_SCAN};
@@ -705,10 +704,11 @@ impl Hooks for Saw {
         if player.sneaking && host.player_equipment(uuid, EquipmentSlot::OffHand).is_some() {
             return Flow::Continue;
         }
-        let now = util::game_time(host);
-        if repeated(uuid, pos, now) {
+        // The client may send the off hand's click for the same use: once is enough.
+        if !util::first_click(host, uuid, pos) {
             return Flow::Cancel;
         }
+        let now = util::game_time(host);
         let mut taken: Vec<ItemStack> = Vec::new();
         host.change_mod_block_entity(pos, &mut |entity| {
             let mut slots = slots_of(entity);
@@ -792,16 +792,3 @@ fn draw_items(
     true
 }
 
-/// The last collection by a player: `(player, block, game time)`.
-static LAST: Mutex<Option<(u128, Pos, i64)>> = Mutex::new(None);
-
-/// Whether this player emptied this block a moment ago (the client may send the off hand's click
-/// for the same use).
-fn repeated(uuid: u128, pos: Pos, now: i64) -> bool {
-    let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let again = matches!(*last, Some((u, p, t)) if u == uuid && p == pos && now - t <= 1);
-    if !again {
-        *last = Some((uuid, pos, now));
-    }
-    again
-}

@@ -84,8 +84,10 @@ everything the belt carried; the rest of the belt goes too, leaving shafts at th
 A belt ending at another belt, a depot, a basin or an upright saw hands its items on (`Ending.INSERT`), a press
 over a belt stops each item and presses it one at a time, and casings and dye can be put on (Belts II, below).
 
-Not yet: slopes, vertical and sideways belts, funnels, tunnels, fans over the belt, the texture scroll, dye and
-the andesite casing drawn (dye is saved but not drawn; every casing draws as brass), carrying players and mobs, and
+The belt's texture scrolls with its speed and shows its dye, and an andesite casing draws as andesite (all through
+Horizon's UV shift, `Host::draw_terrain_model`, API 564; not yet checked in game).
+
+Not yet: slopes, vertical and sideways belts, funnels, tunnels, fans over the belt, carrying players and mobs, and
 upright items. The rest of a broken belt goes one block a tick, not
 all at once, and only a player's break drops its items (an explosion loses them). The first shaft is remembered per
 player rather than on the item, with no outline shown.

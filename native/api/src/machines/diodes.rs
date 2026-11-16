@@ -432,13 +432,19 @@ impl Hooks for Diodes {
             return Flow::Continue;
         }
         let dimension = host.dimension();
+        // The off hand's turn of a click that already flipped it would flip it back.
+        if util::click_repeated(host, player.uuid, pos) {
+            return Flow::Cancel;
+        }
         match kind {
             Kind::Brass(_) => {
+                util::click_taken(host, player.uuid, pos);
                 let inverted = flag(host, pos, "inverted");
                 set(host, pos, "inverted", !inverted);
                 signal::lever_click(host, pos, 0.3, diodes::click_pitch(inverted));
             }
             Kind::Toggle => {
+                util::click_taken(host, player.uuid, pos);
                 let powering = flag(host, pos, "powering");
                 set(host, pos, "powering", !powering);
                 signal::lever_click(host, pos, 0.3, diodes::click_pitch(powering));
@@ -452,6 +458,7 @@ impl Hooks for Diodes {
                 let Some(next) = latch_click(state) else {
                     return Flow::Continue;
                 };
+                util::click_taken(host, player.uuid, pos);
                 set(host, pos, "powering", next.powering);
                 signal::lever_click(host, pos, 0.3, diodes::click_pitch(state.powering));
             }

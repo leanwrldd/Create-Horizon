@@ -413,6 +413,11 @@ impl Hooks for Bearing {
         if host.held_stack(player.uuid).is_some_and(|stack| stack.count > 0) {
             return Flow::Continue;
         }
+        // Once a click: the off hand's turn would ask for the opposite (a bearing just set down
+        // is assembled again).
+        if !util::first_click(host, player.uuid, pos) {
+            return Flow::Cancel;
+        }
         host.change_mod_block_entity(pos, &mut |entity| {
             if util::boolean(&entity.nbt, RUNNING) {
                 put(entity, DISASSEMBLE, flag(true));

@@ -889,7 +889,9 @@ impl Hooks for Deployers {
         );
         if !on_hand {
             if player.sneaking {
-                if let Some(line) = inv::click(host, pos, held.as_ref()) {
+                if util::first_click(host, player.uuid, pos)
+                    && let Some(line) = inv::click(host, pos, held.as_ref())
+                {
                     inv::tell(host, &line);
                 }
                 return Flow::Cancel;
@@ -900,7 +902,10 @@ impl Hooks for Deployers {
         if player.sneaking && held.is_some() {
             return Flow::Continue;
         }
-        swap(host, pos, &player, held);
+        // Once a click: the off hand's turn would swap the stacks back.
+        if util::first_click(host, player.uuid, pos) {
+            swap(host, pos, &player, held);
+        }
         Flow::Cancel
     }
 }

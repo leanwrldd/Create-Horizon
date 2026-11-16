@@ -186,7 +186,9 @@ impl Hooks for SmartPipes {
         if host.player_equipment(player.uuid, EquipmentSlot::MainHand).is_some() {
             return Flow::Continue;
         }
-        if let Some(line) = click(host, pos, None) {
+        if util::first_click(host, player.uuid, pos)
+            && let Some(line) = click(host, pos, None)
+        {
             inv::tell(host, &line);
         }
         Flow::Cancel

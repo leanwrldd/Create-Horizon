@@ -1210,7 +1210,9 @@ impl Hooks for Chutes {
             return Flow::Continue;
         }
         if block == SMART_CHUTE && player.sneaking {
-            if let Some(line) = inv::click(host, pos, None) {
+            if util::first_click(host, uuid, pos)
+                && let Some(line) = inv::click(host, pos, None)
+            {
                 inv::tell(host, &line);
             }
             return Flow::Cancel;
@@ -1221,6 +1223,7 @@ impl Hooks for Chutes {
         let Some(stack) = held(&entity) else {
             return Flow::Continue;
         };
+        util::click_taken(host, uuid, pos);
         let now = util::game_time(host);
         host.change_mod_block_entity(pos, &mut |e| put_item(e, None, 0.0, now));
         host.block_entity_sync(pos);

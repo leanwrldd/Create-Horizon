@@ -681,6 +681,10 @@ pub fn right_click(host: &mut dyn Host, pos: [i32; 3], face: [i32; 3]) -> Flow {
     if face != [0, 1, 0] {
         return Flow::Continue;
     }
+    // Once a click: the off hand's turn would take back what the first put down.
+    if !crate::util::first_click(host, uuid, pos) {
+        return Flow::Cancel;
+    }
 
     // Whatever is on it goes back to the player first, then what a press made
     // (`processingOutputBuffer`).

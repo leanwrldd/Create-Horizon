@@ -533,6 +533,9 @@ impl Hooks for Piston {
         if host.held_stack(player.uuid).is_some_and(|stack| stack.count > 0) {
             return Flow::Continue;
         }
+        if !util::first_click(host, player.uuid, pos) {
+            return Flow::Cancel;
+        }
         host.change_mod_block_entity(pos, &mut |entity| {
             entity.nbt.insert(ASSEMBLE.into(), Tag::Byte(engine::ASKED));
         });
