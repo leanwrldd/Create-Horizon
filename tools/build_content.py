@@ -141,6 +141,17 @@ def import_assets(jar: ZipFile, content: Path, c, ponder_models=()):
             sprite.removeprefix("create:") for sprite in model.get("textures", {}).values()
             if isinstance(sprite, str) and sprite.startswith("create:")
         )
+        # A `neoforge:composite` model's children (the display link, the nixie tube) have
+        # textures and parents of their own.
+        for child in (model.get("children") or {}).values():
+            if not isinstance(child, dict):
+                continue
+            if child.get("parent", "").startswith("create:"):
+                models.add(child["parent"].removeprefix("create:"))
+            textures.update(
+                sprite.removeprefix("create:") for sprite in child.get("textures", {}).values()
+                if isinstance(sprite, str) and sprite.startswith("create:")
+            )
 
     # Create draws a placed wheel in its material, spruce until changed, by swapping the oak
     # template sprites at runtime (WaterWheelRenderer.generateModel, material SPRUCE_PLANKS).

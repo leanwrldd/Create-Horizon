@@ -89,6 +89,16 @@ fn seats_at(dimension: &str, pos: Pos) -> Vec<Seat> {
         .unwrap_or_default()
 }
 
+/// The players now riding the seat block at `pos`, for the Entity Name display source
+/// (`EntityNameDisplaySource`).
+pub(super) fn riders_at(host: &dyn Host, dimension: &str, pos: Pos) -> Vec<u128> {
+    seats_at(dimension, pos)
+        .iter()
+        .filter(|seat| rider(host, seat) == Rider::Riding)
+        .map(|seat| seat.player)
+        .collect()
+}
+
 impl Hooks for Seats {
     /// `SeatBlock.useItemOn`.
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {

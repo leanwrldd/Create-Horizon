@@ -16,13 +16,13 @@ is not pinned to one Horizon commit.
 |---|---:|---:|---:|
 | Kinetics | 44 | 57 | 77% |
 | Materials | 18 | 20 | 90% |
-| Logistics | 17 | 52 | 33% |
+| Logistics | 21 | 52 | 40% |
 | Fluids | 16 | 18 | 89% |
 | Contraptions | 13 | 42 | 31% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **147** | **246** | **59.8%** |
+| **All** | **151** | **246** | **61.4%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -130,8 +130,11 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Mechanical Arm | Picks up from inputs and puts down into outputs selected by clicking blocks with the arm in hand (within 5 blocks): belts, depots, ejectors, funnels, chutes, basins, Blaze Burners, deployers, millstones, crushing wheels, the upright saw, campfires, composter, jukebox and respawn anchor; round robin, forced round robin or prefer-first (Wrench steps it); redstone locks it; a record in a jukebox point makes it dance. As in Create, chests and vaults are reached through a funnel. Unplayed |
 | Storage blocks | Item Vault (merges up to 3 wide and 3 times as long, 20 stacks a block; chutes, funnels and comparators see the whole vault), Creative Crate (endless supply of the item it's clicked with), Smart Observer, Threshold Switch |
 | Redstone parts | Redstone Link (frequency set by clicking each half with an item), Analog Lever, Pulse Repeater, Pulse Extender and Pulse Timer (the Wrench on a side steps the delay), Powered Latch and Toggle Latch, Rose Quartz Lamp |
+| Display Link, Display Board, Nixie Tubes | Display Link: reads the block it sits on and writes text to a sign, a lectern, a row of Nixie Tubes or a Display Board up to 64 blocks away; click the target with the link in hand, then place it. Sources: Speedometer (RPM), Stressometer (bar, percent, su, capacity, remaining), Cuckoo Clock (time of day, stopwatch), Smart Observer (item count, item list, fluid amount, fluid list), Threshold Switch (fill level), belts, depots and weighted ejectors (item names), Seats (rider's name), a vanilla Target block (redstone power) and Nixie Tubes. Type of information, display option, label and start line are set by clicks (below). Display Board: a flap display on a 30 RPM cogwheel that joins into boards up to 32 wide and tall, shows lines of text on flaps that spin before they settle, and takes a name tag (a line), a dye (its colour), a glow ink sac and an empty hand (clears a line). Nixie Tubes: sixteen colours, two glowing digits showing redstone strength, or text from a name tag or a link along a row of tubes; a dye recolours the whole row |
 | Building blocks | 364 blocks: metal ladders, bars, scaffolding and doors, copper shingles and tiles, glass and windows, 14 stone types in every pattern |
 | Girders, Seats, Copycats | Metal Girders that join into beams and poles (placed, extended, toggled with the Wrench, `update_shape`), the Metal Girder Encased Shaft that carries rotation, 16 Seats a player sits on (a marker entity and `/ride`; a dye recolours), Copycat Step and Panel that take a block as their look (drawn squashed into the shape, not cropped). Unplayed: type-checked and unit-tested only; each module's header lists its differences |
+
+Display Link clicks, in place of Create's screen (`display_link.rs`): right-click steps the type of information among those the block it reads offers; the Wrench on the face the link looks out of steps the line it starts writing at, on any other face the source's option (display mode, time format, number format); a name tag sets the label; sneak-right-click with an empty hand clears it; the Wrench sneaking picks it up. The Display Link, Display Board and Nixie Tubes have not been played: type-checked and unit-tested only. Known differences from Create: only the sources of blocks this port has (no boiler, scoreboard, death count, enchanting power, tunnel, train, elevator, package or factory gauge sources); text is plain and the flaps' colours are one per line; a Display Link reading a redstone or nixie source and a Display Board's joins are polled (a few ticks, up to half a second for joins) rather than driven by block updates; the lines a link wrote first on a sign or lectern are remembered in memory, not saved; a Nixie Tube has no waterlogging and a cube hit box; a Display Board placed against another does not take its facing; the flap spin and its sounds are worked out from the game time the text changed (the same on every client) and are not Create's per-client random.
 
 Broad gaps across these modules:
 
