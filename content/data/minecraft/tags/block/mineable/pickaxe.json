@@ -458,6 +458,8 @@
     "create:steam_whistle",
     "create:steam_whistle_extension",
     "create:stockpile_switch",
+    "create:andesite_tunnel",
+    "create:brass_tunnel",
     "create:turntable",
     "create:weighted_ejector"
   ]

@@ -586,6 +586,8 @@
   "block.create.steam_whistle": "Steam Whistle",
   "block.create.steam_whistle_extension": "Steam Whistle Extension",
   "block.create.stockpile_switch": "Threshold Switch",
+  "block.create.andesite_tunnel": "Andesite Tunnel",
+  "block.create.brass_tunnel": "Brass Tunnel",
   "block.create.turntable": "Turntable",
   "block.create.weighted_ejector": "Weighted Ejector"
 }
