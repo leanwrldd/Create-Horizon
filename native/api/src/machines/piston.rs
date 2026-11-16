@@ -115,6 +115,7 @@ fn assemble(
     };
     let velocity = piston_rules::velocity(rpm, facing);
     let retract = velocity < 0.0;
+    engine::prepare(host);
     let checked = {
         let Some(world) = HostWorld::new(&*host) else {
             return false;

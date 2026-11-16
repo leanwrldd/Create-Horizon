@@ -204,7 +204,7 @@ impl Hooks for Chassis {
                     entity.nbt.insert(RANGE_KEY.into(), Tag::Int(next));
                 });
                 let radial = host.block(pos) == rules::RADIAL;
-                let line = format!("{}: {next}", if radial { "Chassis Radius" } else { "Chassis Range" });
+                let line = format!("{}: {next}", if radial { "Radius when Sticky" } else { "Range of Sticky Sides" });
                 host.action_bar(player.uuid, Text::literal(line));
             });
         }

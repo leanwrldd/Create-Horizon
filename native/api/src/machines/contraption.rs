@@ -90,6 +90,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 use create_kinetics::rules::contraption::{
     self as rules, Fail, State, Transform, World, pack, unpack,
 };
+use create_kinetics::rules::super_glue::GlueBox;
 use create_kinetics::rules::drill::hardness;
 use create_kinetics::{Dir, Pos};
 use horizon_client::mod_api::{
@@ -182,7 +183,7 @@ impl World for HostWorld<'_> {
     }
 
     fn glued(&self, pos: Pos, face: Dir) -> bool {
-        glued_hook(self.host, pos, face)
+        super::super_glue::glued(self.host, pos, face)
     }
 
     fn chassis(&self, pos: Pos) -> Option<rules::ChassisInfo> {
@@ -190,9 +191,10 @@ impl World for HostWorld<'_> {
     }
 }
 
-/// Super Glue between two blocks (`SuperGlueEntity.isGlued`). Nothing stores glue yet.
-pub(crate) fn glued_hook(_host: &dyn Host, _pos: Pos, _face: Dir) -> bool {
-    false
+/// Reads what a search needs of the level that only the host's `&mut` can reach (the glue,
+/// `super_glue.rs`): call it before `HostWorld::new` for an assembly.
+pub fn prepare(host: &mut dyn Host) {
+    super::super_glue::refresh(host);
 }
 
 /// A chassis at `pos` and its range (`ChassisBlockEntity.getRange`, kept by `chassis.rs`).
@@ -225,6 +227,9 @@ pub struct MovedBlock {
 pub struct Moving {
     pub anchor: Pos,
     pub blocks: Vec<MovedBlock>,
+    /// The Super Glue the structure carries (`Contraption.superglue`), in the same frame as the
+    /// blocks: put back where it lands.
+    pub glue: Vec<GlueBox>,
 }
 
 fn string(value: &str) -> Tag {
@@ -280,6 +285,18 @@ impl Moving {
         let mut out = Compound::new();
         out.insert("Anchor".into(), Tag::IntArray(self.anchor.to_vec()));
         out.insert("Blocks".into(), Tag::Compound(blocks));
+        // `Contraption.writeNBT`'s `Superglue`, as boxes of whole blocks.
+        let glue = self
+            .glue
+            .iter()
+            .map(|g| {
+                let mut entry = Compound::new();
+                entry.insert("From".into(), Tag::IntArray(g.min.to_vec()));
+                entry.insert("To".into(), Tag::IntArray(g.max.to_vec()));
+                Tag::Compound(entry)
+            })
+            .collect();
+        out.insert("Superglue".into(), Tag::List(glue));
         out
     }
 
@@ -326,7 +343,19 @@ impl Moving {
                 data,
             });
         }
-        Some(Moving { anchor, blocks: out })
+        let mut glue = Vec::new();
+        if let Some(Tag::List(list)) = util::get(nbt, "Superglue") {
+            for entry in list {
+                let corner = |key: &str| match util::get(compound(entry)?, key)? {
+                    Tag::IntArray(v) => <Pos>::try_from(v.as_slice()).ok(),
+                    _ => None,
+                };
+                if let (Some(min), Some(max)) = (corner("From"), corner("To")) {
+                    glue.push(GlueBox { min, max });
+                }
+            }
+        }
+        Some(Moving { anchor, blocks: out, glue })
     }
 
     /// The block states by position, for the collision check.
@@ -389,7 +418,14 @@ pub fn capture(
             data,
         });
     }
-    Moving { anchor, blocks }
+    // `removeBlocksFromWorld`: the glue that holds the structure leaves the level with it.
+    let structure: Vec<Pos> = extra.iter().chain(found.iter()).map(|(p, _)| *p).collect();
+    let found_cells: Vec<Pos> = found.iter().map(|(p, _)| *p).collect();
+    let glue = super::super_glue::capture(host, &found_cells, &structure, [0; 3])
+        .into_iter()
+        .map(|g| GlueBox::span(local_of(g.min), local_of(g.max)))
+        .collect();
+    Moving { anchor, blocks, glue }
 }
 
 /// What `Contraption.capture` changes in a state as it is taken: a button or pressure plate is
@@ -530,6 +566,8 @@ pub fn place_in_world(
             }
         }
     }
+    // `addBlocksToWorld`: the glue comes back where it lands.
+    super::super_glue::restore(host, &moving.glue, transform);
     placed
 }
 
@@ -852,7 +890,18 @@ mod tests {
                     data: None,
                 },
             ],
+            glue: vec![GlueBox { min: [0, 0, 0], max: [2, 0, 0] }],
         }
+    }
+
+    #[test]
+    fn the_glue_a_structure_carries_survives_its_nbt() {
+        let back = Moving::from_nbt(&sample().to_nbt(false)).expect("reads back");
+        assert_eq!(back.glue, vec![GlueBox { min: [0, 0, 0], max: [2, 0, 0] }]);
+        // An older save without the key has none.
+        let mut nbt = sample().to_nbt(false);
+        nbt.remove(&"Superglue".into());
+        assert!(Moving::from_nbt(&nbt).expect("reads").glue.is_empty());
     }
 
     #[test]

@@ -107,6 +107,7 @@ fn assemble(
     manual: bool,
 ) -> bool {
     let dimension = host.dimension().to_owned();
+    engine::prepare(host);
     let assembled = {
         let Some(world) = HostWorld::new(&*host) else {
             return false;
