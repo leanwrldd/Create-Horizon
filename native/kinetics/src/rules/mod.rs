@@ -54,6 +54,7 @@ pub mod millstone;
 pub mod mixer;
 pub mod nixie_tube;
 pub mod piston;
+pub mod pulley;
 pub mod pump;
 pub mod redstone_link;
 pub mod rose_quartz_lamp;

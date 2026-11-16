@@ -1,0 +1,37 @@
+{
+  "template": "minecraft:glass",
+  "item": false,
+  "properties": {
+    "hardness": 0.0,
+    "explosion_resistance": 0.0,
+    "requires_tool": false,
+    "sounds": "minecraft:white_wool",
+    "map_color": 26,
+    "render_shape": "MODEL",
+    "occludes": false
+  },
+  "shapes": {
+    "default": [
+      [
+        0.375,
+        0,
+        0.375,
+        0.625,
+        1,
+        0.625
+      ]
+    ]
+  },
+  "collision_shapes": {
+    "default": [
+      [
+        0.375,
+        0,
+        0.375,
+        0.625,
+        1,
+        0.625
+      ]
+    ]
+  }
+}

@@ -428,6 +428,8 @@
             "create:veridium_pillar",
             "create:mechanical_piston",
             "create:sticky_mechanical_piston",
+            "create:rope_pulley",
+            "create:pulley_magnet",
             "create:mechanical_pump",
             "create:mechanical_saw",
             "create:smart_fluid_pipe",
