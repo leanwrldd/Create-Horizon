@@ -31,6 +31,7 @@ pub mod encased;
 pub mod fan;
 pub mod fan_nozzle;
 pub mod fluid_pipe;
+pub mod fluid_pipe_attachments;
 pub mod fluid_tank;
 pub mod fluid_valve;
 pub mod fluids;

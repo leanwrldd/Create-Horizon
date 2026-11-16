@@ -257,7 +257,12 @@ impl Hooks for Pump {
         &self,
         event: &mut BlockEntityUpdateTagEvent<'_>,
     ) -> Option<Compound> {
-        (event.entity.id == MECHANICAL_PUMP).then(|| kinetic::update_tag(event.entity))
+        (event.entity.id == MECHANICAL_PUMP).then(|| {
+            let mut tag = kinetic::update_tag(event.entity);
+            // `PipeAttachmentModel`: the drain (`fluid_pipe_attachments.rs`).
+            super::fluid_pipe_attachments::copy_rims(&mut tag, &event.entity.nbt);
+            tag
+        })
     }
 
     /// `PumpRenderer`: the casing is in the chunk mesh; the cog turns about the facing axis.
