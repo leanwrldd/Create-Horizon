@@ -256,20 +256,6 @@ fn tick(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
 
 // --- the stand-in for the screen ------------------------------------------------------------------------
 
-/// The player whose click the switch took, when, and where: a click reaches `right_click_block`
-/// for each hand, and a step must happen once.
-static TAKEN_CLICK: Mutex<Option<(u128, i64, Pos)>> = Mutex::new(None);
-
-fn click_taken(uuid: u128, now: i64, at: Pos) -> bool {
-    let taken = *TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let again = taken.is_some_and(|(who, when, pos)| who == uuid && now - when <= 1 && pos == at);
-    if !again {
-        *TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
-            Some((uuid, now, at));
-    }
-    again
-}
-
 /// `ThresholdSwitchScreen` as a line: how full the block is, and the two thresholds.
 fn status(nbt: &Compound, kind: Kind) -> String {
     let (on, off) = (int(nbt, ON_ABOVE), int(nbt, OFF_BELOW));
@@ -425,13 +411,15 @@ impl Hooks for Switches {
         if player.sneaking {
             // The off hand's item counts when the main hand is empty: it is what would be placed.
             let hand = held.or_else(|| host.player_equipment(player.uuid, EquipmentSlot::OffHand));
-            if let Some(line) = target::click_filter(host, pos, hand.as_ref()) {
+            if util::first_click(&*host, player.uuid, pos)
+                && let Some(line) = target::click_filter(host, pos, hand.as_ref())
+            {
                 inv::tell(host, &line);
             }
             return Flow::Cancel;
         }
-        let now = util::game_time(&*host);
-        if click_taken(player.uuid, now, pos) {
+        // A click reaches `right_click_block` for each hand, and a step must happen once.
+        if !util::first_click(&*host, player.uuid, pos) {
             return Flow::Cancel;
         }
         if held.as_ref().is_some_and(|stack| &*stack.item == REDSTONE_TORCH) {
@@ -484,18 +472,6 @@ mod tests {
         assert!(publish(7, pos, true));
         assert!(!publish(7, pos, false));
         assert_eq!(SIGNALS.lock().unwrap().get(&(7, pos)).map(|e| e.0), Some(false));
-    }
-
-    #[test]
-    fn the_same_click_twice_in_a_tick_is_one() {
-        let at = [9, 9, 9];
-        assert!(!click_taken(42, 100, at));
-        assert!(click_taken(42, 100, at));
-        assert!(click_taken(42, 101, at));
-        // Another player, another block, or a click a moment later is a new one.
-        assert!(!click_taken(43, 101, at));
-        assert!(!click_taken(43, 101, [9, 9, 10]));
-        assert!(!click_taken(43, 110, [9, 9, 10]));
     }
 
     #[test]

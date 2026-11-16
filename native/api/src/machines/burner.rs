@@ -448,11 +448,16 @@ impl Hooks for BlazeBurner {
         let Some(stack) = main else {
             return Flow::Continue;
         };
+        // The off hand's turn of a click the burner took (a stack of fuel is used up once more).
+        if util::click_repeated(host, uuid, pos) {
+            return Flow::Cancel;
+        }
         let item = &*stack.item;
         let dimension = host.dimension();
         if block == LIT {
             if item.ends_with("_shovel") {
                 // `EXTINGUISH_FLAME_ACTION`: back to an empty burner (no wear on the shovel).
+                util::click_taken(host, uuid, pos);
                 host.play_sound("minecraft:block.fire.extinguish", util::centre(pos), 4, 0.5, 2.0);
                 if let Some(state) = host.default_state(ID) {
                     host.set_block(dimension, pos, state, util::UPDATE_ALL);
@@ -462,6 +467,7 @@ impl Hooks for BlazeBurner {
             if host.block_property(pos, "flame_type").as_deref() == Some("regular")
                 && matches!(item, "minecraft:soul_sand" | "minecraft:soul_soil")
             {
+                util::click_taken(host, uuid, pos);
                 host.play_sound("minecraft:block.soul_sand.place", util::centre(pos), 4, 1.0, 1.0);
                 host.set_block_property(pos, "flame_type", "soul");
                 return Flow::Cancel;
@@ -471,6 +477,7 @@ impl Hooks for BlazeBurner {
         let heat = heat_of(host, pos);
         if heat == HeatLevel::None {
             if item == "minecraft:flint_and_steel" {
+                util::click_taken(host, uuid, pos);
                 host.play_sound("minecraft:item.flintandsteel.use", util::centre(pos), 4, 1.0, 1.0);
                 if let Some(state) = host.default_state(LIT) {
                     host.set_block(dimension, pos, state, util::UPDATE_ALL);
@@ -480,6 +487,7 @@ impl Hooks for BlazeBurner {
             return Flow::Continue;
         }
         if try_insert(host, pos, &stack, player.game_mode == util::CREATIVE) {
+            util::click_taken(host, uuid, pos);
             Flow::Cancel
         } else {
             Flow::Continue

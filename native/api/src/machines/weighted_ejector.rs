@@ -1156,6 +1156,10 @@ impl Hooks for Ejector {
         if state_of(&*host, pos) != State::Charged {
             return Flow::Cancel;
         }
+        // Once a click: the off hand's turn would take back what the first put down.
+        if !util::first_click(host, uuid, pos) {
+            return Flow::Cancel;
+        }
         let mut taken: Vec<ItemStack> = Vec::new();
         host.change_mod_block_entity(pos, &mut |entity| {
             for slot in entity.items.iter_mut() {

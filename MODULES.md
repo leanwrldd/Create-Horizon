@@ -43,6 +43,11 @@ else. `forward.rs` hands each hook to `Core` first and then to every module, in 
 hook returning `Flow` stops at the first `Cancel`, one returning an `Option` at the first `Some`,
 any other reaches everyone.
 
+A `right_click_block` handler is heard once for each hand (the event doesn't say which), so one that
+changes anything asks `util::click_repeated(host, uuid, pos)` first and answers `Flow::Cancel` for the
+repeat, then calls `util::click_taken(..)` when it acts (or `util::first_click(..)` where it acts at
+once). The decision is `rules::click`.
+
 ```rust
 //! Example Machine: a casing with a shaft out of its bottom that costs 4 su per RPM
 //! (`ExampleBlock`, `ExampleBlockEntity`, `ExampleRenderer`).

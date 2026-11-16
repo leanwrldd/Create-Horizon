@@ -21,7 +21,6 @@ use horizon_client::mod_api::{
     EquipmentSlot, Flow, Hooks, Host, ItemStack, ModBlockEntity, ModContainer,
     RightClickBlockEvent, StandaloneModelsEvent, Tag, UseItemOnEvent,
 };
-use std::sync::Mutex;
 
 use crate::{kinetic, recipes, util};
 
@@ -314,8 +313,7 @@ impl Hooks for Millstone {
             return Flow::Continue;
         }
         // The client may send the off hand's click for the same use: once is enough.
-        let now = util::game_time(host);
-        if repeated(uuid, pos, now) {
+        if !util::first_click(host, uuid, pos) {
             return Flow::Cancel;
         }
 
@@ -349,15 +347,3 @@ impl Hooks for Millstone {
     }
 }
 
-/// The last collection by a player: `(player, block, game time)`.
-static LAST: Mutex<Option<(u128, [i32; 3], i64)>> = Mutex::new(None);
-
-/// Whether this player collected from this block a moment ago (the same tick or the one before).
-fn repeated(uuid: u128, pos: [i32; 3], now: i64) -> bool {
-    let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let again = matches!(*last, Some((u, p, t)) if u == uuid && p == pos && now - t <= 1);
-    if !again {
-        *last = Some((uuid, pos, now));
-    }
-    again
-}

@@ -495,6 +495,10 @@ impl Hooks for Core {
         {
             return Flow::Continue;
         }
+        // Once a click: the off hand's turn would charge the exhaustion again.
+        if !util::first_click(host, player.uuid, pos) {
+            return Flow::Cancel;
+        }
         let backwards = i8::from(player.sneaking);
         host.change_mod_block_entity(pos, &mut |entity| {
             entity.nbt.insert(IN_USE.into(), Tag::Int(CRANK_TICKS));

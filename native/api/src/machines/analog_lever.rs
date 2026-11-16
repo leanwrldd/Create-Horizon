@@ -277,6 +277,10 @@ impl Hooks for AnalogLever {
         if player.sneaking && !signal::hands_empty(host) {
             return Flow::Continue;
         }
+        // The off hand's turn of a click that already stepped it.
+        if util::click_repeated(host, player.uuid, pos) {
+            return Flow::Cancel;
+        }
         let back = player.sneaking;
         let now = util::game_time(host);
         let mut new_state = 0;
@@ -299,6 +303,7 @@ impl Hooks for AnalogLever {
         if !changed {
             return Flow::Continue;
         }
+        util::click_taken(host, player.uuid, pos);
         let level = signal::host_level(host);
         publish(level, pos, new_state);
         host.block_entity_sync(pos);

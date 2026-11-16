@@ -189,6 +189,50 @@ pub fn game_time(host: &dyn Host) -> i64 {
         .unwrap_or(0)
 }
 
+// --- one click, heard once for each hand -------------------------------------------------------------
+
+/// The last click each player's block took, by player: the memory behind [`click_repeated`].
+static TAKEN_CLICKS: std::sync::Mutex<BTreeMap<u128, create_kinetics::rules::click::Click>> =
+    std::sync::Mutex::new(BTreeMap::new());
+
+fn last_click(who: u128) -> Option<create_kinetics::rules::click::Click> {
+    let taken = TAKEN_CLICKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    taken.get(&who).copied()
+}
+
+/// Whether this call of `right_click_block` is the rest of a click `who` already had taken at
+/// `pos` (the off hand's turn of it): the handler then answers `Flow::Cancel` without acting. A
+/// click is heard once for each hand the game tries and `RightClickBlockEvent` doesn't say which
+/// (`right_click_block_v2` does, but isn't asked once a v1 handler cancels). Ask after the
+/// handler has decided the click is its own, and call [`click_taken`] once it acts; or use
+/// [`first_click`] when it acts at once. The decision is `rules::click`.
+pub fn click_repeated(host: &dyn Host, who: u128, pos: Pos) -> bool {
+    create_kinetics::rules::click::is_repeat(last_click(who), game_time(host), pos)
+}
+
+/// Whether anything now is the rest of a click `who` had taken, wherever: the item use the client
+/// sends after a click a block took (a bucket's own use) has no position.
+pub fn click_repeated_anywhere(host: &dyn Host, who: u128) -> bool {
+    create_kinetics::rules::click::is_repeat_anywhere(last_click(who), game_time(host))
+}
+
+/// Records that the click of `who` on `pos` is taken, so [`click_repeated`] knows its repeat.
+/// Only for a handler that goes on to return `Flow::Cancel`.
+pub fn click_taken(host: &dyn Host, who: u128, pos: Pos) {
+    let click = create_kinetics::rules::click::Click { tick: game_time(host), pos };
+    TAKEN_CLICKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(who, click);
+}
+
+/// True for a new click, which it records as taken; false for the repeat of one (answer
+/// `Flow::Cancel`). For a handler that acts whenever it gets this far.
+pub fn first_click(host: &dyn Host, who: u128, pos: Pos) -> bool {
+    if click_repeated(host, who, pos) {
+        return false;
+    }
+    click_taken(host, who, pos);
+    true
+}
+
 /// Drops `stack` as an item entity at `at` moving at `motion` (blocks a tick).
 pub fn spawn_item(
     host: &mut dyn Host,

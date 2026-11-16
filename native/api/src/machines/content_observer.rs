@@ -227,7 +227,9 @@ impl Hooks for Observers {
         {
             return Flow::Continue;
         }
-        if let Some(line) = target::click_filter(host, pos, None) {
+        if util::first_click(host, player.uuid, pos)
+            && let Some(line) = target::click_filter(host, pos, None)
+        {
             super::chute_inv::tell(host, &line);
         }
         Flow::Cancel

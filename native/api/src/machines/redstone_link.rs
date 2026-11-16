@@ -435,7 +435,10 @@ impl Hooks for RedstoneLink {
             if !signal::hands_empty(host) {
                 return Flow::Continue;
             }
-            toggle_mode(host, pos);
+            // Once a click: the off hand's turn would switch it back.
+            if util::first_click(host, player.uuid, pos) {
+                toggle_mode(host, pos);
+            }
             return Flow::Cancel;
         }
         // `LinkHandler`: not for spectators or while holding the Wrench (which toggles).
@@ -466,7 +469,9 @@ impl Hooks for RedstoneLink {
             stack.count = 1;
             stack
         });
-        set_frequency(host, pos, first, held);
+        if util::first_click(host, player.uuid, pos) {
+            set_frequency(host, pos, first, held);
+        }
         Flow::Cancel
     }
 

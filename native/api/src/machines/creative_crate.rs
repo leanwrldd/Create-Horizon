@@ -169,7 +169,9 @@ impl Hooks for Crates {
             Some(_) if player.sneaking => Flow::Continue,
             Some(mut stack) => {
                 stack.count = 1;
-                if set_filter(host, pos, Some(stack.clone())) {
+                if util::first_click(host, player.uuid, pos)
+                    && set_filter(host, pos, Some(stack.clone()))
+                {
                     inv::tell(host, &describe(&Some(stack)));
                 }
                 Flow::Cancel
@@ -182,7 +184,7 @@ impl Hooks for Crates {
                 {
                     return Flow::Continue;
                 }
-                if set_filter(host, pos, None) {
+                if util::first_click(host, player.uuid, pos) && set_filter(host, pos, None) {
                     inv::tell(host, &describe(&None));
                 }
                 Flow::Cancel

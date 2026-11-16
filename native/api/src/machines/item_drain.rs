@@ -15,7 +15,6 @@
 //!   comparator signal (the hook gets no block entity), goggle tooltip or advancements.
 //! - The block drops what it holds when a player breaks it; an explosion or a piston doesn't.
 
-use std::sync::Mutex;
 
 use create_kinetics::belt::Item;
 use create_kinetics::rules::fluids as fluid_rules;
@@ -436,14 +435,8 @@ fn landed(host: &mut dyn Host, pos: Pos) {
 
 // --- clicks ---------------------------------------------------------------------------------------
 
-/// The player whose click a drain took, when, and on which block (as the tank's: the off hand's
-/// turn of one click, and the item use after it, are dropped while it is fresh).
-static TAKEN_CLICK: Mutex<Option<(u128, i64, Pos)>> = Mutex::new(None);
-
-fn click_taken(uuid: u128, now: i64, at: Option<Pos>) -> bool {
-    let taken = *TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    taken.is_some_and(|(who, when, pos)| who == uuid && now - when <= 1 && at.is_none_or(|at| at == pos))
-}
+// As the tank's: the off hand's turn of a click a drain took, and the item use after it, are
+// dropped while the click is fresh (`util::click_repeated`, `util::click_repeated_anywhere`).
 
 /// `FluidHelper.tryEmptyItemIntoBE` with the tank open to filling: a plain container in hand
 /// empties into the drain's tank, if all of it fits. True when it did.
@@ -608,8 +601,7 @@ impl Hooks for Drains {
         if player.sneaking && stack.is_some() {
             return Flow::Continue;
         }
-        let now = util::game_time(&*host);
-        if click_taken(uuid, now, Some(pos)) {
+        if util::click_repeated(&*host, uuid, pos) {
             return Flow::Cancel;
         }
         if let Some(stack) = &stack {
@@ -622,8 +614,7 @@ impl Hooks for Drains {
             if empty_into(host, pos, stack, player.game_mode == util::CREATIVE)
                 || fill::can_be_emptied(&*host, stack)
             {
-                *TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
-                    Some((uuid, now, pos));
+                util::click_taken(&*host, uuid, pos);
                 return Flow::Cancel;
             }
         }
@@ -636,7 +627,7 @@ impl Hooks for Drains {
             });
             host.block_entity_sync(pos);
         }
-        *TAKEN_CLICK.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((uuid, now, pos));
+        util::click_taken(&*host, uuid, pos);
         Flow::Cancel
     }
 
@@ -645,7 +636,7 @@ impl Hooks for Drains {
         let Some(player) = host.acting_player() else {
             return Flow::Continue;
         };
-        if !click_taken(player.uuid, util::game_time(&*host), None) {
+        if !util::click_repeated_anywhere(&*host, player.uuid) {
             return Flow::Continue;
         }
         let item: &str = &event.stack.item;
