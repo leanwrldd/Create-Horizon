@@ -130,6 +130,7 @@ impl Held {
             inserted_at: 0,
             inserted_from: self.from,
             locked: false,
+            at_tunnel: false,
         }
     }
 }

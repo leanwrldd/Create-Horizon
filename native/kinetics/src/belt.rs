@@ -249,6 +249,23 @@ pub enum Insertion {
     All,
 }
 
+/// What a tunnel over the next block does to an item about to cross into it
+/// (`BeltTunnelInteractionHandler.flapTunnelsAndCheckIfStuck`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Crossing {
+    /// No tunnel, or one that lets it through: it moves on.
+    Pass,
+    /// An Andesite Tunnel split items off the stack (the stack is now smaller): it moves on.
+    Split,
+    /// A Brass Tunnel's filter or its full hands refuse it: it waits just before the tunnel
+    /// (`stuckAtTunnel`).
+    Stuck,
+    /// A Brass Tunnel can't take it yet: it waits where it is.
+    Wait,
+    /// A Brass Tunnel took the whole stack: it is gone from the belt.
+    Taken,
+}
+
 /// What a belt's surroundings answer while its items move: the end of the belt, and what sits
 /// above it. The glue implements this over the game; a plain `|| Ending` does for the rules.
 pub trait Surroundings<S> {
@@ -265,6 +282,13 @@ pub trait Surroundings<S> {
     /// `segment`; `None` where no processor works there (or the space is blocked).
     fn received(&mut self, _segment: i32, _item: &Item<S>) -> Option<Processing> {
         None
+    }
+
+    /// A tunnel over `to`, the block the item crosses into from block `from`
+    /// (`BeltTunnelInteractionHandler.flapTunnelsAndCheckIfStuck`): it flaps the tunnels on both
+    /// sides of the crossing, and may split items off the stack, take it, or turn it away.
+    fn crossing(&mut self, _from: i32, _to: i32, _item: &mut Item<S>) -> Crossing {
+        Crossing::Pass
     }
 
     /// `handleInsertion` into the block past the end for an item at the end of the belt, with
@@ -299,6 +323,9 @@ pub struct Item<S> {
     pub inserted_from: Dir,
     /// `locked`: a processor above holds it in the middle of a block.
     pub locked: bool,
+    /// Held up by a Brass Tunnel ahead (`stuckAtTunnel`, `canTakeItems`): Create's clients work
+    /// that out from the tunnel they can see; a client here is told, and draws the item standing.
+    pub at_tunnel: bool,
 }
 
 impl<S> Item<S> {
@@ -313,6 +340,7 @@ impl<S> Item<S> {
             inserted_at: segment,
             inserted_from: Dir::Up,
             locked: false,
+            at_tunnel: false,
         };
         item.side = item.target_side();
         item
@@ -496,6 +524,40 @@ impl<S> Inventory<S> {
                 front = Some(item.pos);
                 kept.push(item);
                 continue;
+            }
+            // Belt tunnels (`BeltTunnelInteractionHandler.flapTunnelsAndCheckIfStuck`).
+            let from = item.pos as i32;
+            let mut to = next_offset as i32;
+            if !positive && next_offset == 0.0 {
+                to = -1;
+            }
+            let was_waiting = item.at_tunnel;
+            let crossing = if from == to {
+                Crossing::Pass
+            } else {
+                env.crossing(from, to, &mut item)
+            };
+            item.at_tunnel = matches!(crossing, Crossing::Stuck | Crossing::Wait);
+            if item.at_tunnel != was_waiting {
+                moved.reordered = true;
+            }
+            match crossing {
+                Crossing::Pass => {}
+                Crossing::Split => moved.reordered = true,
+                Crossing::Stuck | Crossing::Wait => {
+                    if crossing == Crossing::Stuck {
+                        item.pos = crate::rules::tunnel::stuck_position(from, positive);
+                        moved.moved = true;
+                    }
+                    front = Some(item.pos);
+                    kept.push(item);
+                    continue;
+                }
+                Crossing::Taken => {
+                    front = Some(item.pos);
+                    moved.reordered = true;
+                    continue;
+                }
             }
             item.pos += limited;
             let to_middle = item.target_side() - item.side;
@@ -1041,6 +1103,7 @@ mod tests {
                     inserted_at: 0,
                     inserted_from: Dir::Up,
                     locked: false,
+                    at_tunnel: false,
                 })
                 .collect(),
             positive,
@@ -1518,5 +1581,87 @@ mod tests {
         for part in Part::ALL {
             assert_eq!(Part::from_name(part.name()), Some(part));
         }
+    }
+
+    /// A tunnel over block `at` that answers every crossing into it with one verdict.
+    struct Tunnel {
+        at: i32,
+        verdict: Crossing,
+        crossings: Vec<(i32, i32)>,
+    }
+
+    impl Surroundings<u32> for Tunnel {
+        fn ending(&mut self) -> Ending {
+            Ending::Eject
+        }
+        fn crossing(&mut self, from: i32, to: i32, _: &mut Item<u32>) -> Crossing {
+            self.crossings.push((from, to));
+            if to == self.at { self.verdict } else { Crossing::Pass }
+        }
+    }
+
+    #[test]
+    fn an_item_crossing_into_a_tunnel_block_is_offered_to_it_once() {
+        let mut inventory = belt(&[0.95], true);
+        let mut env = Tunnel { at: 1, verdict: Crossing::Pass, crossings: Vec::new() };
+        let moved = inventory.tick_with(0.1, 4, &mut env);
+        assert_eq!(env.crossings, vec![(0, 1)]);
+        assert!(close(inventory.items[0].pos, 1.05));
+        assert!(!moved.reordered);
+        // Within a block: no crossing.
+        env.crossings.clear();
+        inventory.tick_with(0.1, 4, &mut env);
+        assert!(env.crossings.is_empty());
+    }
+
+    #[test]
+    fn an_item_turned_away_waits_before_the_tunnel_and_is_told_to_clients() {
+        let mut inventory = belt(&[0.95, 0.0], true);
+        let mut env = Tunnel { at: 1, verdict: Crossing::Stuck, crossings: Vec::new() };
+        let moved = inventory.tick_with(0.1, 4, &mut env);
+        assert!(close(inventory.items[0].pos, 0.99));
+        assert!(inventory.items[0].at_tunnel);
+        assert!(moved.reordered);
+        // It stays, and what is behind it queues.
+        let moved = inventory.tick_with(0.1, 4, &mut env);
+        assert!(close(inventory.items[0].pos, 0.99));
+        assert!(!moved.reordered);
+        // Let through, it moves on and clients hear it.
+        env.verdict = Crossing::Pass;
+        let moved = inventory.tick_with(0.1, 4, &mut env);
+        assert!(inventory.items[0].pos > 1.0);
+        assert!(!inventory.items[0].at_tunnel);
+        assert!(moved.reordered);
+    }
+
+    #[test]
+    fn an_item_that_must_wait_stays_where_it_is() {
+        let mut inventory = belt(&[0.95], true);
+        let mut env = Tunnel { at: 1, verdict: Crossing::Wait, crossings: Vec::new() };
+        inventory.tick_with(0.1, 4, &mut env);
+        assert!(close(inventory.items[0].pos, 0.95));
+        assert!(inventory.items[0].at_tunnel);
+    }
+
+    #[test]
+    fn an_item_a_tunnel_took_leaves_the_belt() {
+        let mut inventory = belt(&[0.95, 0.0], true);
+        let mut env = Tunnel { at: 1, verdict: Crossing::Taken, crossings: Vec::new() };
+        let moved = inventory.tick_with(0.1, 4, &mut env);
+        assert_eq!(inventory.items.len(), 1);
+        assert!(moved.reordered);
+    }
+
+    #[test]
+    fn a_belt_moving_towards_its_start_crosses_the_other_way() {
+        let mut inventory = belt(&[2.05], false);
+        let mut env = Tunnel { at: 1, verdict: Crossing::Pass, crossings: Vec::new() };
+        inventory.tick_with(-0.1, 4, &mut env);
+        assert_eq!(env.crossings, vec![(2, 1)]);
+        // Leaving the first block backwards crosses to the one before it.
+        let mut inventory = belt(&[0.05], false);
+        let mut env = Tunnel { at: -1, verdict: Crossing::Pass, crossings: Vec::new() };
+        inventory.tick_with(-0.1, 4, &mut env);
+        assert_eq!(env.crossings, vec![(0, -1)]);
     }
 }

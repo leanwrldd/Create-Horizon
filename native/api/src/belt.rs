@@ -12,7 +12,7 @@ use std::hash::{BuildHasher, Hasher};
 use std::sync::Mutex;
 
 use create_kinetics::belt::{
-    self, Ending, Insertion, Inventory, Item, Part, Processing, Surroundings, chain_speed,
+    self, Crossing, Ending, Insertion, Inventory, Item, Part, Processing, Surroundings, chain_speed,
     clockwise, connect, entry, foresee, movement_facing, movement_speed, part_at, rotation_axis,
     segment_position,
 };
@@ -160,6 +160,9 @@ fn item_tag(item: &Item<ItemStack>) -> Tag {
     if item.locked {
         tag.insert("Locked".into(), Tag::Byte(1));
     }
+    if item.at_tunnel {
+        tag.insert("AtTunnel".into(), Tag::Byte(1));
+    }
     Tag::Compound(tag)
 }
 
@@ -178,6 +181,7 @@ fn item_of(tag: &Tag) -> Option<Item<ItemStack>> {
             .copied()
             .unwrap_or(Dir::Up),
         locked: int(nbt, "Locked") != 0,
+        at_tunnel: int(nbt, "AtTunnel") != 0,
     })
 }
 
@@ -343,6 +347,52 @@ fn extra_input(block: &str) -> Option<BeltInput> {
         .iter()
         .find(|input| (input.claims)(block))
         .copied()
+}
+
+/// What the Andesite and Brass Tunnels do over a belt (`BeltTunnelInteractionHandler`): the module
+/// of the tunnels adds it with [`register_tunnels`] when it starts, so this file doesn't name it.
+#[derive(Clone, Copy)]
+pub(crate) struct TunnelHandler {
+    /// `flapTunnelsAndCheckIfStuck`: an item moving towards `movement` crosses from the belt block
+    /// at `from` into the one at `to`; the tunnels sit one block above each.
+    pub cross: fn(&mut dyn Host, &mut Item<ItemStack>, Pos, Pos, Dir) -> Crossing,
+    /// `flapTunnel` at the end of the belt: an item left it past the belt block at `last`, moving
+    /// towards `movement`.
+    pub left: fn(&mut dyn Host, Pos, Dir),
+    /// `BeltBlock.entityInside`: a tunnel over the belt block at the position, whose items an item
+    /// entity dropped there doesn't join.
+    pub covers: fn(&dyn Host, Pos) -> bool,
+}
+
+static TUNNELS: Mutex<Option<TunnelHandler>> = Mutex::new(None);
+
+#[allow(dead_code)] // the tunnel module calls it; a build without it doesn't
+pub(crate) fn register_tunnels(handler: TunnelHandler) {
+    *TUNNELS.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(handler);
+}
+
+fn tunnels() -> Option<TunnelHandler> {
+    *TUNNELS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The horizontal belt block at `pos` as a tunnel over it sees it (`BeltHelper.getSegmentBE`):
+/// the way it faces, its speed in RPM and the way its top moves (`getMovementFacing`).
+#[derive(Clone, Copy, Debug)]
+#[allow(dead_code)] // the tunnel module's
+pub(crate) struct Below {
+    pub facing: Dir,
+    pub rpm: f32,
+    pub movement: Dir,
+}
+
+#[allow(dead_code)] // the tunnel module's
+pub(crate) fn below(host: &dyn Host, pos: Pos) -> Option<Below> {
+    let (facing, _) = segment(host, pos)?;
+    let rpm = host
+        .mod_block_entity(pos)
+        .and_then(|e| float(&e.nbt, SPEED))
+        .unwrap_or(0.0);
+    Some(Below { facing, rpm, movement: movement_facing(rpm, facing) })
 }
 
 /// Something that keeps the stopped item of a belt block where it is (`TransportedItemStack.
@@ -555,6 +605,14 @@ impl Around<'_> {
     fn at(&self, segment: i32) -> Pos {
         segment_position(self.controller, self.facing, segment)
     }
+
+    /// `flapTunnel(this, lastOffset, movementFacing, false)`: an item left the belt's last block.
+    fn flap_last_block(&mut self) {
+        if let Some(tunnels) = tunnels() {
+            let last = self.at(if self.positive { self.length - 1 } else { 0 });
+            (tunnels.left)(self.host, last, movement_facing(self.rpm, self.facing));
+        }
+    }
 }
 
 impl Surroundings<ItemStack> for Around<'_> {
@@ -591,6 +649,16 @@ impl Surroundings<ItemStack> for Around<'_> {
         press::offered(self.host, above, &item.stack)
     }
 
+    /// `BeltTunnelInteractionHandler.flapTunnelsAndCheckIfStuck`.
+    fn crossing(&mut self, from: i32, to: i32, item: &mut Item<ItemStack>) -> Crossing {
+        let Some(tunnels) = tunnels() else {
+            return Crossing::Pass;
+        };
+        let movement = movement_facing(self.rpm, self.facing);
+        let (from, to) = (self.at(from), self.at(to));
+        (tunnels.cross)(self.host, item, from, to, movement)
+    }
+
     /// `Ending.INSERT`: the item is at the end; the block past it may take it.
     fn insert(&mut self, item: &mut Item<ItemStack>) -> Insertion {
         let next = segment_position(
@@ -603,14 +671,18 @@ impl Surroundings<ItemStack> for Around<'_> {
             return Insertion::Nothing;
         }
         let before = item.stack.count;
-        match handle_insertion(self.host, next, side, item, true, false) {
+        let result = match handle_insertion(self.host, next, side, item, true, false) {
             Some(rest) if rest.count == 0 => Insertion::All,
             Some(rest) if rest.count != before => {
                 item.stack = rest;
                 Insertion::Part
             }
             _ => Insertion::Nothing,
+        };
+        if result != Insertion::Nothing {
+            self.flap_last_block();
         }
+        result
     }
 }
 
@@ -779,6 +851,7 @@ fn belt_insert(
         inserted_at: index,
         inserted_from: side,
         locked: false,
+        at_tunnel: false,
     };
     push_incoming(host, controller, vec![new]);
     Some(none)
@@ -1075,6 +1148,9 @@ fn carry(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, facing: Dir
         if !inventory.can_insert_at(offset) {
             continue;
         }
+        if tunnels().is_some_and(|t| (t.covers)(&*host, block)) {
+            continue;
+        }
         // `ItemHelper.limitCountToMaxStackSize`: one stack's worth gets on.
         let limit = host.max_stack_size(&found.stack.item).unwrap_or(64);
         let taking = found.stack.count.min(limit);
@@ -1113,6 +1189,10 @@ fn carry(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, facing: Dir
         let moved = inventory.tick_with(speed, length, &mut around);
         for item in &moved.ejected {
             eject(host, pos, facing, rpm, item);
+            if let Some(tunnels) = tunnels() {
+                let last = segment_position(pos, facing, if positive { length - 1 } else { 0 });
+                (tunnels.left)(host, last, movement_facing(rpm, facing));
+            }
         }
         changed |= moved.moved || moved.reordered;
         sync |= moved.reordered;
@@ -1302,7 +1382,7 @@ fn draw_items(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, rpm: f32
     let since = (draw.game_time - long(&entity.nbt, TICK).unwrap_or(draw.game_time)) as f32
         + draw.partial;
     let positions: Vec<f32> = inventory.items.iter().map(|i| i.pos).collect();
-    let locked: Vec<bool> = inventory.items.iter().map(|i| i.locked).collect();
+    let locked: Vec<bool> = inventory.items.iter().map(|i| i.locked || i.at_tunnel).collect();
     let drawn = foresee(&positions, &locked, chain_speed(rpm, facing), since, length, margin);
     let n = facing.normal().map(|v| v as f32);
     let along_x = clockwise(facing).axis() == Axis::X;
@@ -1564,6 +1644,16 @@ mod tests {
         let free = Item::dropped(ItemStack::new("minecraft:iron_ingot", 1), 0, 10, true);
         let Tag::Compound(saved) = item_tag(&free) else { panic!() };
         assert!(!saved.contains_key(&"Locked".into()));
+        assert!(!saved.contains_key(&"AtTunnel".into()));
+    }
+
+    #[test]
+    fn an_item_waiting_at_a_tunnel_is_saved_so_clients_stop_it() {
+        let mut waiting = Item::dropped(ItemStack::new("minecraft:iron_ingot", 3), 1, 90, true);
+        waiting.at_tunnel = true;
+        waiting.pos = 1.99;
+        let tag = item_tag(&waiting);
+        assert_eq!(item_of(&tag), Some(waiting));
     }
 
     #[test]

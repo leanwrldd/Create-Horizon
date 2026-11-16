@@ -57,5 +57,7 @@ pub mod spout;
 pub mod steam_engine;
 pub mod steam_engine_whistle;
 pub mod stockpile_switch;
+pub mod tunnel;
+pub mod tunnel_brass;
 pub mod turntable;
 pub mod weighted_ejector;

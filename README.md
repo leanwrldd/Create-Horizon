@@ -87,7 +87,7 @@ over a belt stops each item and presses it one at a time, and casings and dye ca
 The belt's texture scrolls with its speed and shows its dye, and an andesite casing draws as andesite (all through
 Horizon's UV shift, `Host::draw_terrain_model`, API 564; not yet checked in game).
 
-Not yet: slopes, vertical and sideways belts, funnels, tunnels, fans over the belt, carrying players and mobs, and
+Not yet: slopes, vertical and sideways belts, fans over the belt, carrying players and mobs, and
 upright items. The rest of a broken belt goes one block a tick, not
 all at once, and only a player's break drops its items (an explosion loses them). The first shaft is remembered per
 player rather than on the item, with no outline shown.
@@ -122,6 +122,7 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Mechanical Saw | Sideways: breaks blocks and fells whole trees (Create's `TreeCutter`). Upright: cuts items dropped on it or carried in by belts with `create:cutting` and stonecutting recipes, and hands results on |
 | Belts II | Compacting with the press over a basin; the press over a belt and a depot; belt hand-off; depot output slots and hoppers; belt casings and dye |
 | Chutes, Funnels | Chute and Smart Chute (items fall, fans push them up, hoppers and belts feed them); Andesite and Brass Funnels taking from and putting into the block behind, and on belts and depots as belt funnels; filters set by sneak-clicking with an item |
+| Andesite and Brass Tunnels | A casing over a belt block (it puts a casing on the belt if there is none) that takes the shape of what is beside the belt: straight, T, cross, or a window between tunnels and funnels (the Wrench closes and opens a window). Flaps swing as items pass. The Andesite Tunnel splits one item off a stack to each side output (belts, depots, funnels). The Brass Tunnel takes whole stacks and gives them out by its mode (split, forced split, round robin, forced round robin, prefer nearest, randomize, synchronize inputs) across the group of tunnels side by side, with a filter on each side; an empty hand takes back what the group holds. Sneak-click the top steps the mode, sneak-click a side with an item sets that side's filter. Unplayed: type-checked and unit-tested only |
 | Steam | The boiler on a Fluid Tank, heated by Blaze Burners and fed water by pipes, with its gauge; the Steam Engine turning a Powered Shaft; the Steam Whistle and its extensions, pitched by size |
 | Spout, Item Drain | The Spout fills items on a belt or depot below it from its tank (`create:filling` recipes, buckets, bottles); the Item Drain empties items brought by belt, funnel or hand into its tank |
 | Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter (sneak-click with an item); a fluid pipe encased with a copper casing |
@@ -145,6 +146,12 @@ Broad gaps across these modules:
   time (`RuntimeDataGenerator`) are baked for vanilla's items.
 - Honey and chocolate flow and pour, but Horizon draws a mod fluid as its template (water), and an empty bucket
   didn't pick them back up in the test.
+- Tunnels (`native/api/src/machines/tunnel.rs` lists them all): their shape, sides and flaps follow the
+  neighbours every 4 ticks rather than on each update, a tunnel closed with the Wrench stays closed, a
+  tunnel breaks a few ticks after its belt loses its casing, and there is no item handler (a hopper or
+  funnel can't put items into one or take from one), no goggle tooltip, no Display Link source, no
+  connected top texture on Brass Tunnels in a group and no flap sound. The belt tells clients an item is
+  held up at a tunnel (`at_tunnel`) instead of letting them work it out.
 - A mod can't list another block's slots, so chutes and funnels read a container's saved items; the Smart Chute
   and Brass Funnel have no filter slot (sneak-click with an item instead).
 
@@ -209,7 +216,7 @@ item icons.
 
 ### Not done, and known differences from Create
 
-- Tunnels, the mechanical crafter, open pipe ends, most contraptions, trains, the rest of logistics
+- The mechanical crafter, open pipe ends, most contraptions, trains, the rest of logistics
   and schematics.
 - The Deployer, the storage blocks, the Mechanical Arm, girders, seats and copycats have not been tried in
   game. The Spout, Item Drain, valves, smart pipes, redstone parts and small kinetic blocks were (build

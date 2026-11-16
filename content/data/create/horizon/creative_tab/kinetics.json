@@ -141,6 +141,8 @@
     "create:steam_engine",
     "create:steam_whistle",
     "create:stockpile_switch",
+    "create:andesite_tunnel",
+    "create:brass_tunnel",
     "create:turntable",
     "create:weighted_ejector"
   ]
