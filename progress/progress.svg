@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="316" viewBox="0 0 640 316" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
 <style>.t{fill:#24292f}.m{fill:#57606a}.track{fill:#d0d7de}.fill{fill:#c98a2b}@media (prefers-color-scheme:dark){.t{fill:#e6edf3}.m{fill:#8d96a0}.track{fill:#30363d}.fill{fill:#e3a64a}}</style>
-<text class="t" x="16" y="30" font-size="18" font-weight="600">Create ported to Horizon: 54.9%</text>
-<text class="m" x="16" y="50" font-size="12">135 of 246 Create blocks and items declared</text>
+<text class="t" x="16" y="30" font-size="18" font-weight="600">Create ported to Horizon: 59.3%</text>
+<text class="m" x="16" y="50" font-size="12">146 of 246 Create blocks and items declared</text>
 <rect class="track" x="16" y="60" width="608" height="12" rx="6"/>
-<rect class="fill" x="16" y="60" width="333.7" height="12" rx="6"/>
+<rect class="fill" x="16" y="60" width="360.8" height="12" rx="6"/>
 <text class="t" x="16" y="105" font-size="13">Kinetics</text>
 <rect class="track" x="120" y="95" width="400" height="12" rx="3"/>
 <rect class="fill" x="120" y="95" width="308.8" height="12" rx="3"/>
@@ -18,8 +18,8 @@
 <text class="m" x="530" y="157" font-size="12">16 / 52  (31%)</text>
 <text class="t" x="16" y="183" font-size="13">Fluids</text>
 <rect class="track" x="120" y="173" width="400" height="12" rx="3"/>
-<rect class="fill" x="120" y="173" width="333.3" height="12" rx="3"/>
-<text class="m" x="530" y="183" font-size="12">15 / 18  (83%)</text>
+<rect class="fill" x="120" y="173" width="355.6" height="12" rx="3"/>
+<text class="m" x="530" y="183" font-size="12">16 / 18  (89%)</text>
 <text class="t" x="16" y="209" font-size="13">Contraptions</text>
 <rect class="track" x="120" y="199" width="400" height="12" rx="3"/>
 <rect class="fill" x="120" y="199" width="123.8" height="12" rx="3"/>
@@ -32,6 +32,6 @@
 <text class="m" x="530" y="261" font-size="12">0 / 13  (0%)</text>
 <text class="t" x="16" y="287" font-size="13">Palettes</text>
 <rect class="track" x="120" y="277" width="400" height="12" rx="3"/>
-<rect class="fill" x="120" y="277" width="297.4" height="12" rx="3"/>
-<text class="m" x="530" y="287" font-size="12">29 / 39  (74%)</text>
+<rect class="fill" x="120" y="277" width="400.0" height="12" rx="3"/>
+<text class="m" x="530" y="287" font-size="12">39 / 39  (100%)</text>
 </svg>

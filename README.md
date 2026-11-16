@@ -17,12 +17,12 @@ is not pinned to one Horizon commit.
 | Kinetics | 44 | 57 | 77% |
 | Materials | 18 | 20 | 90% |
 | Logistics | 16 | 52 | 31% |
-| Fluids | 15 | 18 | 83% |
+| Fluids | 16 | 18 | 89% |
 | Contraptions | 13 | 42 | 31% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
-| Palettes | 29 | 39 | 74% |
-| **All** | **135** | **246** | **54.9%** |
+| Palettes | 39 | 39 | 100% |
+| **All** | **146** | **246** | **59.3%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -128,6 +128,7 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Storage blocks | Item Vault (merges up to 3 wide and 3 times as long, 20 stacks a block; chutes, funnels and comparators see the whole vault), Creative Crate (endless supply of the item it's clicked with), Smart Observer, Threshold Switch |
 | Redstone parts | Redstone Link (frequency set by clicking each half with an item), Analog Lever, Pulse Repeater, Pulse Extender and Pulse Timer (the Wrench on a side steps the delay), Powered Latch and Toggle Latch, Rose Quartz Lamp |
 | Building blocks | 364 blocks: metal ladders, bars, scaffolding and doors, copper shingles and tiles, glass and windows, 14 stone types in every pattern |
+| Girders, Seats, Copycats | Metal Girders that join into beams and poles (placed, extended, toggled with the Wrench, `update_shape`), the Metal Girder Encased Shaft that carries rotation, 16 Seats a player sits on (a marker entity and `/ride`; a dye recolours), Copycat Step and Panel that take a block as their look (drawn squashed into the shape, not cropped). Unplayed: type-checked and unit-tested only; each module's header lists its differences |
 
 Broad gaps across these modules:
 

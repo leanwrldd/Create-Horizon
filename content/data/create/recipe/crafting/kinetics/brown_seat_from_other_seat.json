@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "building",
+  "ingredients": [
+    "#c:dyes/brown",
+    "#create:seats"
+  ],
+  "result": {
+    "id": "create:brown_seat"
+  }
+}

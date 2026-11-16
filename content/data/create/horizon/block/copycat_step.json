@@ -1,0 +1,211 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 3.0,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:gold_block",
+    "map_color": 0,
+    "render_shape": "ENTITYBLOCK_ANIMATED",
+    "occludes": false
+  },
+  "state_properties": {
+    "half": {
+      "type": "enum",
+      "values": [
+        "bottom",
+        "top"
+      ]
+    },
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    }
+  },
+  "default_state": {
+    "half": "bottom",
+    "facing": "south"
+  },
+  "shapes": {
+    "properties": [
+      "half",
+      "facing"
+    ],
+    "values": {
+      "bottom,north": [
+        [
+          0,
+          0.0,
+          0,
+          1,
+          0.5,
+          0.5
+        ]
+      ],
+      "bottom,south": [
+        [
+          0,
+          0.0,
+          0.5,
+          1,
+          0.5,
+          1
+        ]
+      ],
+      "bottom,west": [
+        [
+          0,
+          0.0,
+          0,
+          0.5,
+          0.5,
+          1
+        ]
+      ],
+      "bottom,east": [
+        [
+          0.5,
+          0.0,
+          0,
+          1,
+          0.5,
+          1
+        ]
+      ],
+      "top,north": [
+        [
+          0,
+          0.5,
+          0,
+          1,
+          1.0,
+          0.5
+        ]
+      ],
+      "top,south": [
+        [
+          0,
+          0.5,
+          0.5,
+          1,
+          1.0,
+          1
+        ]
+      ],
+      "top,west": [
+        [
+          0,
+          0.5,
+          0,
+          0.5,
+          1.0,
+          1
+        ]
+      ],
+      "top,east": [
+        [
+          0.5,
+          0.5,
+          0,
+          1,
+          1.0,
+          1
+        ]
+      ]
+    }
+  },
+  "collision_shapes": {
+    "properties": [
+      "half",
+      "facing"
+    ],
+    "values": {
+      "bottom,north": [
+        [
+          0,
+          0.0,
+          0,
+          1,
+          0.5,
+          0.5
+        ]
+      ],
+      "bottom,south": [
+        [
+          0,
+          0.0,
+          0.5,
+          1,
+          0.5,
+          1
+        ]
+      ],
+      "bottom,west": [
+        [
+          0,
+          0.0,
+          0,
+          0.5,
+          0.5,
+          1
+        ]
+      ],
+      "bottom,east": [
+        [
+          0.5,
+          0.0,
+          0,
+          1,
+          0.5,
+          1
+        ]
+      ],
+      "top,north": [
+        [
+          0,
+          0.5,
+          0,
+          1,
+          1.0,
+          0.5
+        ]
+      ],
+      "top,south": [
+        [
+          0,
+          0.5,
+          0.5,
+          1,
+          1.0,
+          1
+        ]
+      ],
+      "top,west": [
+        [
+          0,
+          0.5,
+          0,
+          0.5,
+          1.0,
+          1
+        ]
+      ],
+      "top,east": [
+        [
+          0.5,
+          0.5,
+          0,
+          1,
+          1.0,
+          1
+        ]
+      ]
+    }
+  }
+}

@@ -2,6 +2,9 @@
   "title": "itemGroup.create.palettes",
   "icon": "create:ornate_iron_window",
   "items": [
+    "create:copycat_step",
+    "create:copycat_panel",
+    "create:metal_girder",
     "create:andesite_ladder",
     "create:brass_ladder",
     "create:copper_ladder",
@@ -365,6 +368,22 @@
     "create:small_veridium_brick_slab",
     "create:small_veridium_brick_wall",
     "create:layered_veridium",
-    "create:veridium_pillar"
+    "create:veridium_pillar",
+    "create:white_seat",
+    "create:orange_seat",
+    "create:magenta_seat",
+    "create:light_blue_seat",
+    "create:yellow_seat",
+    "create:lime_seat",
+    "create:pink_seat",
+    "create:gray_seat",
+    "create:light_gray_seat",
+    "create:cyan_seat",
+    "create:purple_seat",
+    "create:blue_seat",
+    "create:brown_seat",
+    "create:green_seat",
+    "create:red_seat",
+    "create:black_seat"
   ]
 }

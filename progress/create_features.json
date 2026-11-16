@@ -807,17 +807,17 @@
    "section": "Palettes"
   },
   {
-   "id": "andesite",
+   "id": "andesite_bars",
    "field": "ANDESITE_BARS",
    "section": "Palettes"
   },
   {
-   "id": "brass",
+   "id": "brass_bars",
    "field": "BRASS_BARS",
    "section": "Palettes"
   },
   {
-   "id": "copper",
+   "id": "copper_bars",
    "field": "COPPER_BARS",
    "section": "Palettes"
   },
