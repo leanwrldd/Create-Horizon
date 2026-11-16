@@ -30,6 +30,11 @@ in `native/api/src/lib.rs` (`Core`), `belt.rs`, `depot.rs`, `press.rs`, `draw.rs
 - **Only declare what works.** A block or item goes in `content/` when its behaviour is written (a
   plain material or decorative block needs none). The progress chart counts declarations.
 - Known differences from Create go in a comment at the top of the module, for the README.
+- **Keep the glue thin.** Horizon's official mod API changed (the arismoko API was merged upstream,
+  horizon-rust/horizon#16941), so `native/api` will be rewritten for it later while
+  `native/kinetics` carries over. Put every decision, state machine, number and table in the rules
+  crate as plain Rust with tests; the glue only reads the world, calls the rules and applies what
+  they return. A rule that needs the world takes a small trait or plain values, not `Host`.
 
 ## The glue: `native/api/src/machines/<name>.rs`
 
