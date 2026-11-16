@@ -788,25 +788,10 @@ impl Dir {
 
 // --- chassis (ChassisBlockEntity) -----------------------------------------------------------------
 
-/// `AbstractChassisBlock.getGlueableSide`: which `sticky_*` property says a face is sticky. A
-/// linear chassis has a `sticky_top`/`sticky_bottom` pair along its axis, a radial one a
-/// `sticky_<face>` for each of its four sides.
+/// `AbstractChassisBlock.getGlueableSide` read from the state: whether `face` is sticky
+/// (`rules::chassis`).
 fn glueable(state: &State, face: Dir) -> bool {
-    let key = if state.is("create:radial_chassis") {
-        match face {
-            Dir::North => "sticky_north",
-            Dir::South => "sticky_south",
-            Dir::East => "sticky_east",
-            Dir::West => "sticky_west",
-            Dir::Up => "sticky_up",
-            Dir::Down => "sticky_down",
-        }
-    } else if face.sign() > 0 {
-        "sticky_top"
-    } else {
-        "sticky_bottom"
-    };
-    state.flag(key)
+    crate::rules::chassis::is_sticky(state, face)
 }
 
 fn axis_of(state: &State) -> Axis {
@@ -1014,6 +999,10 @@ pub fn rotate_state(state: &State, axis: Axis, quarters: i32) -> State {
     let quarters = quarters.rem_euclid(4);
     if quarters == 0 {
         return state.clone();
+    }
+    // `AbstractChassisBlock.transform`: the sticky sides turn with the block.
+    if crate::rules::chassis::is_chassis(&state.name) {
+        return crate::rules::chassis::rotate(state, axis, quarters);
     }
     let mut out = state.clone();
     // Create's own `TransformableBlock`s: the directional axis blocks flip `axis_along_first` on
@@ -1500,5 +1489,51 @@ mod tests {
         assert_eq!(positions.len(), 4);
         assert!(positions.contains(&[3, 0, 0]) && !positions.contains(&[4, 0, 0]));
         assert!(!positions.contains(&[-1, 0, 0]));
+    }
+
+    #[test]
+    fn a_radial_chassis_takes_a_ball_of_blocks_through_its_sticky_side() {
+        struct Radial(Grid);
+        impl World for Radial {
+            fn state(&self, pos: Pos) -> Option<State> {
+                self.0.state(pos)
+            }
+            fn collision_empty(&self, pos: Pos) -> bool {
+                self.0.collision_empty(pos)
+            }
+            fn chassis(&self, pos: Pos) -> Option<ChassisInfo> {
+                self.0
+                    .blocks
+                    .get(&pos)
+                    .filter(|s| s.name == "create:radial_chassis")
+                    .map(|_| ChassisInfo { range: 2 })
+            }
+        }
+        let mut grid = Grid::new();
+        grid.set(
+            [0, 0, 0],
+            "create:radial_chassis[axis=y,sticky_east=true,sticky_north=false,sticky_south=false,sticky_west=false]",
+        );
+        grid.fill([1, 0, -1], [2, 0, 2], "minecraft:stone");
+        grid.set([-1, 0, 0], "minecraft:stone");
+        grid.set([0, 1, 0], "minecraft:stone");
+        grid.set([4, 0, 0], "minecraft:stone");
+        let found = search(&Radial(grid), &config(None, [0, 0, 0])).expect("found");
+        let positions: HashSet<Pos> = found.blocks.iter().map(|(p, _)| *p).collect();
+        // The side facing east is sticky: the stone out that way within 2.5 blocks; not the
+        // other sides, the ends (along the axis) or anything farther.
+        assert!(positions.contains(&[1, 0, 0]) && positions.contains(&[2, 0, 0]));
+        assert!(positions.contains(&[2, 0, 1]) && !positions.contains(&[2, 0, 2]));
+        assert!(!positions.contains(&[-1, 0, 0]) && !positions.contains(&[0, 1, 0]));
+        assert!(!positions.contains(&[4, 0, 0]));
+    }
+
+    #[test]
+    fn a_turned_chassis_keeps_its_glue_on_the_same_blocks() {
+        let state = State::parse("create:linear_chassis[axis=y,sticky_bottom=false,sticky_top=true]");
+        let turned = rotate_state(&state, Axis::Z, 1);
+        assert_eq!(turned.get("axis"), Some("x"));
+        // The top end turned from up to a horizontal end.
+        assert!(turned.flag("sticky_top") ^ turned.flag("sticky_bottom"));
     }
 }

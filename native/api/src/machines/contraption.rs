@@ -195,9 +195,9 @@ pub(crate) fn glued_hook(_host: &dyn Host, _pos: Pos, _face: Dir) -> bool {
     false
 }
 
-/// A chassis at `pos` and its range (`ChassisBlockEntity.getRange`). No chassis yet.
-pub(crate) fn chassis_hook(_host: &dyn Host, _pos: Pos) -> Option<rules::ChassisInfo> {
-    None
+/// A chassis at `pos` and its range (`ChassisBlockEntity.getRange`, kept by `chassis.rs`).
+pub(crate) fn chassis_hook(host: &dyn Host, pos: Pos) -> Option<rules::ChassisInfo> {
+    super::chassis::range_at(host, pos).map(|range| rules::ChassisInfo { range })
 }
 
 /// Whether a moved state has a collision shape (`getCollisionShape().isEmpty()` of the state;

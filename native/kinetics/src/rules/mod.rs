@@ -12,6 +12,7 @@ pub mod bearing;
 pub mod bracket;
 pub mod burner;
 pub mod chain_drive;
+pub mod chassis;
 pub mod chute;
 pub mod click;
 pub mod content_observer;
