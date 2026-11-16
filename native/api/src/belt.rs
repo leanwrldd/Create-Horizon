@@ -65,7 +65,12 @@ const CENTRE: [f32; 3] = [0.5; 3];
 const UP: [f32; 3] = [0.0, 1.0, 0.0];
 const ORIGIN: [f32; 3] = [0.0; 3];
 const PULLEY: &str = "create:block/belt_pulley";
-pub const MODELS: [&str; 7] = [
+/// Names every sprite a belt is drawn shifted onto (the scrolling and dyed belt sprites and the
+/// andesite casing's), which no model of Create's draws, so the game loads them: it is never
+/// drawn itself. `tools/content/belts_ii.py` writes it.
+pub(crate) const SPRITES: &str = "create:block/belt_scroll_sprites";
+pub const MODELS: [&str; 8] = [
+    SPRITES,
     "create:block/belt/start",
     "create:block/belt/middle",
     "create:block/belt/end",
@@ -1197,7 +1202,18 @@ fn horizontal_angle(facing: Dir) -> f32 {
     }
 }
 
-/// `BeltRenderer.renderSafe` for a horizontal belt without casing, then its items.
+/// The belt's colour as saved (`Dye`, `DyeColor.name()`); none when undyed.
+fn dye_of(entity: &ModBlockEntity) -> Option<String> {
+    match get(&entity.nbt, DYE) {
+        // The update tag sends an empty name for no colour.
+        Some(Tag::String(name)) => Some(name.to_string_lossy()).filter(|name| !name.is_empty()),
+        _ => None,
+    }
+}
+
+/// `BeltRenderer.renderSafe` for a horizontal belt, then its items. Which sprite a half scrolls
+/// over and how far (`AllSpriteShifts`), and the casing's sprite, are `belt::belt_shift` and
+/// `belt::casing_shift`.
 pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, part: Part, entity: &ModBlockEntity) {
     let rpm = float(&entity.nbt, SPEED).unwrap_or(0.0);
     let name = match part {
@@ -1205,16 +1221,20 @@ pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, part: Part
         Part::End => "end",
         Part::Middle | Part::Pulley => "middle",
     };
-    // Create scrolls the belt's texture as it moves; this draws it still.
-    for bottom in ["_bottom", ""] {
+    // `AnimationTickHolder.getRenderTime`.
+    let time = draw.game_time as f64 + f64::from(draw.partial);
+    let dye = dye_of(entity);
+    for (bottom, suffix) in [(true, "_bottom"), (false, "")] {
+        let shift = belt::belt_shift(rpm, facing, belt::Slope::Horizontal, bottom, dye.as_deref(), time);
         draw.push();
         draw.rotate_about(UP, horizontal_angle(facing), CENTRE);
-        host.draw_model(draw, &format!("create:block/belt/{name}{bottom}"), 0xFF_FFFF);
+        crate::draw::draw_shifted(host, draw, &format!("create:block/belt/{name}{suffix}"), shift.as_ref());
         draw.pop();
     }
     // A cased belt block has its casing round it (`belt_casing/horizontal_*`, the block's own
-    // model in Create).
-    if int(&entity.nbt, CASING) != 0 {
+    // model in Create), in the brass sprite or, shifted, the andesite one.
+    let casing = belt::Casing::from_ordinal(int(&entity.nbt, CASING));
+    if casing != belt::Casing::None {
         let model = match part {
             Part::Start => CASING_MODELS[0],
             Part::Middle => CASING_MODELS[1],
@@ -1223,7 +1243,7 @@ pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, part: Part
         };
         draw.push();
         draw.rotate_about(UP, horizontal_angle(facing), CENTRE);
-        host.draw_model(draw, model, 0xFF_FFFF);
+        crate::draw::draw_shifted(host, draw, model, belt::casing_shift(casing).as_ref());
         draw.pop();
     }
     if part.has_pulley() {
@@ -1239,8 +1259,9 @@ pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, part: Part
         draw.still();
     }
     let drew_items = int(&entity.nbt, INDEX) == 0 && draw_items(host, draw, facing, rpm, entity);
-    // Moving items read the time; a belt without them is drawn once.
-    if !drew_items {
+    // Moving items and a scrolling texture read the time; a still belt without items is drawn
+    // once (a new speed arrives as an update tag, which drops what was kept).
+    if !drew_items && !belt::scrolls(rpm) {
         draw.keep();
     }
 }

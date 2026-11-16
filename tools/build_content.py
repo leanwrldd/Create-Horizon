@@ -114,6 +114,13 @@ def import_assets(jar: ZipFile, content: Path, c, ponder_models=()):
 
     copied = set()
     textures = set()
+    # The models a plugin writes itself (`FILES`, as `belts_ii.py`'s sprite list) name textures
+    # of Create's too.
+    for path, value in c.files.items():
+        if path.startswith(f"{PREFIX}models/") and isinstance(value, dict):
+            textures.update(
+                sprite.removeprefix("create:") for sprite in value.get("textures", {}).values()
+                if isinstance(sprite, str) and sprite.startswith("create:"))
     while models:
         name = models.pop()
         if name in copied:

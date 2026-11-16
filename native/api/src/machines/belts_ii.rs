@@ -5,11 +5,10 @@
 //! depot and the hand-off between them are `belt.rs`, `press.rs` and `depot.rs`.
 //!
 //! Known differences from Create (for the README):
-//! - A cased block is drawn with the brass casing model whichever casing it has (Create swaps the
-//!   texture for andesite with a sprite shift), and the casing doesn't make the block solid
-//!   (no `RenderShape.MODEL`, the collision shape of the belt stays).
-//! - The dye is saved (`Dye`, the colour's name) and applied to the whole belt, but not drawn:
-//!   Create has a scrolling texture per colour, which this still model doesn't have.
+//! - The casing doesn't make the block solid (no `RenderShape.MODEL`, the collision shape of the
+//!   belt stays). An andesite casing is drawn as Create does, the brass casing model with its sprite
+//!   shifted onto the andesite one (`BeltModel`), and the dye by the belt's scrolling sprite for
+//!   that colour (`BeltRenderer`), both through Horizon's UV shift (`draw_terrain_model`).
 //! - No `Covered` casing (a block above the belt that makes the casing a cover), and only dyes
 //!   and a water bucket wash or dye; no other fluid container. The items are not used up, as in
 //!   Create.
