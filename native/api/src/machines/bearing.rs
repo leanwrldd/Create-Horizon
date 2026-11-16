@@ -1,4 +1,5 @@
-//! The Mechanical Bearing (`MechanicalBearingBlock`, `MechanicalBearingBlockEntity`,
+//! The Mechanical Bearing and the Windmill Bearing (`MechanicalBearingBlock`,
+//! `MechanicalBearingBlockEntity`, `WindmillBearingBlock`, `WindmillBearingBlockEntity`,
 //! `BearingContraption`, `BearingRenderer`) on the contraption engine (`contraption.rs`, where the
 //! design and the differences common to every contraption are written; the rules are
 //! `create_kinetics::rules::bearing`).
@@ -16,10 +17,18 @@
 //!   structure down, so that a reload or a network being solved again doesn't drop it.
 //! - A bearing inside a structure is carried as a rigid block, not as a stabilised
 //!   sub-contraption (`StabilizedBearingMovementBehaviour`).
-//! - The windmill bearing, sails, and the Clockwork Bearing are not here yet.
+//! - The Clockwork Bearing is not here yet.
+//!
+//! The Windmill Bearing is the same machine with three differences (`WindmillBearingBlockEntity`):
+//! it makes the rotation itself (`getGeneratedSpeed`: the sails in its structure over
+//! `windmillSailsPerRPM`, 1 to 16 RPM, 512 su per RPM, signed by its rotation direction, which the
+//! Wrench toggles on a side of the bearing), it assembles even when nothing turns it (and only
+//! by a hand: a change of speed never assembles or sets it down), and it refuses a structure with
+//! fewer than `minimumWindmillSails` sails. Known differences are listed in `rules::windmill`.
 //! - The assembly exception is shown on the action bar of the players near, not in the goggles.
 
 use create_kinetics::rules::bearing as bearing_rules;
+use create_kinetics::rules::windmill as windmill_rules;
 use create_kinetics::rules::contraption::{Transform, add};
 use create_kinetics::rules::drill as drill_rules;
 use create_kinetics::{Dir, Kind, Node, Pos, looking};
@@ -27,7 +36,7 @@ use horizon_client::mod_api::{
     BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
     BlockEntityTicksEvent, BlockEntityUpdateTagEvent, BlockStateId, Compound, DestroyBlockEvent, Flow,
     Hooks, Host, LevelHost, ModBlockEntity, RightClickBlockEvent, StandaloneModelsEvent,
-    StateForPlacementEvent, Tag, UseItemOnEvent,
+    StateForPlacementEvent, Tag, Text, UseItemOnEvent,
 };
 
 use super::contraption::{
@@ -35,9 +44,11 @@ use super::contraption::{
 };
 use crate::{kinetic, util};
 
-const ID: &str = "create:mechanical_bearing";
-/// `AllPartialModels.BEARING_TOP`.
+const MECHANICAL: &str = "create:mechanical_bearing";
+const WINDMILL: &str = windmill_rules::BEARING;
+/// `AllPartialModels.BEARING_TOP` and `BEARING_TOP_WOODEN` (a windmill's, `isWoodenTop`).
 const TOP: &str = "create:block/bearing/top";
+const TOP_WOODEN: &str = "create:block/bearing/top_wooden";
 const CENTRE: [f32; 3] = [0.5; 3];
 
 // Saved as `MechanicalBearingBlockEntity.write` names them.
@@ -49,6 +60,14 @@ struct Bearing;
 
 pub fn hooks() -> Box<dyn Hooks> {
     Box::new(Bearing)
+}
+
+fn is_bearing(id: &str) -> bool {
+    id == MECHANICAL || id == WINDMILL
+}
+
+fn top_of(id: &str) -> &'static str {
+    if id == WINDMILL { TOP_WOODEN } else { TOP }
 }
 
 fn flag(value: bool) -> Tag {
@@ -86,8 +105,12 @@ fn angle_at(angle: f32, time: i64, rpm: f32, now: f64) -> f32 {
     ((f64::from(angle) + turned) % 360.0) as f32
 }
 
-fn new_entity() -> Compound {
+fn new_entity(windmill: bool) -> Compound {
     let mut nbt = kinetic::new_entity();
+    if windmill {
+        // `ScrollOptionBehaviour`: clockwise.
+        nbt.insert(windmill_rules::DIRECTION_KEY.into(), Tag::Int(0));
+    }
     nbt.insert(RUNNING.into(), flag(false));
     nbt.insert(ASSEMBLE.into(), flag(false));
     nbt.insert(DISASSEMBLE.into(), flag(false));
@@ -114,6 +137,14 @@ fn assemble(
         };
         bearing_rules::assemble(&world, pos, facing)
     };
+    let windmill = entity.id == WINDMILL;
+    let assembled = assembled.and_then(|(anchor, found)| {
+        // `BearingContraption.assemble`: a windmill needs its sails.
+        if windmill && !found.blocks.is_empty() {
+            windmill_rules::check_sails(windmill_rules::count_sails(found.blocks.iter().map(|(_, s)| s)))?;
+        }
+        Ok((anchor, found))
+    });
     let (anchor, found) = match assembled {
         Ok(done) => done,
         Err(fail) => {
@@ -130,9 +161,10 @@ fn assemble(
     if found.blocks.is_empty() {
         return false;
     }
-    let moving = engine::capture(host, anchor, &found.blocks, &[], &|p| {
+    let mut moving = engine::capture(host, anchor, &found.blocks, &[], &|p| {
         [p[0] - anchor[0], p[1] - anchor[1], p[2] - anchor[2]]
     });
+    moving.sails = windmill_rules::count_sails(found.blocks.iter().map(|(_, s)| s));
     engine::remove_from_world(host, &moving, &|local| add(local, anchor), &mut |_, _, _| false);
     engine::set_live(&dimension, pos, moving.clone());
     entity
@@ -169,6 +201,7 @@ fn stop(entity: &mut ModBlockEntity, now: i64) {
 impl Hooks for Bearing {
     fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
         event.models.push(TOP.to_owned());
+        event.models.push(TOP_WOODEN.to_owned());
     }
 
     fn block_entity(
@@ -176,27 +209,47 @@ impl Hooks for Bearing {
         _: &mut dyn Host,
         event: &mut BlockEntityEvent<'_>,
     ) -> Option<(String, Compound)> {
-        (event.block == ID).then(|| (ID.to_owned(), new_entity()))
+        is_bearing(event.block).then(|| (event.block.to_owned(), new_entity(event.block == WINDMILL)))
     }
 
     fn block_entity_ticks(&self, _: &dyn Host, event: &mut BlockEntityTicksEvent<'_>) {
-        if event.block == ID {
+        if is_bearing(event.block) {
             event.ticks = true;
         }
     }
 
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
-        if event.entity.id != ID {
+        if !is_bearing(&event.entity.id) {
             return;
         }
+        let windmill = event.entity.id == WINDMILL;
         let pos = event.pos;
         let Some(facing) = util::facing(host, pos, "facing") else {
             return;
         };
         // `BearingBlock.hasShaftTowards`: the one shaft is out of the back.
-        let node = Node {
-            impact: bearing_rules::IMPACT,
-            ..Node::passive(Kind::shafts(&[bearing_rules::shaft_face(facing)]))
+        let shaft = Kind::shafts(&[bearing_rules::shaft_face(facing)]);
+        let node = if windmill {
+            // `WindmillBearingBlockEntity.getGeneratedSpeed` and `CStress.setCapacity(512)`.
+            let running = util::boolean(&event.entity.nbt, RUNNING);
+            let sails = if running {
+                let dimension = host.dimension().to_owned();
+                engine::live(&dimension, pos, &event.entity.nbt).map_or(0, |live| live.moving.sails)
+            } else {
+                0
+            };
+            let rotation =
+                windmill_rules::Rotation::from_value(util::int(&event.entity.nbt, windmill_rules::DIRECTION_KEY));
+            Node {
+                generated: windmill_rules::generated_speed(running, sails, rotation),
+                capacity: windmill_rules::CAPACITY,
+                ..Node::passive(shaft)
+            }
+        } else {
+            Node {
+                impact: bearing_rules::IMPACT,
+                ..Node::passive(shaft)
+            }
         };
         let previous = kinetic::speed(event.entity);
         let Some((rpm, changed)) = kinetic::tick(host, pos, event.entity, node) else {
@@ -219,10 +272,13 @@ impl Hooks for Bearing {
                 state.angle = angle;
                 state.time = now;
             }
-            if !state.assemble {
-                entity.nbt.insert(ASSEMBLE.into(), flag(true));
+            // A windmill's speed changing never assembles it (`cancelAssembly`).
+            if !windmill {
+                if !state.assemble {
+                    entity.nbt.insert(ASSEMBLE.into(), flag(true));
+                }
+                state.assemble = true;
             }
-            state.assemble = true;
             host.block_entity_sync(pos);
         }
 
@@ -238,7 +294,7 @@ impl Hooks for Bearing {
         // `assembleNextTick`.
         if state.assemble {
             if state.running {
-                if rpm != 0.0 {
+                if windmill || rpm != 0.0 {
                     put(entity, ASSEMBLE, flag(false));
                 } else if quiet >= engine::QUIET_TICKS {
                     let angle = angle_at(state.angle, state.time, 0.0, now as f64);
@@ -248,7 +304,8 @@ impl Hooks for Bearing {
                 }
             } else {
                 put(entity, ASSEMBLE, flag(false));
-                if rpm != 0.0 {
+                // A windmill assembles with nothing turning (`isWindmill`).
+                if rpm != 0.0 || windmill {
                     assemble(host, pos, entity, facing, now, manual);
                 }
             }
@@ -257,7 +314,7 @@ impl Hooks for Bearing {
 
     fn block_entity_update_tag(&self, event: &mut BlockEntityUpdateTagEvent<'_>) -> Option<Compound> {
         let entity = event.entity;
-        if entity.id != ID {
+        if !is_bearing(&entity.id) {
             return None;
         }
         let state = saved(entity);
@@ -277,7 +334,7 @@ impl Hooks for Bearing {
     /// `BearingRenderer`: half a shaft out of the back, the top, and the structure, the last two
     /// turning about the facing's axis.
     fn block_entity_submit(&self, host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
-        if event.block != ID {
+        if !is_bearing(event.block) {
             return;
         }
         let Some(facing) = host
@@ -313,7 +370,7 @@ impl Hooks for Bearing {
         if degrees != 0.0 {
             draw.rotate_about(up_axis.unit(), degrees, CENTRE);
         }
-        host.draw_model(draw, TOP, 0xFF_FFFF);
+        host.draw_model(draw, top_of(event.block), 0xFF_FFFF);
         draw.pop();
         draw.still();
 
@@ -341,7 +398,7 @@ impl Hooks for Bearing {
         _: &dyn Host,
         event: &mut BlockEntityRenderBoundingBoxEvent<'_>,
     ) {
-        if event.block != ID {
+        if !is_bearing(event.block) {
             return;
         }
         let Some(parsed) = engine::parsed(event.pos, event.entity) else {
@@ -363,7 +420,7 @@ impl Hooks for Bearing {
         event: &mut StateForPlacementEvent<'_>,
     ) -> Option<Option<BlockStateId>> {
         let context = event.context;
-        if &*context.item != ID {
+        if !is_bearing(&context.item) {
             return None;
         }
         let look = looking(context.yaw, context.pitch);
@@ -375,7 +432,8 @@ impl Hooks for Bearing {
 
     /// The Wrench turns the bearing and sets its structure down (`BearingBlock.onWrenched`).
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
-        if &*event.stack.item != util::WRENCH || host.block(event.pos) != ID {
+        let block = host.block(event.pos);
+        if &*event.stack.item != util::WRENCH || !is_bearing(&block) {
             return Flow::Continue;
         }
         let (pos, clicked) = (event.pos, Dir::from_normal(event.face));
@@ -383,6 +441,22 @@ impl Hooks for Bearing {
             let (Some(facing), Some(clicked)) = (util::facing(host, pos, "facing"), clicked) else {
                 return;
             };
+            // The windmill's value box is on a side: the Wrench toggles the direction there.
+            if block == WINDMILL
+                && windmill_rules::wrench(facing, clicked) == windmill_rules::Wrench::ToggleDirection
+            {
+                let mut line = None;
+                host.change_mod_block_entity(pos, &mut |entity| {
+                    let current = util::int(&entity.nbt, windmill_rules::DIRECTION_KEY);
+                    let next = windmill_rules::Rotation::from_value(current).toggled();
+                    entity.nbt.insert(windmill_rules::DIRECTION_KEY.into(), Tag::Int(next.value()));
+                    line = Some(format!("Rotation Direction: {}", next.name()));
+                });
+                if let (Some(line), Some(player)) = (line, host.acting_player()) {
+                    host.action_bar(player.uuid, Text::literal(line));
+                }
+                return;
+            }
             // A running bearing is first set down (`onWrenched` disassembles): the click does
             // only that, the next one turns it.
             let mut running = false;
@@ -402,7 +476,7 @@ impl Hooks for Bearing {
     /// `MechanicalBearingBlock.useItemOn`: an empty hand starts or ends the assembly.
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
         let pos = event.pos;
-        if host.block(pos) != ID {
+        if !is_bearing(&host.block(pos)) {
             return Flow::Continue;
         }
         let Some(player) = host.acting_player() else {
@@ -433,7 +507,7 @@ impl Hooks for Bearing {
     /// down first.
     fn destroy_block(&self, host: &mut dyn Host, event: &mut DestroyBlockEvent) -> Flow {
         let pos = event.pos;
-        if host.block(pos) != ID {
+        if !is_bearing(&host.block(pos)) {
             return Flow::Continue;
         }
         let Some(entity) = host.mod_block_entity(pos) else {

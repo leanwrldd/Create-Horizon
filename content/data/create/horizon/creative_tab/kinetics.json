@@ -152,6 +152,9 @@
     "create:andesite_tunnel",
     "create:brass_tunnel",
     "create:turntable",
-    "create:weighted_ejector"
+    "create:weighted_ejector",
+    "create:windmill_bearing",
+    "create:sail_frame",
+    "create:white_sail"
   ]
 }

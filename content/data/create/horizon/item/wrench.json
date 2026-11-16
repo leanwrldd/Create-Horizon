@@ -438,7 +438,8 @@
             "create:stockpile_switch",
             "create:andesite_tunnel",
             "create:brass_tunnel",
-            "create:weighted_ejector"
+            "create:weighted_ejector",
+            "create:windmill_bearing"
           ],
           "correct_for_drops": true
         }

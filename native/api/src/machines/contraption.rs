@@ -230,6 +230,8 @@ pub struct Moving {
     /// The Super Glue the structure carries (`Contraption.superglue`), in the same frame as the
     /// blocks: put back where it lands.
     pub glue: Vec<GlueBox>,
+    /// The sail-like blocks in it (`BearingContraption.sailBlocks`, saved as `Sails`).
+    pub sails: i32,
 }
 
 fn string(value: &str) -> Tag {
@@ -297,6 +299,7 @@ impl Moving {
             })
             .collect();
         out.insert("Superglue".into(), Tag::List(glue));
+        out.insert("Sails".into(), Tag::Int(self.sails));
         out
     }
 
@@ -355,7 +358,7 @@ impl Moving {
                 }
             }
         }
-        Some(Moving { anchor, blocks: out, glue })
+        Some(Moving { anchor, blocks: out, glue, sails: util::int(nbt, "Sails") })
     }
 
     /// The block states by position, for the collision check.
@@ -425,7 +428,7 @@ pub fn capture(
         .into_iter()
         .map(|g| GlueBox::span(local_of(g.min), local_of(g.max)))
         .collect();
-    Moving { anchor, blocks, glue }
+    Moving { anchor, blocks, glue, sails: 0 }
 }
 
 /// What `Contraption.capture` changes in a state as it is taken: a button or pressure plate is
@@ -891,6 +894,7 @@ mod tests {
                 },
             ],
             glue: vec![GlueBox { min: [0, 0, 0], max: [2, 0, 0] }],
+            sails: 9,
         }
     }
 
@@ -898,6 +902,7 @@ mod tests {
     fn the_glue_a_structure_carries_survives_its_nbt() {
         let back = Moving::from_nbt(&sample().to_nbt(false)).expect("reads back");
         assert_eq!(back.glue, vec![GlueBox { min: [0, 0, 0], max: [2, 0, 0] }]);
+        assert_eq!(back.sails, 9);
         // An older save without the key has none.
         let mut nbt = sample().to_nbt(false);
         nbt.remove(&"Superglue".into());

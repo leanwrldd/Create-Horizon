@@ -69,3 +69,4 @@ pub mod tunnel;
 pub mod tunnel_brass;
 pub mod turntable;
 pub mod weighted_ejector;
+pub mod windmill;

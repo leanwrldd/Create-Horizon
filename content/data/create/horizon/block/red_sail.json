@@ -1,0 +1,159 @@
+{
+  "template": "minecraft:glass",
+  "item": false,
+  "properties": {
+    "hardness": 2.0,
+    "explosion_resistance": 2.0,
+    "requires_tool": false,
+    "sounds": "minecraft:scaffolding",
+    "map_color": 28,
+    "render_shape": "MODEL",
+    "occludes": false
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "east",
+        "west",
+        "up",
+        "down"
+      ]
+    }
+  },
+  "default_state": {
+    "facing": "up"
+  },
+  "shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0,
+          0,
+          0.375,
+          1,
+          1,
+          0.6875
+        ]
+      ],
+      "south": [
+        [
+          0,
+          0,
+          0.3125,
+          1,
+          1,
+          0.625
+        ]
+      ],
+      "east": [
+        [
+          0.3125,
+          0,
+          0,
+          0.625,
+          1,
+          1
+        ]
+      ],
+      "west": [
+        [
+          0.375,
+          0,
+          0,
+          0.6875,
+          1,
+          1
+        ]
+      ],
+      "up": [
+        [
+          0,
+          0.3125,
+          0,
+          1,
+          0.625,
+          1
+        ]
+      ],
+      "down": [
+        [
+          0,
+          0.375,
+          0,
+          1,
+          0.6875,
+          1
+        ]
+      ]
+    }
+  },
+  "collision_shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0,
+          0,
+          0.375,
+          1,
+          1,
+          0.6875
+        ]
+      ],
+      "south": [
+        [
+          0,
+          0,
+          0.3125,
+          1,
+          1,
+          0.625
+        ]
+      ],
+      "east": [
+        [
+          0.3125,
+          0,
+          0,
+          0.625,
+          1,
+          1
+        ]
+      ],
+      "west": [
+        [
+          0.375,
+          0,
+          0,
+          0.6875,
+          1,
+          1
+        ]
+      ],
+      "up": [
+        [
+          0,
+          0.3125,
+          0,
+          1,
+          0.625,
+          1
+        ]
+      ],
+      "down": [
+        [
+          0,
+          0.375,
+          0,
+          1,
+          0.6875,
+          1
+        ]
+      ]
+    }
+  }
+}

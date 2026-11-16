@@ -217,7 +217,11 @@ impl Fail {
             }
             Fail::TooManyPistonPoles => format!("Too many extension poles behind the piston (more than {MAX_PISTON_POLES})"),
             Fail::NoPistonPoles => "The piston has no extension poles behind it".to_owned(),
-            Fail::NotEnoughSails(n) => format!("Not enough sails ({n})"),
+            Fail::NotEnoughSails(n) => format!(
+                "Attached structure does not include enough sail-like blocks: {n}
+A minimum of {} are required",
+                crate::rules::windmill::MINIMUM_SAILS
+            ),
         }
     }
 }
