@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "SSS",
+    "S#S",
+    "SSS"
+  ],
+  "key": {
+    "#": "minecraft:iron_ingot",
+    "S": "minecraft:chiseled_stone_bricks"
+  },
+  "result": {
+    "id": "minecraft:lodestone"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:waxed_exposed_copper"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:waxed_exposed_cut_copper"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "# #",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:cherry_planks"
+  },
+  "result": {
+    "id": "minecraft:cherry_boat"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###",
+    " | "
+  ],
+  "key": {
+    "#": "minecraft:pink_wool",
+    "|": "minecraft:stick"
+  },
+  "result": {
+    "id": "minecraft:pink_banner"
+  }
+}

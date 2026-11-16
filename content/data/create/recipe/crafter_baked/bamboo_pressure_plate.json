@@ -1,0 +1,12 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:bamboo_planks"
+  },
+  "result": {
+    "id": "minecraft:bamboo_pressure_plate"
+  }
+}

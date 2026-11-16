@@ -4,8 +4,7 @@
 //!
 //! Create 6.0.10 has no point type for chests, barrels or vaults ("not every type of Inventory
 //! can be interacted with directly": the Ponder text); a funnel or a depot bridges that. Types
-//! for blocks this port doesn't have (the Mechanical Crafter, the Packager, the Track Station)
-//! are left out.
+//! for blocks this port doesn't have (the Packager, the Track Station) are left out.
 
 use super::arm::{Angles, RANGE, target_angles};
 use crate::{Dir, Pos};
@@ -64,6 +63,7 @@ pub enum PointType {
     Belt,
     BlazeBurner,
     Chute,
+    Crafter,
     CrushingWheels,
     Deployer,
     Depot,
@@ -77,11 +77,12 @@ pub enum PointType {
 }
 
 impl PointType {
-    pub const ALL: [PointType; 14] = [
+    pub const ALL: [PointType; 15] = [
         PointType::Basin,
         PointType::Belt,
         PointType::BlazeBurner,
         PointType::Chute,
+        PointType::Crafter,
         PointType::CrushingWheels,
         PointType::Deployer,
         PointType::Depot,
@@ -101,6 +102,7 @@ impl PointType {
             PointType::Belt => "create:belt",
             PointType::BlazeBurner => "create:blaze_burner",
             PointType::Chute => "create:chute",
+            PointType::Crafter => "create:crafter",
             PointType::CrushingWheels => "create:crushing_wheels",
             PointType::Deployer => "create:deployer",
             PointType::Depot => "create:depot",
@@ -180,6 +182,7 @@ pub fn can_create(ty: PointType, block: &Block<'_>) -> bool {
         }
         PointType::BlazeBurner => block.name == "create:blaze_burner",
         PointType::Chute => matches!(block.name, "create:chute" | "create:smart_chute"),
+        PointType::Crafter => block.name == "create:mechanical_crafter",
         PointType::CrushingWheels => block.name == "create:crushing_wheel_controller",
         PointType::Deployer => block.name == "create:deployer",
         PointType::Depot => matches!(block.name, "create:depot" | "create:weighted_ejector"),
@@ -245,6 +248,11 @@ pub fn interaction(ty: PointType, pos: Pos, facing: Option<Dir>) -> ([f64; 3], D
         // `DepotPoint` (depots, ejectors, saws) and `BeltPoint`.
         PointType::Depot | PointType::Belt | PointType::Saw => (plus(pos, [0.5, 14.0 / 16.0, 0.5]), Dir::Down),
         PointType::Composter => (plus(pos, [0.5, 13.0 / 16.0, 0.5]), Dir::Down),
+        // `CrafterPoint`: half a block out of the back of the crafter (`facing.getOpposite()`).
+        PointType::Crafter => {
+            let dir = facing.unwrap_or(Dir::South).opposite();
+            (along(dir, 0.5), dir)
+        }
         // `DeployerPoint`: 0.65 out of the back of the block's facing.
         PointType::Deployer => {
             let dir = facing.unwrap_or(Dir::Up).opposite();
@@ -490,6 +498,7 @@ mod tests {
             ("create:belt", PointType::Belt),
             ("create:blaze_burner", PointType::BlazeBurner),
             ("create:smart_chute", PointType::Chute),
+            ("create:mechanical_crafter", PointType::Crafter),
             ("create:weighted_ejector", PointType::Depot),
             ("create:depot", PointType::Depot),
             ("create:millstone", PointType::Millstone),
@@ -627,5 +636,12 @@ mod tests {
         assert_eq!(Mode::Take.line("Basin"), "Take items from Basin");
         assert_eq!(PointType::from_id("create:saw"), Some(PointType::Saw));
         assert_eq!(Mode::from_name(Mode::Take.name()), Mode::Take);
+    }
+
+    #[test]
+    fn the_arm_reaches_the_back_of_a_crafter() {
+        // A crafter facing south: the claw comes from the north, half a block in front of the centre.
+        let (at, claw) = interaction(PointType::Crafter, [2, 0, 0], Some(Dir::South));
+        assert_eq!((at, claw), ([2.5, 0.5, 0.0], Dir::North));
     }
 }

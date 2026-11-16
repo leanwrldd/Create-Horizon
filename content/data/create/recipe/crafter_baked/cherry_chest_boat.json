@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:chest",
+    "minecraft:cherry_boat"
+  ],
+  "result": {
+    "id": "minecraft:cherry_chest_boat"
+  }
+}

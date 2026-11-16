@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:gray_concrete"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:gray_concrete_slab"
+  }
+}

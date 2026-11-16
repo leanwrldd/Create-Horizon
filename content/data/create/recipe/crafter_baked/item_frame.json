@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "#X#",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:stick",
+    "X": "minecraft:leather"
+  },
+  "result": {
+    "id": "minecraft:item_frame"
+  }
+}

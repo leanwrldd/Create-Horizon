@@ -1,0 +1,12 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:acacia_planks"
+  },
+  "result": {
+    "id": "minecraft:acacia_pressure_plate"
+  }
+}

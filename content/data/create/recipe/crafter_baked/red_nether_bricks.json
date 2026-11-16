@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "NW",
+    "WN"
+  ],
+  "key": {
+    "N": "minecraft:nether_brick",
+    "W": "minecraft:nether_wart"
+  },
+  "result": {
+    "id": "minecraft:red_nether_bricks"
+  }
+}

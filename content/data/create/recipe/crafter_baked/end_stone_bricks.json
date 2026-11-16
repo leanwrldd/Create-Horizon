@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:end_stone"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:end_stone_bricks"
+  }
+}

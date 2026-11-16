@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:white_concrete"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:white_concrete_stairs"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:white_tulip"
+  ],
+  "result": {
+    "id": "minecraft:light_gray_dye"
+  }
+}

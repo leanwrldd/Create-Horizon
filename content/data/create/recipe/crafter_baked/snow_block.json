@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:snowball"
+  },
+  "result": {
+    "id": "minecraft:snow_block"
+  }
+}

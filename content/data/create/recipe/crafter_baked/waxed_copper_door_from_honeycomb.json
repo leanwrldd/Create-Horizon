@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:copper_door",
+    "minecraft:honeycomb"
+  ],
+  "result": {
+    "id": "minecraft:waxed_copper_door"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:honey_bottle"
+  ],
+  "result": {
+    "count": 3,
+    "id": "minecraft:sugar"
+  }
+}

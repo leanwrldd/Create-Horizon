@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    " # ",
+    "#X#",
+    " # "
+  ],
+  "key": {
+    "#": "minecraft:iron_ingot",
+    "X": "minecraft:redstone"
+  },
+  "result": {
+    "id": "minecraft:compass"
+  }
+}

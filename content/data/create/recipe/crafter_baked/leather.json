@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:rabbit_hide"
+  },
+  "result": {
+    "id": "minecraft:leather"
+  }
+}

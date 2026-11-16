@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:tuff"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:tuff_stairs"
+  }
+}

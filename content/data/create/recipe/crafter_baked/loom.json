@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "@@",
+    "##"
+  ],
+  "key": {
+    "#": "#minecraft:planks",
+    "@": "minecraft:string"
+  },
+  "result": {
+    "id": "minecraft:loom"
+  }
+}

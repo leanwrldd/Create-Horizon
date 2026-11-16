@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "OOO",
+    "GGG",
+    "OOO"
+  ],
+  "key": {
+    "G": "minecraft:glowstone",
+    "O": "minecraft:crying_obsidian"
+  },
+  "result": {
+    "id": "minecraft:respawn_anchor"
+  }
+}

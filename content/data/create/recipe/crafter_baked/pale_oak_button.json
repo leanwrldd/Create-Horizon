@@ -1,0 +1,9 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:pale_oak_planks"
+  ],
+  "result": {
+    "id": "minecraft:pale_oak_button"
+  }
+}

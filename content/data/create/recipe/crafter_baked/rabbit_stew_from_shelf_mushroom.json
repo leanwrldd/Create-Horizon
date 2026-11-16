@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:baked_potato",
+    "minecraft:cooked_rabbit",
+    "minecraft:bowl",
+    "minecraft:carrot",
+    "minecraft:shelf_mushroom"
+  ],
+  "result": {
+    "id": "minecraft:rabbit_stew"
+  }
+}

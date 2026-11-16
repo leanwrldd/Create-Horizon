@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "FF",
+    "FF"
+  ],
+  "key": {
+    "F": "minecraft:popped_chorus_fruit"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:purpur_block"
+  }
+}

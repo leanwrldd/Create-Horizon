@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:lime_wool"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:lime_wool_slab"
+  }
+}

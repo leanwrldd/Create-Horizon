@@ -1,0 +1,9 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:jungle_planks"
+  ],
+  "result": {
+    "id": "minecraft:jungle_button"
+  }
+}

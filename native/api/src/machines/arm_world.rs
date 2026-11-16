@@ -24,6 +24,7 @@ use horizon_client::mod_api::{Direction, Hooks, Host, ItemStack, NativeUseTarget
 
 use super::burner;
 use super::chute_inv as inv;
+use super::crafter_world;
 use super::saw;
 use crate::{belt, depot, recipes, util};
 
@@ -135,7 +136,7 @@ impl<'a> ArmWorld<'a> {
 
     /// `getTargetAngles` of a point, reading the facing the Deployer and the funnels turn it by.
     pub fn angles(&self, point: &Point) -> Angles {
-        let facing = matches!(point.ty, PointType::Deployer | PointType::Funnel)
+        let facing = matches!(point.ty, PointType::Deployer | PointType::Funnel | PointType::Crafter)
             .then(|| util::facing(&*self.host, point.pos, "facing"))
             .flatten();
         points::point_angles(point.ty, point.pos, facing, self.arm, self.ceiling)
@@ -248,6 +249,8 @@ fn slots(host: &dyn Host, point: &Point) -> std::ops::Range<usize> {
                 .map_or(0, |e| e.items.iter().rposition(Option::is_some).map_or(0, |i| i + 1));
             0..used.max(1)
         }
+        // `getSlotCount`: one slot to each crafter of the grid.
+        PointType::Crafter => 0..crafter_world::handler_slots(host, point.pos),
         PointType::Chute | PointType::Belt => 0..1,
         _ => 0..0,
     }
@@ -263,6 +266,9 @@ fn extract(
     let pos = point.pos;
     match point.ty {
         PointType::Belt => belt_extract(host, pos, amount, simulate),
+        // `CrafterPoint.extract`: the arm may take what a crafter holds (Create allows extraction
+        // for the arm only).
+        PointType::Crafter => crafter_world::handler_extract(host, pos, slot, simulate),
         PointType::Composter => {
             let level = digit(host, pos, "level")?;
             let item = points::composter_output(level)?;
@@ -425,6 +431,8 @@ fn insert(host: &mut dyn Host, point: &Point, stack: ItemStack, simulate: bool) 
             }
         }
         PointType::Belt => belt::handler_insert(host, pos, &stack, simulate).unwrap_or(stack),
+        // The grid's combined inventory: one item to each crafter in turn.
+        PointType::Crafter => crafter_world::handler_insert(host, pos, &stack, simulate),
         PointType::Chute => hand_over(host, pos, stack, simulate, false),
         PointType::Saw => saw::insert_from_side(host, pos, &stack, simulate),
         PointType::BlazeBurner => blaze_burner(host, pos, stack, simulate),

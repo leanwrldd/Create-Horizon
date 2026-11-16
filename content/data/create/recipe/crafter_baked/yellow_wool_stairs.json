@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:yellow_wool"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:yellow_wool_stairs"
+  }
+}

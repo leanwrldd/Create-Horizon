@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "# #",
+    "###",
+    "# #"
+  ],
+  "key": {
+    "#": "minecraft:stick"
+  },
+  "result": {
+    "count": 3,
+    "id": "minecraft:ladder"
+  }
+}

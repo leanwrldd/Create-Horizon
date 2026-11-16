@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:deepslate_bricks"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:deepslate_brick_stairs"
+  }
+}

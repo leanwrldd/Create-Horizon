@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:stone_bricks"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:stone_brick_wall"
+  }
+}

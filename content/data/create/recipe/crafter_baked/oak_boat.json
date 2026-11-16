@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "# #",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:oak_planks"
+  },
+  "result": {
+    "id": "minecraft:oak_boat"
+  }
+}

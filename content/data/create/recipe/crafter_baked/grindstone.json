@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "I-I",
+    "# #"
+  ],
+  "key": {
+    "#": "#minecraft:planks",
+    "-": "minecraft:stone_slab",
+    "I": "minecraft:stick"
+  },
+  "result": {
+    "id": "minecraft:grindstone"
+  }
+}

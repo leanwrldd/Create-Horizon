@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###",
+    " | "
+  ],
+  "key": {
+    "#": "minecraft:magenta_wool",
+    "|": "minecraft:stick"
+  },
+  "result": {
+    "id": "minecraft:magenta_banner"
+  }
+}

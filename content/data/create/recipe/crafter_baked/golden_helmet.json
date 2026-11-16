@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "XXX",
+    "X X"
+  ],
+  "key": {
+    "X": "minecraft:gold_ingot"
+  },
+  "result": {
+    "id": "minecraft:golden_helmet"
+  }
+}

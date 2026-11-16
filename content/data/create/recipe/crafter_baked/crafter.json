@@ -1,0 +1,17 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "#C#",
+    "RDR"
+  ],
+  "key": {
+    "#": "minecraft:iron_ingot",
+    "C": "minecraft:crafting_table",
+    "D": "minecraft:dropper",
+    "R": "minecraft:redstone"
+  },
+  "result": {
+    "id": "minecraft:crafter"
+  }
+}

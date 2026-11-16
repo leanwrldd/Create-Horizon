@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "SSS",
+    "SIS",
+    "SSS"
+  ],
+  "key": {
+    "I": "minecraft:black_dye",
+    "S": "minecraft:prismarine_shard"
+  },
+  "result": {
+    "id": "minecraft:dark_prismarine"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:raw_iron_block"
+  ],
+  "result": {
+    "count": 9,
+    "id": "minecraft:raw_iron"
+  }
+}

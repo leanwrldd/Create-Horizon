@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:cobblestone"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:cobblestone_wall"
+  }
+}

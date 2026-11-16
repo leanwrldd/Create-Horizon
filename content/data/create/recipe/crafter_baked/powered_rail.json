@@ -1,0 +1,17 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "X X",
+    "X#X",
+    "XRX"
+  ],
+  "key": {
+    "#": "minecraft:stick",
+    "R": "minecraft:redstone",
+    "X": "minecraft:gold_ingot"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:powered_rail"
+  }
+}

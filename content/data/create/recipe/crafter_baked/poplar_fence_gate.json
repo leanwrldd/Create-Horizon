@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#W#",
+    "#W#"
+  ],
+  "key": {
+    "#": "minecraft:stick",
+    "W": "minecraft:poplar_planks"
+  },
+  "result": {
+    "id": "minecraft:poplar_fence_gate"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "A",
+    "B"
+  ],
+  "key": {
+    "A": "minecraft:carved_pumpkin",
+    "B": "minecraft:torch"
+  },
+  "result": {
+    "id": "minecraft:jack_o_lantern"
+  }
+}

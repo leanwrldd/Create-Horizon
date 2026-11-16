@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "LLL",
+    "G#G"
+  ],
+  "key": {
+    "#": "minecraft:red_wool",
+    "G": "minecraft:glass",
+    "L": "minecraft:leather"
+  },
+  "result": {
+    "id": "minecraft:red_harness"
+  }
+}

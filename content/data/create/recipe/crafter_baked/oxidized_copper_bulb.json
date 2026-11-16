@@ -1,0 +1,17 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    " C ",
+    "CBC",
+    " R "
+  ],
+  "key": {
+    "B": "minecraft:blaze_rod",
+    "C": "minecraft:oxidized_copper",
+    "R": "minecraft:redstone"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:oxidized_copper_bulb"
+  }
+}

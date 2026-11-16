@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    " # ",
+    "#X#",
+    " # "
+  ],
+  "key": {
+    "#": "#minecraft:logs",
+    "X": "minecraft:furnace"
+  },
+  "result": {
+    "id": "minecraft:smoker"
+  }
+}

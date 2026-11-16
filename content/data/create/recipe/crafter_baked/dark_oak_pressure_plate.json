@@ -1,0 +1,12 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:dark_oak_planks"
+  },
+  "result": {
+    "id": "minecraft:dark_oak_pressure_plate"
+  }
+}

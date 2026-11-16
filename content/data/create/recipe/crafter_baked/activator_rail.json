@@ -1,0 +1,17 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "XSX",
+    "X#X",
+    "XSX"
+  ],
+  "key": {
+    "#": "minecraft:redstone_torch",
+    "S": "minecraft:stick",
+    "X": "minecraft:iron_ingot"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:activator_rail"
+  }
+}

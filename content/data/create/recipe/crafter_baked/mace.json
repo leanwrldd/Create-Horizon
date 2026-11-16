@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    " # ",
+    " I "
+  ],
+  "key": {
+    "#": "minecraft:heavy_core",
+    "I": "minecraft:breeze_rod"
+  },
+  "result": {
+    "id": "minecraft:mace"
+  }
+}

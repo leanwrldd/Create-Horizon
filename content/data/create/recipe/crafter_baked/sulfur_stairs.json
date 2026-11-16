@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:sulfur"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:sulfur_stairs"
+  }
+}

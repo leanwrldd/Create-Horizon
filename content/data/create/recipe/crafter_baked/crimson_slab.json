@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:crimson_planks"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:crimson_slab"
+  }
+}

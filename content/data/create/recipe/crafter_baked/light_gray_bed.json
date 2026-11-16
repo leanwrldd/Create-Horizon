@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "XXX"
+  ],
+  "key": {
+    "#": "minecraft:light_gray_wool",
+    "X": "#minecraft:planks"
+  },
+  "result": {
+    "id": "minecraft:light_gray_bed"
+  }
+}

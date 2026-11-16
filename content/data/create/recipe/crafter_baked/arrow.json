@@ -1,0 +1,17 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "X",
+    "#",
+    "Y"
+  ],
+  "key": {
+    "#": "minecraft:stick",
+    "X": "minecraft:flint",
+    "Y": "minecraft:feather"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:arrow"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:polished_tuff"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:polished_tuff_wall"
+  }
+}

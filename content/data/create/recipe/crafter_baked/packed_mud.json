@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:mud",
+    "minecraft:wheat"
+  ],
+  "result": {
+    "id": "minecraft:packed_mud"
+  }
+}

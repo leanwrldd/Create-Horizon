@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "#minecraft:jungle_logs"
+  ],
+  "result": {
+    "count": 4,
+    "id": "minecraft:jungle_planks"
+  }
+}

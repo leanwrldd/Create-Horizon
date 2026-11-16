@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:glowstone_dust"
+  },
+  "result": {
+    "id": "minecraft:glowstone"
+  }
+}

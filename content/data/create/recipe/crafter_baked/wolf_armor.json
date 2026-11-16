@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "X  ",
+    "XXX",
+    "X X"
+  ],
+  "key": {
+    "X": "minecraft:armadillo_scute"
+  },
+  "result": {
+    "id": "minecraft:wolf_armor"
+  }
+}

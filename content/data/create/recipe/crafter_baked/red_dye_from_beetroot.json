@@ -1,0 +1,9 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:beetroot"
+  ],
+  "result": {
+    "id": "minecraft:red_dye"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:raw_copper"
+  },
+  "result": {
+    "id": "minecraft:raw_copper_block"
+  }
+}
