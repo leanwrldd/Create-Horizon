@@ -13,6 +13,7 @@
             "create:creative_motor",
             "create:depot",
             "create:mechanical_press",
+            "create:mechanical_arm",
             "create:basin",
             "create:mechanical_bearing",
             "create:blaze_burner",

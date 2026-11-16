@@ -4,6 +4,9 @@
 //! no game types, so `cargo test` covers them.
 
 pub mod analog_lever;
+pub mod arm;
+pub mod arm_items;
+pub mod arm_points;
 pub mod basin;
 pub mod bearing;
 pub mod bracket;

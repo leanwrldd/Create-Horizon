@@ -340,6 +340,27 @@ fn extra_input(block: &str) -> Option<BeltInput> {
         .copied()
 }
 
+/// Something that keeps the stopped item of a belt block where it is (`TransportedItemStack.
+/// lockedExternally`): the Mechanical Arm, while it moves to take the item. Asked of a locked item
+/// at the belt block's position; a module adds its own with [`register_hold`] when it starts.
+pub(crate) type Hold = fn(&dyn Host, Pos) -> bool;
+
+static HOLDS: Mutex<Vec<Hold>> = Mutex::new(Vec::new());
+
+#[allow(dead_code)] // the arm module calls it; a build without it doesn't
+pub(crate) fn register_hold(hold: Hold) {
+    let mut all = HOLDS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    // `hooks()` may run more than once.
+    if !all.iter().any(|h| *h as usize == hold as usize) {
+        all.push(hold);
+    }
+}
+
+fn held_externally(host: &dyn Host, at: Pos) -> bool {
+    let all: Vec<Hold> = HOLDS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    all.iter().any(|hold| hold(host, at))
+}
+
 /// A block two above a belt or a depot that holds, changes or takes the items that come to the
 /// middle of the block under it (`BeltProcessingBehaviour`), other than the press: the Spout.
 /// A module adds its block with [`register_processor`] when it starts, so this file doesn't
@@ -539,6 +560,9 @@ impl Surroundings<ItemStack> for Around<'_> {
     /// `getBeltProcessingAtSegment(segment)`: the block two above.
     fn held(&mut self, segment: i32, item: &Item<ItemStack>) -> Option<Processing> {
         let at = self.at(segment);
+        if held_externally(&*self.host, at) {
+            return Some(Processing::Hold);
+        }
         let above = [at[0], at[1] + 2, at[2]];
         if let Some(processor) = extra_processor(&self.host.block(above)) {
             return Some((processor.held)(self.host, above, &item.stack));
