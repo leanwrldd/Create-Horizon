@@ -32,7 +32,7 @@ if [ "$owner" != all ] && [ -f "$root/tools/wip.txt" ]; then
 fi
 python "$root/tools/gen_modules.py" "$work/native"
 # One target directory for every owner: Horizon's client library is compiled once.
-export CARGO_TARGET_DIR="$root/target/native-check/target"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$root/target/native-check/target}"
 echo "== cargo test: native/kinetics =="
 (cd "$work/native/kinetics" && cargo test 2>&1 | grep -v '^\s*Compiling\|^\s*Blocking' | tail -n 40)
 rm -f "$work/native/kinetics/Cargo.lock"
