@@ -160,8 +160,13 @@ fn is_chest(name: &str) -> bool {
 
 /// The blocks whose items make up the container at `pos`, with the slot each one's list starts
 /// at: a double chest is its right half then its left (`HopperBlockEntity.getBlockContainer`).
-fn parts(host: &dyn Host, pos: Pos) -> Vec<(Pos, usize)> {
+pub(crate) fn parts(host: &dyn Host, pos: Pos) -> Vec<(Pos, usize)> {
     let name = host.block(pos);
+    if name == VAULT
+        && let Some(members) = vault_parts(host, pos)
+    {
+        return members;
+    }
     if is_chest(&name) {
         let kind = host.block_property(pos, "type");
         let facing = host
@@ -195,7 +200,7 @@ fn parts(host: &dyn Host, pos: Pos) -> Vec<(Pos, usize)> {
 
 /// The items of the container at `pos`: their slots and stacks, from the saved data (`Items`:
 /// `Slot`, `id`, `count`, `components`). `None` where there is no such list.
-fn items_of(host: &mut dyn Host, pos: Pos) -> Option<Vec<(usize, ItemStack)>> {
+pub(crate) fn items_of(host: &mut dyn Host, pos: Pos) -> Option<Vec<(usize, ItemStack)>> {
     let dimension = host.dimension();
     let mut out = Vec::new();
     let mut found = false;
@@ -224,12 +229,49 @@ fn items_of(host: &mut dyn Host, pos: Pos) -> Option<Vec<(usize, ItemStack)>> {
 /// Create's own blocks that hold items for hoppers (their `block_entity_container`). Horizon
 /// can't say whether a mod block has a container, and an empty one saves no `Items` list, so
 /// they are named here.
-const CONTAINERS: [&str; 4] = [
+const CONTAINERS: [&str; 6] = [
     "create:basin",
     "create:millstone",
     "create:mechanical_saw",
     "create:crushing_wheel_controller",
+    VAULT,
+    "create:creative_crate",
 ];
+
+/// The Item Vault (`item_vault.rs`), one inventory across all its blocks (`initCapability`).
+pub(crate) const VAULT: &str = "create:item_vault";
+/// `CLogistics.vaultCapacity`: the slots one vault block holds.
+pub(crate) const VAULT_SLOTS: usize = 20;
+
+/// The blocks of the Item Vault that `pos` is part of, with the combined slot each one's list
+/// starts at, in the order of `ItemVaultBlockEntity.initCapability` (the offsets are the ones
+/// of `ConnectivityHandler.tryToFormNewMultiOfWidth`). Read from the saved `Controller`, `Size`
+/// and `Length`, so this file names no vault code.
+pub(crate) fn vault_parts(host: &dyn Host, pos: Pos) -> Option<Vec<(Pos, usize)>> {
+    let own = host.mod_block_entity(pos)?;
+    let controller = match util::get(&own.nbt, "Controller") {
+        Some(Tag::IntArray(at)) if at.len() == 3 => [at[0], at[1], at[2]],
+        _ => pos,
+    };
+    let lead = if controller == pos { own } else { host.mod_block_entity(controller)? };
+    let size = util::int(&lead.nbt, "Size").max(1);
+    let length = util::int(&lead.nbt, "Length").max(1);
+    let along_z = host.block_property(controller, "axis").as_deref() == Some("z");
+    let mut out = Vec::new();
+    for y in 0..length {
+        for x in 0..size {
+            for z in 0..size {
+                let at = if along_z {
+                    [controller[0] + x, controller[1] + z, controller[2] + y]
+                } else {
+                    [controller[0] + y, controller[1] + x, controller[2] + z]
+                };
+                out.push((at, out.len() * VAULT_SLOTS));
+            }
+        }
+    }
+    Some(out)
+}
 
 /// Whether the block at `pos` is an inventory the funnels and chutes can put items in or take
 /// them from: a container with an `Items` list, one of Create's own, a belt or a depot. (Chutes
@@ -296,7 +338,16 @@ pub fn take(host: &mut dyn Host, pos: Pos, face: Dir, plan: &Plan<ItemStack>) ->
     let dimension = host.dimension();
     let mut taken: Option<ItemStack> = None;
     for (slot, count) in &plan.takes {
-        let Some(got) = host.extract_item(dimension, pos, util::direction(face), *slot, *count)
+        // A vault's slots are numbered across all its blocks: ask the block that holds the slot.
+        let (at, local) = if host.block(pos) == VAULT {
+            parts(host, pos)
+                .into_iter()
+                .rfind(|(_, first)| first <= slot)
+                .map_or((pos, *slot), |(member, first)| (member, slot - first))
+        } else {
+            (pos, *slot)
+        };
+        let Some(got) = host.extract_item(dimension, at, util::direction(face), local, *count)
         else {
             break;
         };
@@ -355,6 +406,20 @@ pub fn insert(
     }
     if simulate {
         return Some(stack.clone());
+    }
+    if host.block(pos) == VAULT {
+        // Into the first block of the vault with room, as the combined handler fills its slots.
+        let mut rest = stack.clone();
+        for (member, _) in parts(host, pos) {
+            match host.insert_item(member, util::direction(face), rest.clone()) {
+                Some(left) if left.count > 0 => rest = left,
+                _ => {
+                    rest.count = 0;
+                    break;
+                }
+            }
+        }
+        return Some(rest);
     }
     Some(host.insert_item(pos, util::direction(face), stack.clone()).unwrap_or_else(|| {
         let mut none = stack.clone();

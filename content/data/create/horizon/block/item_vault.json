@@ -1,0 +1,27 @@
+{
+  "template": "minecraft:gold_block",
+  "item": true,
+  "properties": {
+    "hardness": 3.0,
+    "explosion_resistance": 1200.0,
+    "requires_tool": true,
+    "map_color": 47,
+    "sounds": "minecraft:netherite_block"
+  },
+  "state_properties": {
+    "axis": {
+      "type": "enum",
+      "values": [
+        "x",
+        "z"
+      ]
+    },
+    "large": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "axis": "x",
+    "large": "false"
+  }
+}

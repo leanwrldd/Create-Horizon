@@ -14,8 +14,11 @@
     "create:encased_chain_drive",
     "create:adjustable_chain_gearshift",
     "create:clutch",
+    "create:content_observer",
+    "create:creative_crate",
     "create:cuckoo_clock",
     "create:mysterious_cuckoo_clock",
+    "create:deployer",
     "create:pulse_repeater",
     "create:pulse_extender",
     "create:pulse_timer",
@@ -50,6 +53,7 @@
     "create:redstone_link",
     "create:mechanical_saw",
     "create:encased_fluid_pipe",
+    "create:stockpile_switch",
     "create:turntable",
     "create:weighted_ejector"
   ]

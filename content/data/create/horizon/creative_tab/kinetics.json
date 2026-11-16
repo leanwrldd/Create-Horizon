@@ -27,8 +27,11 @@
     "create:chute",
     "create:smart_chute",
     "create:clutch",
+    "create:content_observer",
+    "create:creative_crate",
     "create:crushing_wheel",
     "create:cuckoo_clock",
+    "create:deployer",
     "create:pulse_repeater",
     "create:pulse_extender",
     "create:pulse_timer",
@@ -72,6 +75,7 @@
     "create:stressometer",
     "create:gearshift",
     "create:item_drain",
+    "create:item_vault",
     "create:large_water_wheel",
     "create:wheat_flour",
     "create:dough",
@@ -135,6 +139,7 @@
     "create:spout",
     "create:steam_engine",
     "create:steam_whistle",
+    "create:stockpile_switch",
     "create:turntable",
     "create:weighted_ejector"
   ]

@@ -22,7 +22,10 @@
             "create:chute",
             "create:smart_chute",
             "create:clutch",
+            "create:content_observer",
+            "create:creative_crate",
             "create:crushing_wheel",
+            "create:deployer",
             "create:mechanical_drill",
             "create:andesite_encased_shaft",
             "create:brass_encased_shaft",
@@ -60,6 +63,7 @@
             "create:brass_belt_funnel",
             "create:gearshift",
             "create:item_drain",
+            "create:item_vault",
             "create:andesite_casing",
             "create:brass_casing",
             "create:copper_casing",
@@ -407,6 +411,7 @@
             "create:powered_shaft",
             "create:steam_whistle",
             "create:steam_whistle_extension",
+            "create:stockpile_switch",
             "create:weighted_ejector"
           ],
           "correct_for_drops": true

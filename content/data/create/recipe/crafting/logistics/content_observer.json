@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "R",
+    "B",
+    "I"
+  ],
+  "key": {
+    "B": "create:brass_casing",
+    "I": "minecraft:observer",
+    "R": "create:electron_tube"
+  },
+  "result": {
+    "id": "create:content_observer"
+  }
+}

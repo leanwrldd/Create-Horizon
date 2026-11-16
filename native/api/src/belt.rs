@@ -936,6 +936,73 @@ pub(crate) fn process_held(
     true
 }
 
+/// What a Deployer does at the end of its stroke to the item held in the middle of the block of
+/// the belt at `pos` (`BeltDeployerCallbacks.activate`): `results` gives what applying its recipe
+/// makes of ONE of the held stack (`copyWithCount(1)`), or `None` where there is no recipe. What
+/// it makes goes on the belt unlocked, where the item was; the rest of the stack stays held where
+/// it was, a hair behind the middle (`convertToAndLeaveHeld`). True when a recipe was applied.
+#[allow(dead_code)] // the deployer module
+pub(crate) fn apply_held(
+    host: &mut dyn Host,
+    pos: Pos,
+    results: &mut dyn FnMut(&mut dyn Host, &ItemStack) -> Option<Vec<ItemStack>>,
+) -> bool {
+    let Some((facing, _)) = segment(host, pos) else {
+        return false;
+    };
+    let Some(index) = host.mod_block_entity(pos).map(|e| int(&e.nbt, INDEX)) else {
+        return false;
+    };
+    let controller = segment_position(pos, facing, -index);
+    let Some(ctl) = host.mod_block_entity(controller) else {
+        return false;
+    };
+    let mut inventory = read_inventory(&ctl.nbt);
+    let middle = index as f32 + 0.5;
+    // `applyToEachWithin(index + .5, .51, ...)`.
+    let Some(at) = inventory
+        .items
+        .iter()
+        .position(|i| i.locked && (i.pos - middle).abs() < 0.51)
+    else {
+        return false;
+    };
+    let mut probe = inventory.items[at].stack.clone();
+    probe.count = 1;
+    let Some(made) = results(host, &probe) else {
+        return false;
+    };
+    let item = inventory.items.remove(at);
+    let mut incoming = Vec::new();
+    for stack in made {
+        let mut out = item.clone();
+        out.stack = stack;
+        out.locked = false;
+        out.angle = (random() % 360) as i32;
+        incoming.push(out);
+    }
+    let mut left = item.clone();
+    left.stack.count = left.stack.count.saturating_sub(1);
+    if left.stack.count > 0 {
+        // With something made, the rest waits where `held.beltPosition` puts it; with nothing
+        // made it simply stays (`convertTo(left)`).
+        if !incoming.is_empty() {
+            left.pos = middle - if inventory.positive { 1.0 / 512.0 } else { -1.0 / 512.0 };
+        }
+        incoming.push(left);
+    }
+    host.change_mod_block_entity(controller, &mut |entity| {
+        entity.nbt.insert(INVENTORY.into(), inventory_tag(&inventory));
+        let mut list = match get(&entity.nbt, INCOMING) {
+            Some(Tag::List(list)) => list.clone(),
+            _ => Vec::new(),
+        };
+        list.extend(incoming.iter().map(item_tag));
+        entity.nbt.insert(INCOMING.into(), Tag::List(list));
+    });
+    true
+}
+
 /// The controller's share of the tick: stacks other blocks handed over get on, stacks dropped on
 /// the belt get on, then everything moves (`BeltBlock.entityInside`,
 /// `ItemHandlerBeltSegment.insertItem`, `BeltInventory.tick`). True when clients need the items

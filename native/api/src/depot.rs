@@ -530,6 +530,96 @@ pub(crate) fn process_held(
     true
 }
 
+/// What a Deployer does at the end of its stroke to the item held on the depot at `pos`
+/// (`BeltDeployerCallbacks.activate` through `DepotBehaviour.applyToAllItems`): `results` gives
+/// what applying its recipe makes of ONE of the held stack, or `None` where there is no recipe.
+/// The rest of the stack is set down in the middle, still held; what is made takes the held place
+/// if that is free, unlocked, and goes into the output buffer otherwise (what does not fit is
+/// dropped on top). True when a recipe was applied.
+#[allow(dead_code)] // the deployer module
+pub(crate) fn apply_held(
+    host: &mut dyn Host,
+    pos: [i32; 3],
+    results: &mut dyn FnMut(&mut dyn Host, &ItemStack) -> Option<Vec<ItemStack>>,
+) -> bool {
+    let Some(entity) = host.mod_block_entity(pos).filter(|e| e.id == ID) else {
+        return false;
+    };
+    let (Some(Some(stack)), Some(transport)) = (entity.items.first(), Transport::read(&entity.nbt))
+    else {
+        return false;
+    };
+    if !transport.locked {
+        return false;
+    }
+    let mut probe = stack.clone();
+    probe.count = 1;
+    let Some(made) = results(host, &probe) else {
+        return false;
+    };
+    let mut items = entity.items.clone();
+    items.resize(SLOTS, None);
+    items[0] = None;
+    let mut held: Option<Transport> = None;
+    if stack.count > 1 {
+        let mut rest = stack.clone();
+        rest.count -= 1;
+        items[0] = Some(rest);
+        // `setCenteredHeldItem(left)`: still locked, as the copy of the held item was.
+        held = Some(Transport {
+            pos: 0.5,
+            prev_pos: 0.5,
+            ..transport
+        });
+    }
+    let mut dropped = Vec::new();
+    for stack in made {
+        if items[0].is_none() {
+            items[0] = Some(stack);
+            held = Some(Transport {
+                pos: 0.5,
+                prev_pos: 0.5,
+                angle: (random() % 360) as i32,
+                locked: false,
+                ..transport
+            });
+            continue;
+        }
+        let limit = host.max_stack_size(&stack.item).unwrap_or(64).min(64);
+        if let Some(rest) = insert_stacked(
+            &mut items[1..],
+            stack,
+            |s| s.count,
+            |s, n| s.count = n,
+            util::same_item,
+            limit,
+        ) {
+            dropped.push(rest);
+        }
+    }
+    host.change_mod_block_entity(pos, &mut |entity| {
+        entity.items = items.clone();
+        match held {
+            Some(held) => {
+                entity
+                    .nbt
+                    .insert(HELD.into(), Tag::Compound(held.write()));
+            }
+            None => {
+                remove(&mut entity.nbt, HELD);
+            }
+        }
+    });
+    // `Containers.dropItemStack(level, x, y + .5, z, remainder)` from the depot's centre.
+    for rest in dropped {
+        let [x, y, z] = pos;
+        let at = [f64::from(x) + 0.5, f64::from(y) + 1.0, f64::from(z) + 0.5];
+        util::spawn_item(host, at, &rest, [0.0; 3], 10);
+    }
+    host.block_entity_sync(pos);
+    true
+}
+
 /// What clients get: `HeldItem` with its stack, and the output buffer (always, so a client that
 /// had stacks there hears they are gone).
 pub fn update_tag(entity: &ModBlockEntity) -> Compound {

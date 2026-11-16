@@ -1,0 +1,39 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 1.5,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:andesite",
+    "map_color": 48,
+    "render_shape": "MODEL"
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    },
+    "powered": {
+      "type": "boolean"
+    },
+    "target": {
+      "type": "enum",
+      "values": [
+        "wall",
+        "floor",
+        "ceiling"
+      ]
+    }
+  },
+  "default_state": {
+    "facing": "north",
+    "powered": "false",
+    "target": "wall"
+  }
+}

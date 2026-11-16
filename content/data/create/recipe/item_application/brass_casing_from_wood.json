@@ -1,0 +1,16 @@
+{
+  "ingredients": [
+    {
+      "tag": "c:stripped_woods"
+    },
+    {
+      "tag": "c:ingots/brass"
+    }
+  ],
+  "results": [
+    {
+      "id": "create:brass_casing"
+    }
+  ],
+  "type": "create:item_application"
+}

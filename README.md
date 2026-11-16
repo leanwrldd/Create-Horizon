@@ -16,13 +16,13 @@ is not pinned to one Horizon commit.
 |---|---:|---:|---:|
 | Kinetics | 44 | 57 | 77% |
 | Materials | 18 | 20 | 90% |
-| Logistics | 12 | 52 | 23% |
+| Logistics | 16 | 52 | 31% |
 | Fluids | 15 | 18 | 83% |
-| Contraptions | 12 | 42 | 29% |
+| Contraptions | 13 | 42 | 31% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 29 | 39 | 74% |
-| **All** | **130** | **246** | **52.8%** |
+| **All** | **135** | **246** | **54.9%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -124,6 +124,8 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Spout, Item Drain | The Spout fills items on a belt or depot below it from its tank (`create:filling` recipes, buckets, bottles); the Item Drain empties items brought by belt, funnel or hand into its tank |
 | Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter (sneak-click with an item); a fluid pipe encased with a copper casing |
 | Small kinetics | Weighted Ejector (throws items and entities along Create's arc to a target picked with the item), Turntable, Cuckoo Clock and Mysterious Cuckoo Clock, Large Water Wheel, Wooden and Metal Brackets on shafts, cogwheels and pipes |
+| Deployer | Uses its held item on the block or entity two in front (USE), or attacks and mines (PUNCH, toggled with the Wrench); over a belt or depot it applies Create's 167 deploying and 7 item-application recipes; the hand and pole are drawn moving |
+| Storage blocks | Item Vault (merges up to 3 wide and 3 times as long, 20 stacks a block; chutes, funnels and comparators see the whole vault), Creative Crate (endless supply of the item it's clicked with), Smart Observer, Threshold Switch |
 | Redstone parts | Redstone Link (frequency set by clicking each half with an item), Analog Lever, Pulse Repeater, Pulse Extender and Pulse Timer (the Wrench on a side steps the delay), Powered Latch and Toggle Latch, Rose Quartz Lamp |
 | Building blocks | 364 blocks: metal ladders, bars, scaffolding and doors, copper shingles and tiles, glass and windows, 14 stone types in every pattern |
 
@@ -204,7 +206,7 @@ item icons.
 
 - Tunnels, deployers, the mechanical crafter, open pipe ends, most contraptions, trains, the rest of logistics
   and schematics.
-- The Spout, Item Drain, valves, smart pipes, redstone parts and small kinetic blocks (2026-11-15) have not been
+- The Spout, Item Drain, valves, smart pipes, redstone parts, small kinetic blocks, the Deployer and the storage blocks have not been
   tried in game. Their
   filters and settings use click stand-ins until Create's value boxes are ported, and redstone is polled
   every tick rather than heard.
