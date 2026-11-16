@@ -17,6 +17,7 @@ use horizon_client::mod_api::{
 
 use super::arm::{ID, POINTS, points_tag};
 use super::arm_world::classify_at;
+use crate::util;
 
 const SPECTATOR: i32 = 3;
 /// Ticks between the dust that marks the selected blocks.
@@ -60,11 +61,16 @@ impl Hooks for Select {
             return Flow::Continue;
         }
         let pos = event.pos;
+        // The off hand's turn of a click that already selected it (or cycled its mode).
+        if util::click_repeated(&*host, player.uuid, pos) {
+            return Flow::Cancel;
+        }
         let ty = classify_at(&*host, pos);
         let chosen = selections().entry(player.uuid).or_default().right_click(pos, ty);
         let Some((_, mode)) = chosen else {
             return Flow::Continue;
         };
+        util::click_taken(&*host, player.uuid, pos);
         let name = points::block_title(&host.block(pos));
         say(host, player.uuid, mode.line(&name), mode.color());
         Flow::Cancel

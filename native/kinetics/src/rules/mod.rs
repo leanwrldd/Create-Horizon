@@ -13,6 +13,7 @@ pub mod bracket;
 pub mod burner;
 pub mod chain_drive;
 pub mod chute;
+pub mod click;
 pub mod content_observer;
 pub mod content_observer_target;
 pub mod contraption;

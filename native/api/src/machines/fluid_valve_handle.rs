@@ -285,7 +285,9 @@ impl Hooks for Handles {
         if item.as_deref() == Some(util::WRENCH) {
             return Flow::Continue;
         }
-        clicked(host, pos, &block, item.as_deref(), player.sneaking);
+        if util::first_click(host, player.uuid, pos) {
+            clicked(host, pos, &block, item.as_deref(), player.sneaking);
+        }
         Flow::Cancel
     }
 

@@ -79,8 +79,6 @@ const OPERATORS: [&str; 2] = ["create:mechanical_mixer", "create:mechanical_pres
 
 pub(crate) type Pos = [i32; 3];
 
-/// `MillstoneBlock`-style double-click guard: the client may send the off hand's click as well.
-static LAST_USE: Mutex<Option<(u128, Pos, i64)>> = Mutex::new(None);
 /// What clients were last sent for each basin, so a change a hopper made is sent too.
 static SENT: Mutex<Option<HashMap<Pos, u64>>> = Mutex::new(None);
 
@@ -1406,31 +1404,26 @@ impl Hooks for Basin {
         {
             return Flow::Continue;
         }
+        // The off hand's turn of a click the basin took (a filled bucket would be emptied again).
+        if util::click_repeated(host, uuid, pos) {
+            return Flow::Cancel;
+        }
         if let Some(stack) = main {
             let creative = player.game_mode == util::CREATIVE;
             if use_bucket(host, pos, &stack, creative) {
+                util::click_taken(host, uuid, pos);
                 host.block_entity_sync(pos);
                 return Flow::Cancel;
             }
             if &*stack.item == "minecraft:sponge" && drain_all(host, pos) {
+                util::click_taken(host, uuid, pos);
                 host.block_entity_sync(pos);
                 return Flow::Cancel;
             }
             // `PASS_TO_DEFAULT_BLOCK_INTERACTION`.
             return Flow::Continue;
         }
-        // The client may send the off hand's click for the same use: once is enough.
-        let now = util::game_time(host);
-        {
-            let mut last = LAST_USE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            let again = matches!(*last, Some((u, p, t)) if u == uuid && p == pos && now - t <= 1);
-            if !again {
-                *last = Some((uuid, pos, now));
-            }
-            if again {
-                return Flow::Cancel;
-            }
-        }
+        util::click_taken(host, uuid, pos);
         let mut taken: Vec<ItemStack> = Vec::new();
         host.change_mod_block_entity(pos, &mut |entity| {
             let mut slots = entity.items.clone();

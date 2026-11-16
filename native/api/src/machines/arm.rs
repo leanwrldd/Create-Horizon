@@ -441,12 +441,17 @@ impl Hooks for Arms {
         if player.sneaking && (main.is_some() || off.is_some()) {
             return Flow::Continue;
         }
+        // The off hand's turn of a click that already gave the stack back.
+        if util::click_repeated(host, player.uuid, pos) {
+            return Flow::Cancel;
+        }
         let Some(held) = host
             .mod_block_entity(pos)
             .and_then(|e| util::get(&e.nbt, HELD).and_then(util::stack_of))
         else {
             return Flow::Continue;
         };
+        util::click_taken(host, player.uuid, pos);
         // `Inventory.placeItemBackInInventory`: what does not fit drops at the player.
         if let Some(rest) = host.give_stack(player.uuid, held) {
             util::spawn_item(host, player.position, &rest, [0.0; 3], 0);

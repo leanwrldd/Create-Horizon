@@ -240,6 +240,10 @@ impl Hooks for Apply {
         let Some(manual) = manual_for(host, &block, &held) else {
             return Flow::Continue;
         };
+        // The off hand's turn of a click that already applied it (a stack is used up once more).
+        if util::click_repeated(host, player.uuid, event.pos) {
+            return Flow::Cancel;
+        }
         let keep = manual.keep_held || player.game_mode == util::CREATIVE;
         if !keep {
             // `heldItem.shrink(1)`, for what `take_items` can take (a plain stack).
@@ -247,6 +251,7 @@ impl Hooks for Apply {
                 return Flow::Continue;
             }
         }
+        util::click_taken(host, player.uuid, event.pos);
         apply_manual(host, event.pos, &manual);
         Flow::Cancel
     }
