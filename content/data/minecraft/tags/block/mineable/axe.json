@@ -41,6 +41,8 @@
     "create:brass_encased_large_cogwheel",
     "create:encased_fan",
     "create:nozzle",
+    "create:gantry_shaft",
+    "create:gantry_carriage",
     "create:speedometer",
     "create:stressometer",
     "create:gearshift",

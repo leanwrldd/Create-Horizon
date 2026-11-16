@@ -105,6 +105,8 @@
   "block.create.andesite_belt_funnel": "Andesite Belt Funnel",
   "block.create.brass_funnel": "Brass Funnel",
   "block.create.brass_belt_funnel": "Brass Belt Funnel",
+  "block.create.gantry_shaft": "Gantry Shaft",
+  "block.create.gantry_carriage": "Gantry Carriage",
   "block.create.speedometer": "Speedometer",
   "block.create.stressometer": "Stressometer",
   "block.create.gearshift": "Gearshift",

@@ -78,6 +78,8 @@
     "create:chocolate_bucket",
     "create:andesite_funnel",
     "create:brass_funnel",
+    "create:gantry_carriage",
+    "create:gantry_shaft",
     "create:speedometer",
     "create:stressometer",
     "create:gearshift",

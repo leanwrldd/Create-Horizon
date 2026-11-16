@@ -43,6 +43,7 @@ pub mod fluid_tank;
 pub mod fluid_valve;
 pub mod fluids;
 pub mod funnel;
+pub mod gantry;
 pub mod gauges;
 pub mod gearshift;
 pub mod girder;

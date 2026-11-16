@@ -394,7 +394,7 @@ pub fn movement_allowed(world: &dyn World, state: &State, pos: Pos) -> bool {
     if create && matches!(path, "mechanical_piston" | "sticky_mechanical_piston") {
         return state.get("state") != Some("moving");
     }
-    if create && matches!(path, "mechanical_bearing" | "windmill_bearing") {
+    if create && matches!(path, "mechanical_bearing" | "windmill_bearing" | "gantry_shaft") {
         return !world.running(pos);
     }
     if state.is("minecraft:grindstone") {
@@ -609,6 +609,12 @@ pub fn search(world: &dyn World, config: &Config<'_>) -> Result<Found, Fail> {
         if state.name == "create:mechanical_bearing" {
             if let Some(facing) = state.dir("facing") {
                 add(relative(pos, facing, 1), &mut frontier, &mut queued);
+            }
+        }
+        // A gantry carries its carriage and shafts (`moveGantryPinion`, `moveGantryShaft`).
+        if state.is(crate::rules::gantry::CARRIAGE) || state.is(crate::rules::gantry::SHAFT) {
+            for target in crate::rules::gantry::targets(world, pos, &state) {
+                add(target, &mut frontier, &mut queued);
             }
         }
         // The Windmill Bearing attaches its structure when moved.
