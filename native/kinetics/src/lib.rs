@@ -117,6 +117,37 @@ impl Dir {
         }
     }
 
+    /// Vanilla `Direction.getClockWise(Axis)`, the one turn every wrench and placement rule uses:
+    /// a quarter turn of `self` about `axis`, unchanged when it lies along the axis. Y is clockwise
+    /// seen from above (north to east to south to west), Z up to east to down to west
+    /// (`getClockWiseZ`), and X up to south to down to north (`getClockWiseX`): X is not the mirror
+    /// of Z, so a table written from memory is wrong half the time.
+    pub const fn clockwise_about(self, axis: Axis) -> Self {
+        if self.axis() as u8 == axis as u8 {
+            return self;
+        }
+        match axis {
+            Axis::Y => match self {
+                Dir::North => Dir::East,
+                Dir::East => Dir::South,
+                Dir::South => Dir::West,
+                _ => Dir::North,
+            },
+            Axis::X => match self {
+                Dir::Up => Dir::South,
+                Dir::South => Dir::Down,
+                Dir::Down => Dir::North,
+                _ => Dir::Up,
+            },
+            Axis::Z => match self {
+                Dir::Up => Dir::East,
+                Dir::East => Dir::Down,
+                Dir::Down => Dir::West,
+                _ => Dir::Up,
+            },
+        }
+    }
+
     pub const fn normal(self) -> Pos {
         match self {
             Dir::Down => [0, -1, 0],

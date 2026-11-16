@@ -101,31 +101,9 @@ pub fn horizontal(yaw: f32) -> Dir {
     }
 }
 
-/// `Direction.getClockWise(axis)`.
+/// `Direction.getClockWise(axis)` (`Dir::clockwise_about`: X up to south, not north).
 pub fn clockwise(dir: Dir, about: Axis) -> Dir {
-    if dir.axis() == about {
-        return dir;
-    }
-    match about {
-        Axis::Y => match dir {
-            Dir::North => Dir::East,
-            Dir::East => Dir::South,
-            Dir::South => Dir::West,
-            _ => Dir::North,
-        },
-        Axis::X => match dir {
-            Dir::Down => Dir::South,
-            Dir::Up => Dir::North,
-            Dir::North => Dir::Down,
-            _ => Dir::Up,
-        },
-        Axis::Z => match dir {
-            Dir::Down => Dir::West,
-            Dir::Up => Dir::East,
-            Dir::East => Dir::Down,
-            _ => Dir::Up,
-        },
-    }
+    dir.clockwise_about(about)
 }
 
 /// A gauge's state: the face it looks out of and which way its shaft lies.
@@ -386,7 +364,33 @@ mod tests {
                 along_first: false
             }
         );
-        assert_eq!(wrenched(state, Axis::X).facing, Dir::Down);
+        // `getClockWiseX`: north to up (this once said down, the mirror of vanilla's).
+        assert_eq!(wrenched(state, Axis::X).facing, Dir::Up);
         assert_eq!(clockwise(Dir::Up, Axis::Z), Dir::East);
+    }
+
+    #[test]
+    fn a_wrench_click_on_the_x_faces_turns_up_to_south_as_vanilla_does() {
+        // `IWrenchable.getRotatedBlockState` -> `Direction.getClockWise(X)` = `getClockWiseX`:
+        // up, south, down, north.
+        let up = Placing { facing: Dir::Up, along_first: true };
+        assert_eq!(wrenched(up, Axis::X).facing, Dir::South);
+        let mut d = Dir::Up;
+        let seen: Vec<Dir> = (0..4)
+            .map(|_| {
+                d = clockwise(d, Axis::X);
+                d
+            })
+            .collect();
+        assert_eq!(seen, [Dir::South, Dir::Down, Dir::North, Dir::Up]);
+        // The same table as the drill's, the wheel's and the fan's.
+        for facing in Dir::ALL {
+            for axis in Axis::ALL {
+                assert_eq!(clockwise(facing, axis), crate::rules::drill::clockwise(facing, axis));
+                if facing.axis() != axis {
+                    assert_eq!(clockwise(facing, axis), crate::rules::large_water_wheel::clockwise(facing, axis));
+                }
+            }
+        }
     }
 }
