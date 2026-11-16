@@ -16,13 +16,13 @@ is not pinned to one Horizon commit.
 |---|---:|---:|---:|
 | Kinetics | 44 | 57 | 77% |
 | Materials | 18 | 20 | 90% |
-| Logistics | 21 | 52 | 40% |
+| Logistics | 23 | 52 | 44% |
 | Fluids | 16 | 18 | 89% |
 | Contraptions | 14 | 42 | 33% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **152** | **246** | **61.8%** |
+| **All** | **154** | **246** | **62.6%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -227,8 +227,8 @@ item icons.
 - The Deployer, the storage blocks, the Mechanical Arm, the Mechanical Crafter, tunnels, the Display Link,
   Display Board and Nixie Tubes, girders, seats and copycats have not been tried in
   game. The Spout, Item Drain, valves, smart pipes, redstone parts and small kinetic blocks were (build
-  `8d883ba`); empty-hand clicks on the Analog Lever, the link's mode and the pulse diodes act twice, and a
-  Rose Quartz Lamp row reads 0 at a comparator past the first lamp. Their
+  `8d883ba`); the double-acting empty-hand clicks and the Rose Quartz Lamp comparator reading found there
+  are fixed since but not re-tested. Their
   filters and settings use click stand-ins until Create's value boxes are ported, and redstone is polled
   every tick rather than heard.
 - The Creative Motor's speed is set with the Wrench, not Create's scroll-value box.
