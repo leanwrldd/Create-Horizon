@@ -686,6 +686,344 @@ pub fn foresee(
         .collect()
 }
 
+// --- How a belt looks: `BeltRenderer`, `BeltModel` and `AllSpriteShifts` -------------------------
+
+/// `BeltSlope`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slope {
+    Horizontal,
+    Upward,
+    Downward,
+    Vertical,
+    Sideways,
+}
+
+impl Slope {
+    /// `BeltRenderer`'s `diagonal`: a belt on a slope has its own model and sprite.
+    pub const fn is_diagonal(self) -> bool {
+        matches!(self, Slope::Upward | Slope::Downward)
+    }
+}
+
+/// A sprite shift a model is drawn with: its faces textured `source` are drawn from `target`
+/// instead, their UVs (in unit-sprite coordinates, 0 to 1 over the whole sprite) multiplied by
+/// `scale` and then moved by `offset`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpriteShift {
+    pub source: String,
+    pub target: String,
+    pub scale: [f32; 2],
+    pub offset: [f32; 2],
+}
+
+/// `DyeColor.getSerializedName`, in `DyeColor` order (what `AllSpriteShifts.populateMaps` names
+/// the dyed sprites by).
+pub const DYE_COLORS: [&str; 16] = [
+    "white",
+    "orange",
+    "magenta",
+    "light_blue",
+    "yellow",
+    "lime",
+    "pink",
+    "gray",
+    "light_gray",
+    "cyan",
+    "purple",
+    "blue",
+    "brown",
+    "green",
+    "red",
+    "black",
+];
+
+/// The sprite name of a `DyeColor` from its saved name (`NBTHelper.writeEnum` writes
+/// `Enum.name()`, `LIGHT_BLUE`), or none for a name that is no colour.
+pub fn dye_id(name: &str) -> Option<&'static str> {
+    DYE_COLORS.into_iter().find(|id| id.eq_ignore_ascii_case(name))
+}
+
+/// `AllSpriteShifts.BELT`, `BELT_OFFSET` and `BELT_DIAGONAL`: the sprites the belt models name.
+const BELT_SPRITE: &str = "create:block/belt";
+const BELT_OFFSET_SPRITE: &str = "create:block/belt_offset";
+const BELT_DIAGONAL_SPRITE: &str = "create:block/belt_diagonal";
+/// What they scroll over: `belt_scroll.png` and `belt_diagonal_scroll.png`.
+const BELT_SCROLL_SPRITE: &str = "create:block/belt_scroll";
+const BELT_DIAGONAL_SCROLL_SPRITE: &str = "create:block/belt_diagonal_scroll";
+/// The belt sprites are 16 by 16 texels and the sprites they scroll over 16 by 32: one tile that
+/// repeats once, so a scroll of a tile wraps unseen.
+const TILE_SIZE: [f32; 2] = [16.0, 16.0];
+const SCROLL_SIZE: [f32; 2] = [16.0, 32.0];
+
+/// `BeltRenderer.getSpriteShiftEntry`: the sprite a belt model names and the one it scrolls over
+/// (`AllSpriteShifts.BELT`, `BELT_OFFSET`, `BELT_DIAGONAL` and the `DYED_*` maps). `dye` is a
+/// sprite name from [`dye_id`].
+pub fn belt_sprites(dye: Option<&str>, diagonal: bool, bottom: bool) -> (String, String) {
+    let source = if diagonal {
+        BELT_DIAGONAL_SPRITE
+    } else if bottom {
+        BELT_OFFSET_SPRITE
+    } else {
+        BELT_SPRITE
+    };
+    let target = match (dye, diagonal) {
+        (Some(id), true) => format!("create:block/belt/{id}_diagonal_scroll"),
+        (Some(id), false) => format!("create:block/belt/{id}_scroll"),
+        (None, true) => BELT_DIAGONAL_SCROLL_SPRITE.to_owned(),
+        (None, false) => BELT_SCROLL_SPRITE.to_owned(),
+    };
+    (source.to_owned(), target)
+}
+
+/// `BeltRenderer.renderSafe`'s UV shift: how far, as a share of the scroll sprite's height, the
+/// belt's texture has moved at `time` (`AnimationTickHolder.getRenderTime`, ticks and the part
+/// of one) for a belt at `rpm` facing `facing`. 0 up to 0.5 (3/8 on a slope).
+pub fn scroll(rpm: f32, facing: Dir, slope: Slope, bottom: bool, time: f64) -> f32 {
+    let diagonal = slope.is_diagonal();
+    let along_x = facing.axis() == Axis::X;
+    let sideways = slope == Slope::Sideways;
+    let mut speed = f64::from(rpm);
+    // `time = renderTick * axisDirection.getStep()`.
+    let time = time * f64::from(facing.sign());
+    if (diagonal && ((slope == Slope::Downward) ^ along_x))
+        || (!sideways && !diagonal && along_x)
+        || (sideways && facing.sign() < 0)
+    {
+        speed = -speed;
+    }
+    let multiplier = if diagonal { 3.0 / 8.0 } else { 0.5 };
+    let scrolled = speed * time / (31.5 * 16.0) + if bottom { 0.5 } else { 0.0 };
+    ((scrolled - scrolled.floor()) * multiplier) as f32
+}
+
+/// The sprite shift `BeltRenderer.renderSafe` draws one half of a belt block's model with, or
+/// none while it draws the model as it is (`speed != 0 || be.color.isPresent()` is false).
+/// `dye` is the saved colour name, `time` as for [`scroll`].
+pub fn belt_shift(
+    rpm: f32,
+    facing: Dir,
+    slope: Slope,
+    bottom: bool,
+    dye: Option<&str>,
+    time: f64,
+) -> Option<SpriteShift> {
+    let dye = dye.and_then(dye_id);
+    if rpm == 0.0 && dye.is_none() {
+        return None;
+    }
+    let (source, target) = belt_sprites(dye, slope.is_diagonal(), bottom);
+    Some(SpriteShift {
+        source,
+        target,
+        // The tile shows in the top half of the sprite it scrolls over, as Create's atlas
+        // coordinates put it there: `uv - original.v0 + target.v0 + scroll`.
+        scale: [TILE_SIZE[0] / SCROLL_SIZE[0], TILE_SIZE[1] / SCROLL_SIZE[1]],
+        offset: [0.0, scroll(rpm, facing, slope, bottom, time)],
+    })
+}
+
+/// Whether a belt's drawn geometry changes with time: only a belt that moves has to be drawn
+/// again every frame.
+pub fn scrolls(rpm: f32) -> bool {
+    rpm != 0.0
+}
+
+/// `BeltBlockEntity.CasingType`, saved as its ordinal (`Casing`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Casing {
+    None,
+    Andesite,
+    Brass,
+}
+
+impl Casing {
+    pub const fn ordinal(self) -> i32 {
+        match self {
+            Casing::None => 0,
+            Casing::Andesite => 1,
+            Casing::Brass => 2,
+        }
+    }
+
+    pub const fn from_ordinal(ordinal: i32) -> Self {
+        match ordinal {
+            1 => Casing::Andesite,
+            2 => Casing::Brass,
+            _ => Casing::None,
+        }
+    }
+}
+
+/// `AllSpriteShifts.ANDESIDE_BELT_CASING`: the casing models name the brass casing sprite.
+const BRASS_CASING_SPRITE: &str = "create:block/belt/brass_belt_casing";
+const ANDESITE_CASING_SPRITE: &str = "create:block/belt/andesite_belt_casing";
+
+/// `BeltModel.getQuads`: a brass casing is the model as it is, an andesite one has every quad
+/// of the brass sprite moved onto the andesite sprite (the two are the same size).
+pub fn casing_shift(casing: Casing) -> Option<SpriteShift> {
+    (casing == Casing::Andesite).then(|| SpriteShift {
+        source: BRASS_CASING_SPRITE.to_owned(),
+        target: ANDESITE_CASING_SPRITE.to_owned(),
+        scale: [1.0, 1.0],
+        offset: [0.0, 0.0],
+    })
+}
+
+#[cfg(test)]
+mod look_tests {
+    use super::*;
+
+    #[test]
+    fn colours_come_from_their_saved_names() {
+        assert_eq!(dye_id("LIGHT_BLUE"), Some("light_blue"));
+        assert_eq!(dye_id("RED"), Some("red"));
+        assert_eq!(dye_id("red"), Some("red"));
+        assert_eq!(dye_id(""), None);
+        assert_eq!(dye_id("TEAL"), None);
+        assert_eq!(DYE_COLORS.len(), 16);
+    }
+
+    #[test]
+    fn sprites_follow_the_shift_entries() {
+        let pair = belt_sprites;
+        assert_eq!(
+            pair(None, false, false),
+            ("create:block/belt".into(), "create:block/belt_scroll".into())
+        );
+        assert_eq!(
+            pair(None, false, true),
+            ("create:block/belt_offset".into(), "create:block/belt_scroll".into())
+        );
+        assert_eq!(
+            pair(None, true, false),
+            (
+                "create:block/belt_diagonal".into(),
+                "create:block/belt_diagonal_scroll".into()
+            )
+        );
+        // A slope has no separate bottom model, so `bottom` doesn't matter there.
+        assert_eq!(pair(None, true, true), pair(None, true, false));
+        assert_eq!(
+            pair(Some("lime"), false, false),
+            ("create:block/belt".into(), "create:block/belt/lime_scroll".into())
+        );
+        assert_eq!(
+            pair(Some("light_blue"), false, true),
+            (
+                "create:block/belt_offset".into(),
+                "create:block/belt/light_blue_scroll".into()
+            )
+        );
+        assert_eq!(
+            pair(Some("red"), true, false),
+            (
+                "create:block/belt_diagonal".into(),
+                "create:block/belt/red_diagonal_scroll".into()
+            )
+        );
+    }
+
+    #[test]
+    fn a_still_undyed_belt_is_drawn_as_it_is() {
+        assert_eq!(belt_shift(0.0, Dir::South, Slope::Horizontal, false, None, 10.0), None);
+        // An unknown colour is no colour.
+        assert_eq!(
+            belt_shift(0.0, Dir::South, Slope::Horizontal, false, Some("TEAL"), 3.0),
+            None
+        );
+        assert!(!scrolls(0.0));
+        assert!(scrolls(-16.0));
+    }
+
+    #[test]
+    fn a_still_dyed_belt_wears_its_colour_without_moving() {
+        let at =
+            |time| belt_shift(0.0, Dir::South, Slope::Horizontal, false, Some("RED"), time).unwrap();
+        let shift = at(0.0);
+        assert_eq!(shift.target, "create:block/belt/red_scroll");
+        assert_eq!(shift.offset, [0.0, 0.0]);
+        assert_eq!(shift, at(1234.5));
+        // The bottom half starts half a tile on.
+        let bottom = belt_shift(0.0, Dir::South, Slope::Horizontal, true, Some("RED"), 7.0).unwrap();
+        assert_eq!(bottom.offset, [0.0, 0.25]);
+    }
+
+    #[test]
+    fn the_tile_shows_in_the_top_half_of_the_scroll_sprite() {
+        let shift = belt_shift(16.0, Dir::South, Slope::Horizontal, false, None, 0.0).unwrap();
+        assert_eq!(shift.scale, [1.0, 0.5]);
+        assert_eq!(shift.source, "create:block/belt");
+        assert_eq!(shift.target, "create:block/belt_scroll");
+    }
+
+    #[test]
+    fn scrolling_follows_speed_time_and_facing() {
+        // 16 rpm: a tile in 31.5 ticks; the offset is half of the wrapped phase.
+        let quarter = scroll(16.0, Dir::South, Slope::Horizontal, false, 31.5 / 4.0);
+        assert!((quarter - 0.125).abs() < 1e-6, "{quarter}");
+        // It wraps: a whole turn is back at the start.
+        let wrapped = scroll(16.0, Dir::South, Slope::Horizontal, false, 31.5);
+        assert!(wrapped.abs() < 1e-6 || (wrapped - 0.5).abs() < 1e-6, "{wrapped}");
+        // Half a tile on for the bottom half.
+        let bottom = scroll(16.0, Dir::South, Slope::Horizontal, true, 0.0);
+        assert!((bottom - 0.25).abs() < 1e-6);
+        // `time` runs backwards for a belt facing a negative end of its axis and the speed is
+        // reversed along x: south and west scroll one way, north and east the other.
+        let phase = |facing| scroll(16.0, facing, Slope::Horizontal, false, 5.0) * 2.0;
+        let (south, north) = (phase(Dir::South), phase(Dir::North));
+        let (east, west) = (phase(Dir::East), phase(Dir::West));
+        assert!((south + north - 1.0).abs() < 1e-5);
+        assert!((south - west).abs() < 1e-5);
+        assert!((north - east).abs() < 1e-5);
+        // A reversed shaft reverses the scroll.
+        let back = scroll(-16.0, Dir::South, Slope::Horizontal, false, 5.0) * 2.0;
+        assert!((south + back - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_slope_scrolls_by_three_eighths_of_a_sprite() {
+        for time in [0.0, 3.0, 11.0, 29.9] {
+            let up = scroll(32.0, Dir::South, Slope::Upward, false, time);
+            assert!((0.0..0.375).contains(&up), "{up}");
+        }
+        // Down and up run opposite ways on the same facing.
+        let up = scroll(32.0, Dir::South, Slope::Upward, false, 4.0) / 0.375;
+        let down = scroll(32.0, Dir::South, Slope::Downward, false, 4.0) / 0.375;
+        assert!((up + down - 1.0).abs() < 1e-5, "{up} {down}");
+        // A slope has its own sprites.
+        let shift = belt_shift(32.0, Dir::South, Slope::Upward, false, None, 0.0).unwrap();
+        assert_eq!(shift.source, "create:block/belt_diagonal");
+        assert_eq!(shift.target, "create:block/belt_diagonal_scroll");
+    }
+
+    #[test]
+    fn a_sideways_belt_reverses_on_a_negative_facing() {
+        let plus = scroll(16.0, Dir::South, Slope::Sideways, false, 6.0);
+        let minus = scroll(16.0, Dir::North, Slope::Sideways, false, 6.0);
+        // `time` flips with the facing and so does `speed`, so the two agree.
+        assert!((plus - minus).abs() < 1e-5, "{plus} {minus}");
+    }
+
+    #[test]
+    fn only_an_andesite_casing_is_shifted() {
+        assert_eq!(casing_shift(Casing::None), None);
+        assert_eq!(casing_shift(Casing::Brass), None);
+        let shift = casing_shift(Casing::Andesite).unwrap();
+        assert_eq!(shift.source, "create:block/belt/brass_belt_casing");
+        assert_eq!(shift.target, "create:block/belt/andesite_belt_casing");
+        assert_eq!((shift.scale, shift.offset), ([1.0, 1.0], [0.0, 0.0]));
+    }
+
+    #[test]
+    fn casings_are_saved_as_their_ordinal() {
+        for casing in [Casing::None, Casing::Andesite, Casing::Brass] {
+            assert_eq!(Casing::from_ordinal(casing.ordinal()), casing);
+        }
+        assert_eq!(Casing::from_ordinal(7), Casing::None);
+        assert_eq!(Casing::from_ordinal(-1), Casing::None);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

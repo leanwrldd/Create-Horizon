@@ -1,9 +1,37 @@
 //! Draw Create's baked models with the kinetic speed supplied by the block entity.
 
+use create_kinetics::belt::SpriteShift;
 use create_kinetics::{Axis, Dir, Kind, Pos, face_sign};
-use horizon_client::mod_api::{BlockEntityDraw, Host};
+use horizon_client::mod_api::{BlockEntityDraw, Host, NativeModelRenderOptions, NativeModelUvShift};
 
 const CENTRE: [f32; 3] = [0.5; 3];
+
+/// Draws `model` with the faces of `shift.source` textured from `shift.target` (a UV shift,
+/// `Host::draw_terrain_model`, API 564), or as it is with no shift. A model the game can't shift
+/// (a sprite it never loaded, or none of the source's) is drawn as it is rather than not at all.
+/// What `shift` is, and when, is decided by `create_kinetics`.
+pub(crate) fn draw_shifted(
+    host: &dyn Host,
+    draw: &mut BlockEntityDraw,
+    model: &str,
+    shift: Option<&SpriteShift>,
+) {
+    let shifted = shift.is_some_and(|shift| {
+        let options = NativeModelRenderOptions {
+            uv_shift: Some(NativeModelUvShift {
+                source_sprite: &shift.source,
+                target_sprite: &shift.target,
+                scale: shift.scale,
+                offset: shift.offset,
+            }),
+            ..Default::default()
+        };
+        host.draw_terrain_model(draw, model, options)
+    });
+    if !shifted {
+        host.draw_model(draw, model, 0xFF_FFFF);
+    }
+}
 const SHAFT_HALF: &str = "create:block/shaft_half";
 const CRANK_HANDLE: &str = "create:block/hand_crank/handle";
 const WHEEL: &str = "create:block/water_wheel/wheel";
