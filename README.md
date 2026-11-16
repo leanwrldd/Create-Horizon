@@ -14,15 +14,15 @@ is not pinned to one Horizon commit.
 <!-- progress:start -->
 | Area | Done | Total | |
 |---|---:|---:|---:|
-| Kinetics | 44 | 57 | 77% |
+| Kinetics | 45 | 57 | 79% |
 | Materials | 18 | 20 | 90% |
 | Logistics | 23 | 52 | 44% |
 | Fluids | 16 | 18 | 89% |
-| Contraptions | 14 | 42 | 33% |
+| Contraptions | 28 | 42 | 67% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **154** | **246** | **62.6%** |
+| **All** | **169** | **246** | **68.7%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -172,16 +172,51 @@ The engine that lifts a group of blocks out of the world, moves or turns it and 
 | Mechanical Piston, Sticky Mechanical Piston | With Piston Extension Poles behind it, takes the poles, a head and the line of blocks in front (and what slime, honey and attached blocks hold on to) and moves them along its facing by RPM / 512 blocks a tick, up to the length of its poles, until something is in the way or the rotation stops; the sticky one pulls the block in front back. A negative speed extends a piston facing east, as in Create; an empty hand assembles it, a slime ball makes a piston sticky |
 | Piston Extension Pole, Mechanical Piston Head | The poles set the range; the head only exists on an extended piston |
 | Mechanical Bearing | Takes the block in front of it and what holds to it, turns it about its axis at the speed of the shaft out of its back, and sets it down at the nearest right angle when the rotation stops, an empty hand clicks it, a wrench turns it or it is broken |
+| Linear Chassis, Secondary Linear Chassis, Radial Chassis | Hold on to the blocks in a line (up to their range, on each sticky end) or in a ball (the radius around a radial one, through its sticky sides) when a structure gathers them. A slime ball or Super Glue on a side makes it sticky, a sneaking empty hand takes the glue off, the Wrench steps the range (Settings, below); the sticky sides turn with a rotating structure. Unplayed |
+| Super Glue | Right-click a block, then another: the box between them is glued when the blocks in it hold together (one use of the glue's 99, free in Creative); sneak-click forgets the first corner; a left click takes off the glue you look at. Blocks in a glued box move together when a structure gathers one of them, and the structure takes the glue along and puts it back where it lands. The glue is saved in a level attachment (see the module's header) and shown with dust to whoever holds the glue. Unplayed |
+| Windmill Bearing, Windmill Sail Frame, Windmill Sails (white and 15 dyes) | The Windmill Bearing is the Mechanical Bearing that makes the rotation: 1 RPM for each 8 sail blocks (wool and sails) in its structure, up to 16, 512 su per RPM, clockwise or the other way (the Wrench on a side of the bearing toggles it); it assembles by hand with nothing turning it and refuses fewer than 8 sails. A sail faces the way you look; a dye recolours it (again: the sail beside the click, then the whole plane), shears take the canvas off, a sail or frame used on a sail lays the next of a row. Unplayed |
+| Gantry Shaft, Gantry Carriage | A carriage on a turning, unpowered gantry shaft takes what it holds and runs along the rail at RPM / 512 blocks a tick (0.49 at most) until the shaft's end, something in the way, the shaft gone or powered; redstone powers the whole line of shafts, and a powered shaft turns with the carriage instead. The shafts join into start, middle, end and single parts. An empty hand on the carriage asks it to start. Unplayed |
+| Rope Pulley, Rope, Pulley Magnet | Takes what hangs from the magnet (or lowers the rope alone and picks up what it meets) and pays the rope out or in at RPM / 512 blocks a tick, drawn as it goes; sets the structure down and the rope back as blocks where it stops, reaches its length (384, or the world's floor) or meets something. Breaking a rope takes the rest of it. Unplayed |
+| Elevator Pulley, Elevator Contact | An empty hand on a turning pulley takes the cabin under it (exactly one horizontal contact in it) and makes the contacts in a line in front of that contact its floors; redstone on a floor's contact calls the cabin, which speeds up and brakes onto the floor, and the contact there powers while it stands. An empty hand again sets the cabin down. Unplayed |
 
 A structure is saved in the controller's block entity in Create's layout (`Anchor`, `Blocks.Palette`,
 `Blocks.BlockList`), is out of the world while it moves, and is drawn by the controller's block entity;
 a reload resumes it. Known differences from Create: nothing collides with a moving structure (no one rides,
 stands on or is pushed by it), blocks in it are drawn as their block model only, no actors, seats or
-movement interactions, only the "move and place" mode, Super Glue, chassis and the windmill are not here yet,
-belts and tanks can't be moved, and a controller destroyed by an explosion loses its structure. Tested in
+movement interactions, only the "move and place" mode, the Clockwork Bearing and the Cart Assembler are not
+here, belts and tanks can't be moved, and a controller destroyed by an explosion loses its structure. Tested in
 game (build `8d883ba`): extend and retract, sticky pistons and the slime ball, stopping at an obstacle, slime
 structures, the bearing turning and setting down every way, save and reload mid-stroke, and breaking a
-controller while it runs.
+controller while it runs. The chassis, Super Glue, windmill and sails, gantry, Rope Pulley and Elevator Pulley
+(branch `contraptions-rest`) are type-checked and unit-tested only: each module's header lists its own
+differences. The ones worth knowing:
+
+- **Chassis**: the range is the Wrench's stand-in for the scroll value, each chassis keeping its own (Create sets
+  the whole group); the Wrench doesn't turn a chassis; no range outline, no connected textures.
+- **Super Glue**: a glue is a box in a level attachment, not an entity, so nothing else can push or kill it; the
+  corners come from the block clicked and the selection is shown with dust, not an outline; no glue in the off
+  hand placing with a block; only the glue in the main hand is charged; the Depot and other blocks that take any
+  click can take the glue's click before it does.
+- **Windmill**: the structure turns at the network's speed, which is its own output unless a faster source drives
+  the network; a Copycat Panel doesn't count as a sail.
+- **Gantry**: the structure is kept by the gantry shaft the carriage started on (Create keeps an entity), so
+  that shaft can't be moved and a shaft runs one carriage at a time; the carriage's wheels aren't drawn; no shaft
+  placement assist; powering and a carriage losing its shaft are polled.
+- **Rope Pulley**: no mirrored pulleys (several on one structure), no waterlogged rope, the world's floor is
+  taken as -64 in the Overworld and 0 elsewhere, the coil doesn't scroll.
+- **Elevator**: no Redstone Contact in this port, so the cabin's contact is an Elevator Contact (creative only,
+  and it drops itself); no floor screen, door controls, Contraption Controls or Display Link source; a contact
+  doesn't light while it powers; the draw's orientation is unchecked.
+
+### Settings
+
+Create's value boxes (the scroll value, the option boxes) aren't ported yet. Where a block has one, a click
+stands in for it, written the same way for each:
+
+- the **Wrench** on the block steps the number (the chassis' range, 1 to 16 and round) or toggles the option
+  (the windmill's direction, the Creative Motor's speed), and the new value is shown on the action bar;
+- sneaking with the Wrench picks the block up, as everywhere else;
+- an **item** in hand sets what it names (a filter), and an empty hand clears it.
 
 ### Ponder
 
@@ -222,8 +257,8 @@ item icons.
 
 ### Not done, and known differences from Create
 
-- Open pipe ends, most contraptions, trains, the rest of logistics
-  and schematics.
+- Open pipe ends, the Clockwork Bearing, the Cart Assembler and the Hose Pulley, trains, the rest of
+  logistics and schematics.
 - The Deployer, the storage blocks, the Mechanical Arm, the Mechanical Crafter, tunnels, the Display Link,
   Display Board and Nixie Tubes, girders, seats and copycats have not been tried in
   game. The Spout, Item Drain, valves, smart pipes, redstone parts and small kinetic blocks were (build

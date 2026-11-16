@@ -1,10 +1,13 @@
 //! Contraptions: the engine that lifts a group of blocks out of the world, moves or turns them as
 //! one and sets them down again, and the blocks that make it up (`Contraption`,
 //! `AbstractContraptionEntity`, `ControlledContraptionEntity`, `BlockMovementChecks`,
-//! `ContraptionCollider`, `StructureTransform`). The Mechanical Piston (`piston.rs`) and the
-//! Mechanical Bearing (`bearing.rs`) are built on it. This file holds the shared glue and the
-//! blocks without a machine of their own (the Piston Extension Pole and the Mechanical Piston
-//! Head); the rules, with no game types, are `create_kinetics::rules::contraption`.
+//! `ContraptionCollider`, `StructureTransform`). The Mechanical Piston (`piston.rs`), the
+//! Mechanical and Windmill Bearings (`bearing.rs`), the gantry (`gantry.rs`), the Rope Pulley
+//! (`pulley.rs`) and the Elevator Pulley (`elevator.rs`) are built on it, and what gathers into
+//! it comes from the chassis (`chassis.rs`) and Super Glue (`super_glue.rs`). This file holds the
+//! shared glue and the blocks without a machine of their own (the Piston Extension Pole and the
+//! Mechanical Piston Head); the rules, with no game types, are
+//! `create_kinetics::rules::contraption`.
 //!
 //! # Design
 //!
@@ -46,9 +49,18 @@
 //! - **Assembly.** `rules::contraption::search` is Create's `searchMovedStructure`: attached
 //!   blocks (torches, ladders, signs, doors, beds...: `isBlockAttachedTowards`), slime and honey
 //!   (`canStickTo`), double chests, the forced direction of a piston, the poles and the head of a
-//!   piston, a bearing's front block, up to 2048 blocks. Super Glue and chassis ranges are
-//!   queried through `World::glued` and `World::chassis` and answered by `HostWorld` once those
-//!   blocks exist. The block entity data of every block is read before it is removed.
+//!   piston, a bearing's front block, a gantry's carriage and shafts, up to 2048 blocks. Super
+//!   Glue and chassis ranges are queried through `World::glued` and `World::chassis` and answered
+//!   by `HostWorld` (`super_glue::glued` from a copy of the level's glue that `prepare` reads
+//!   before each assembly, `chassis::range_at`). The block entity data of every block is read
+//!   before it is removed.
+//! - **Glue and sails travel with the structure.** `capture` takes the glue that holds the
+//!   structure's blocks (`Moving.glue`, saved as `Superglue`) out of the level's attachment and
+//!   `place_in_world` puts it back where the structure lands; `Moving.sails` counts a windmill's
+//!   sail blocks (`Sails`).
+//! - **Controllers that are not a block of their own.** A gantry's carriage moves with the
+//!   structure, so its structure is kept by the gantry shaft it started on; the engine only needs
+//!   a block entity that stays and ticks.
 //! - **Disassembly.** `place_in_world` turns each position and state by the structure's
 //!   `Transform` (`StructureTransform`: rotation about one axis, in quarter turns, then a move),
 //!   breaks what stands in the way (with drops, as `destroyBlock`), places the state and

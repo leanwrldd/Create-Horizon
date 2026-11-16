@@ -16,8 +16,9 @@
 //!   `axis_along_first`, `horizontal_axis`); another mod's block with a property of its own that
 //!   needs turning isn't.
 //! - No stabilised sub-contraptions (`canBeStabilized` is `stabiliseStableContraptions`, off by
-//!   default, and the Mechanical Bearing's own check is not ported), seats, belts, bogeys,
-//!   gantries, pulleys, rope or cart assemblers: those blocks are not moved here.
+//!   default, and the Mechanical Bearing's own check is not ported), seats, belts, bogeys, hose
+//!   pulleys or cart assemblers: those blocks are not moved here. A gantry carriage and its shafts
+//!   are (`rules::gantry::targets`); a running controller is not (`World::running`).
 
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
