@@ -22,6 +22,7 @@ use super::fluids::{
     self, ENCASED_FLUID_PIPE, FLUID_PIPE, FLUID_VALVE, GLASS_FLUID_PIPE, ITEM_DRAIN, MECHANICAL_PUMP,
     SMART_FLUID_PIPE, SPOUT, direction,
 };
+use super::bracket;
 use crate::util;
 
 type Pos = [i32; 3];
@@ -47,8 +48,11 @@ fn sides_of(host: &dyn Host, pos: Pos) -> Sides {
 pub(crate) fn connects(host: &dyn Host, pos: Pos, d: Dir) -> bool {
     let beside = add(pos, d);
     match host.block(beside).as_str() {
-        // `isPipe(neighbour)`.
-        FLUID_PIPE => true,
+        // `isPipe(neighbour)`: a bracketed pipe is joined along its own straight run only.
+        FLUID_PIPE => {
+            let bracketed = host.mod_block_entity(beside).is_some_and(|e| bracket::in_nbt(&e.nbt));
+            rules::joins_pipe(bracketed, rules::straight_axis(&sides_of(host, beside)), d)
+        }
         // An `AxisPipeBlock` has its ends on its axis only (`canHaveFlowToward`).
         GLASS_FLUID_PIPE => host.block_property(beside, "axis").as_deref() == Some(d.axis().name()),
         // `PumpFluidTransferBehaviour.canHaveFlowToward`: the pump's axis.
@@ -73,6 +77,13 @@ pub(crate) fn connects(host: &dyn Host, pos: Pos, d: Dir) -> bool {
 
 /// `FluidPipeBlock.updateBlockState` for the pipe at `pos`, written to its block state.
 fn refresh(host: &mut dyn Host, pos: Pos) {
+    let bracketed = host.mod_block_entity(pos).is_some_and(|e| bracket::in_nbt(&e.nbt));
+    refresh_with(host, pos, bracketed);
+}
+
+/// [`refresh`] when the caller knows whether the pipe has a bracket (a block entity's own tick
+/// can't read itself through the host).
+fn refresh_with(host: &mut dyn Host, pos: Pos, bracketed: bool) {
     if host.block(pos) != FLUID_PIPE {
         return;
     }
@@ -80,12 +91,20 @@ fn refresh(host: &mut dyn Host, pos: Pos) {
     let preferred = Dir::ALL.into_iter().find(|d| prev[*d as usize]).unwrap_or(Dir::North);
     let next = {
         let host: &dyn Host = &*host;
-        rules::update_sides(&prev, preferred, None, |d| connects(host, pos, d))
+        // `updateBlockState` leaves a bracketed pipe as it is.
+        rules::refreshed(bracketed, &prev, preferred, None, |d| connects(host, pos, d))
     };
     for d in Dir::ALL {
         if next[d as usize] != prev[d as usize] {
             host.set_block_property(pos, d.name(), if next[d as usize] { "true" } else { "false" });
         }
+    }
+}
+
+/// The pipes beside `pos` (`BlockState.updateNeighbourShapes`).
+pub(crate) fn refresh_neighbours(host: &mut dyn Host, pos: Pos) {
+    for d in Dir::ALL {
+        refresh(host, add(pos, d));
     }
 }
 
@@ -119,7 +138,9 @@ impl Hooks for Pipes {
         let pos = event.pos;
         let salt = i64::from(pos[0]) + 3 * i64::from(pos[1]) + 7 * i64::from(pos[2]);
         if (util::game_time(host) + salt).rem_euclid(REFRESH) == 0 {
-            refresh(host, pos);
+            // Not `refresh`: the entity is out of the world during its own tick, so the host
+            // can't say whether it carries a bracket.
+            refresh_with(host, pos, bracket::in_nbt(&event.entity.nbt));
         }
     }
 

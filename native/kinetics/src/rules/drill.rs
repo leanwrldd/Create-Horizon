@@ -168,31 +168,7 @@ pub fn placement_facing(look: Dir, sneaking: bool) -> Dir {
 /// `Direction.getClockWise(Axis)`: `facing` a quarter turn clockwise seen from the positive end
 /// of `axis`; unchanged when it lies along the axis.
 pub fn clockwise(facing: Dir, axis: Axis) -> Dir {
-    match axis {
-        Axis::Y => match facing {
-            Dir::North => Dir::East,
-            Dir::East => Dir::South,
-            Dir::South => Dir::West,
-            Dir::West => Dir::North,
-            other => other,
-        },
-        // `getClockWiseX`
-        Axis::X => match facing {
-            Dir::Up => Dir::South,
-            Dir::North => Dir::Up,
-            Dir::South => Dir::Down,
-            Dir::Down => Dir::North,
-            other => other,
-        },
-        // `getClockWiseZ`
-        Axis::Z => match facing {
-            Dir::Up => Dir::East,
-            Dir::East => Dir::Down,
-            Dir::Down => Dir::West,
-            Dir::West => Dir::Up,
-            other => other,
-        },
-    }
+    facing.clockwise_about(axis)
 }
 
 /// The drill's `facing` after a Wrench click on `clicked` face (`IWrenchable.getRotatedBlockState`

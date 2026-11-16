@@ -1,0 +1,38 @@
+{
+  "template": "minecraft:glass",
+  "item": false,
+  "properties": {
+    "hardness": 3.0,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:netherite_block",
+    "light": 5,
+    "map_color": 29,
+    "render_shape": "MODEL",
+    "occludes": false
+  },
+  "state_properties": {
+    "double_face": {
+      "type": "enum",
+      "values": [
+        "floor",
+        "wall",
+        "wall_reversed",
+        "ceiling"
+      ]
+    },
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    }
+  },
+  "default_state": {
+    "double_face": "floor",
+    "facing": "north"
+  }
+}

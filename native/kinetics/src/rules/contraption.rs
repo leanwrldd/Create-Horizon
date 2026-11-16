@@ -747,10 +747,10 @@ pub fn clockwise(dir: Dir) -> Dir {
     }
 }
 
-/// `Direction.getClockWise(axis)`: a quarter turn clockwise seen from the positive end of `axis`.
+/// `Direction.getClockWise(axis)` (`Dir::clockwise_about`): vanilla's tables, which are not one
+/// handedness about every axis (X turns up to south).
 pub fn clockwise_about(dir: Dir, axis: Axis) -> Dir {
-    // Clockwise seen from the positive end is a negative right-handed turn.
-    rotate_dir(dir, axis, -1)
+    dir.clockwise_about(axis)
 }
 
 /// A direction turned `quarters` quarter turns right-handed about the positive end of `axis`

@@ -5,8 +5,8 @@
 //!
 //! Known differences from Create: see `rules/smart_fluid_pipe.rs`. Also:
 //! - The filter is set as the Brass Funnel's and the Smart Chute's is (`chute_inv`), not in Create's
-//!   filter slot and value box: sneak-right-click with an item sets the filter to it, with the same
-//!   item again clears it, an empty hand clears it. The item shows no fluid slot on the pipe. Its
+//!   filter slot and value box: sneak-right-click with an item sets the filter to it (the same item
+//!   again changes nothing), an empty hand clears it (`FilteringBehaviour.onShortInteract`). The item shows no fluid slot on the pipe. Its
 //!   fluid is what `GenericItemEmptying` finds in it (buckets, the honey bottle, Builder's Tea,
 //!   a bottle of water, an emptying recipe); an item that holds none lets nothing through.
 //! - A pump re-reads the filter every second (`pump.rs`), where Create's pipe tells the network as
@@ -47,20 +47,20 @@ fn clockwise(facing: Dir) -> Dir {
     }
 }
 
-/// What a filter click does to the filter of the pipe at `pos`: `hand` sets it, the same item again
-/// or an empty hand clears it. Answers the line to tell the player.
+/// What a filter click does to the filter of the pipe at `pos` (`FilteringBehaviour.onShortInteract`):
+/// `hand` sets it, an empty hand clears it; the same item again changes nothing. Answers the line
+/// to tell the player.
 fn click(host: &mut dyn Host, pos: [i32; 3], hand: Option<&ItemStack>) -> Option<String> {
     let entity = host.mod_block_entity(pos).filter(|e| e.id == SMART_FLUID_PIPE)?;
     let before = inv::filter_of(&entity.nbt).item;
-    let after = match hand {
-        Some(stack) => {
+    let after = rules::short_interact(
+        hand.map(|stack| {
             let mut one = stack.clone();
             one.count = 1;
-            // The same item again clears it.
-            (!before.as_ref().is_some_and(|have| util::same_item(have, &one))).then_some(one)
-        }
-        None => None,
-    };
+            one
+        })
+        .as_ref(),
+    );
     // `GenericItemEmptying` of the filter: the fluid it stands for, none for an item that holds none.
     let fluid: Option<Option<String>> = after
         .as_ref()
@@ -160,7 +160,9 @@ impl Hooks for SmartPipes {
                 }
             });
         }
-        if !host.acting_player().is_some_and(|p| p.sneaking) {
+        if !host.acting_player().is_some_and(|p| p.sneaking)
+            || !rules::can_short_interact(&event.stack.item)
+        {
             return Flow::Continue;
         }
         if let Some(line) = click(host, pos, Some(event.stack)) {

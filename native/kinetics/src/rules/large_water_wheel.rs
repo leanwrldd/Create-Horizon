@@ -103,14 +103,9 @@ pub fn structure(axis: Axis) -> Vec<(Pos, Dir)> {
 /// `axis`.
 pub fn clockwise(side: Dir, axis: Axis) -> Dir {
     // Seen from +Y looking down: north -> east -> south -> west. From +X: up -> south -> down ->
-    // north. From +Z: up -> east -> down -> west.
-    let cycle: [Dir; 4] = match axis {
-        Axis::Y => [Dir::North, Dir::East, Dir::South, Dir::West],
-        Axis::X => [Dir::Up, Dir::South, Dir::Down, Dir::North],
-        Axis::Z => [Dir::Up, Dir::East, Dir::Down, Dir::West],
-    };
-    let at = cycle.iter().position(|d| *d == side).unwrap_or(0);
-    cycle[(at + 1) % 4]
+    // north. From +Z: up -> east -> down -> west (`Dir::clockwise_about`). A side along the axis
+    // never turns here (the wheel skips those).
+    side.clockwise_about(axis)
 }
 
 /// The nine blocks a wheel at the origin fills, apart from the master (the placement's `canBeReplaced`

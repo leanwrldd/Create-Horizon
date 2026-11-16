@@ -118,6 +118,11 @@ fn from_tag(nbt: &Compound) -> Option<(String, Vec<(String, String)>)> {
     Some((name, properties))
 }
 
+/// Whether a block entity's saved data holds a bracket (`BracketedBlockEntityBehaviour.isBracketPresent`).
+pub(crate) fn in_nbt(nbt: &Compound) -> bool {
+    from_tag(nbt).is_some()
+}
+
 /// The bracket on the block at `pos`: its item's name.
 fn present(host: &dyn Host, pos: Pos) -> Option<String> {
     if !can_have_bracket(&host.block(pos)) {
@@ -146,6 +151,11 @@ fn set(host: &mut dyn Host, pos: Pos, bracket: Option<(&str, &Bracket)>) {
         }
     });
     host.block_entity_sync(pos);
+    // `applyBracket` / `removeBracket`: `updateNeighbourShapes`, so the pipes beside a pipe join or
+    // leave it by the new rule (`FluidPipeBlock.canConnectTo`).
+    if host.block(pos) == FLUID_PIPE {
+        super::fluid_pipe::refresh_neighbours(host, pos);
+    }
 }
 
 /// `removeBracket`: takes the bracket off the block at `pos` and answers its item.

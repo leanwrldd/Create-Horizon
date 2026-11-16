@@ -16,6 +16,6 @@
     }
   },
   "default_state": {
-    "powered": "true"
+    "powered": "false"
   }
 }

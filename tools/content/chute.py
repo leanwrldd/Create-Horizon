@@ -74,8 +74,12 @@ _chute = block(
     sounds="minecraft:netherite_block", render_shape="MODEL")
 _chute["properties"]["occludes"] = False  # `noOcclusion`
 
-# `SmartChuteBlock`: `Shapes.block()` (`ChuteShapes.createShape`), powered unless told otherwise.
-_smart = block({"powered": {"type": "boolean"}}, {"powered": "true"}, SOFT_METAL, GRAY,
+# `SmartChuteBlock`: `Shapes.block()` (`ChuteShapes.createShape`). Create registers `POWERED = true`
+# but `getStateForPlacement` always sets it from `hasNeighborSignal`; Horizon's placement hook can't
+# read the neighbours (`chute.rs` `place_block` and the poll fix it), so the state a chute is placed
+# in is the one nearly every placement ends in: unpowered. A default of `true` read as powered for
+# a tick or two after every placement.
+_smart = block({"powered": {"type": "boolean"}}, {"powered": "false"}, SOFT_METAL, GRAY,
                sounds="minecraft:netherite_block", render_shape="MODEL")
 _smart["properties"]["occludes"] = False
 
