@@ -27,6 +27,7 @@
     "create:pulse_timer",
     "create:powered_latch",
     "create:powered_toggle_latch",
+    "create:display_link",
     "create:mechanical_drill",
     "create:andesite_encased_shaft",
     "create:brass_encased_shaft",
