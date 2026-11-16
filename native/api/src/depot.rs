@@ -662,6 +662,11 @@ pub fn right_click(host: &mut dyn Host, pos: [i32; 3], face: [i32; 3]) -> Flow {
     }
     let uuid = player.uuid;
     let main = host.player_equipment(uuid, EquipmentSlot::MainHand);
+    // A Mechanical Arm in the hand selects the depot as a target (`ArmInteractionPointHandler`
+    // cancels the click before the block hears it): the arm module takes the click.
+    if main.as_ref().is_some_and(|s| &*s.item == MECHANICAL_ARM) {
+        return Flow::Continue;
+    }
     // Sneaking with anything in either hand skips the block's own use
     // (`ServerPlayerGameMode.useItemOn`): the item is used instead, so a wrench picks it up.
     if player.sneaking

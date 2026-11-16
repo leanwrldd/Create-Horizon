@@ -11,6 +11,7 @@
     "create:mechanical_press",
     "create:belt",
     "create:analog_lever",
+    "create:mechanical_arm",
     "create:basin",
     "create:mechanical_bearing",
     "create:wooden_bracket",

@@ -204,6 +204,47 @@ fn try_insert(host: &mut dyn Host, pos: [i32; 3], stack: &ItemStack, creative_pl
     true
 }
 
+/// What the Mechanical Arm's `BlazeBurnerPoint.insert` asks of `BlazeBurnerBlock.tryInsert(.., false,
+/// false, simulate)` (no player: normal fuel doesn't overflow): `(taken, creative cake, container)`,
+/// the container being what the fuel leaves (an empty bucket). Unless `simulate` the fuel is applied.
+pub(crate) fn feed_from_arm(
+    host: &mut dyn Host,
+    pos: [i32; 3],
+    stack: &ItemStack,
+    simulate: bool,
+) -> (bool, bool, Option<&'static str>) {
+    let Some(entity) = host.mod_block_entity(pos) else {
+        return (false, false, None);
+    };
+    let old = read(&entity.nbt);
+    let mut burner = old;
+    let heat = heat_of(host, pos);
+    if &*stack.item == CREATIVE_CAKE {
+        if !simulate {
+            let next = burner.apply_creative_fuel(heat);
+            host.change_mod_block_entity(pos, &mut |e| write(e, old, burner));
+            play_shoot(host, pos);
+            set_heat(host, pos, next);
+        }
+        return (true, true, None);
+    }
+    let Some((fuel, time)) = fuel_of(host, stack) else {
+        return (false, false, None);
+    };
+    if !burner.try_update_fuel(fuel, time, false, simulate) {
+        return (false, false, None);
+    }
+    if !simulate {
+        host.change_mod_block_entity(pos, &mut |e| write(e, old, burner));
+        play_shoot(host, pos);
+        let next = burner.heat_level();
+        if next != heat {
+            set_heat(host, pos, next);
+        }
+    }
+    (true, false, remainder(&stack.item))
+}
+
 /// `playSound`: `BLAZE_SHOOT`, quiet and low.
 fn play_shoot(host: &mut dyn Host, pos: [i32; 3]) {
     let r = (util::random() % 1000) as f32 / 1000.0;
