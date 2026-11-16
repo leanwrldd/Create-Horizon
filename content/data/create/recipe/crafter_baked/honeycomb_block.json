@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:honeycomb"
+  },
+  "result": {
+    "id": "minecraft:honeycomb_block"
+  }
+}

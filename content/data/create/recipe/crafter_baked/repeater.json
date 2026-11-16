@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#X#",
+    "III"
+  ],
+  "key": {
+    "#": "minecraft:redstone_torch",
+    "I": "minecraft:stone",
+    "X": "minecraft:redstone"
+  },
+  "result": {
+    "id": "minecraft:repeater"
+  }
+}

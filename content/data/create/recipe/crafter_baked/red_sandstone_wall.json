@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:red_sandstone"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:red_sandstone_wall"
+  }
+}

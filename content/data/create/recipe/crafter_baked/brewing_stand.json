@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    " B ",
+    "###"
+  ],
+  "key": {
+    "#": "#minecraft:stone_crafting_materials",
+    "B": "minecraft:blaze_rod"
+  },
+  "result": {
+    "id": "minecraft:brewing_stand"
+  }
+}

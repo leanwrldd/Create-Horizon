@@ -1,0 +1,12 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:polished_blackstone"
+  },
+  "result": {
+    "id": "minecraft:polished_blackstone_pressure_plate"
+  }
+}

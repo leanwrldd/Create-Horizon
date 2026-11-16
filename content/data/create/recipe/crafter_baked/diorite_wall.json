@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:diorite"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:diorite_wall"
+  }
+}

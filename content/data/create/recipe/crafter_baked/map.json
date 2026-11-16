@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "#X#",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:paper",
+    "X": "minecraft:compass"
+  },
+  "result": {
+    "id": "minecraft:map"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:oak_planks"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:oak_slab"
+  }
+}

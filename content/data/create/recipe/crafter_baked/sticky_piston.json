@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "S",
+    "P"
+  ],
+  "key": {
+    "P": "minecraft:piston",
+    "S": "minecraft:slime_ball"
+  },
+  "result": {
+    "id": "minecraft:sticky_piston"
+  }
+}

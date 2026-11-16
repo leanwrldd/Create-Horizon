@@ -1,0 +1,16 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "#X#",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:glass",
+    "X": "minecraft:pink_dye"
+  },
+  "result": {
+    "count": 8,
+    "id": "minecraft:pink_stained_glass"
+  }
+}

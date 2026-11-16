@@ -1,0 +1,16 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "X X",
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:stripped_bamboo_block",
+    "X": "minecraft:iron_chain"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:bamboo_hanging_sign"
+  }
+}

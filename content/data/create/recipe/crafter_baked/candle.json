@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "S",
+    "H"
+  ],
+  "key": {
+    "H": "minecraft:honeycomb",
+    "S": "minecraft:string"
+  },
+  "result": {
+    "id": "minecraft:candle"
+  }
+}

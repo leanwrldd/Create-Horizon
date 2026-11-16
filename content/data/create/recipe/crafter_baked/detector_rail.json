@@ -1,0 +1,17 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "X X",
+    "X#X",
+    "XRX"
+  ],
+  "key": {
+    "#": "minecraft:stone_pressure_plate",
+    "R": "minecraft:redstone",
+    "X": "minecraft:iron_ingot"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:detector_rail"
+  }
+}

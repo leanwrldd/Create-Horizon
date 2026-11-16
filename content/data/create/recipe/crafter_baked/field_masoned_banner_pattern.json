@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:paper",
+    "minecraft:bricks"
+  ],
+  "result": {
+    "id": "minecraft:field_masoned_banner_pattern"
+  }
+}

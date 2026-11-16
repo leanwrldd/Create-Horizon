@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "# #",
+    "# #",
+    "###"
+  ],
+  "key": {
+    "#": "#minecraft:wooden_slabs"
+  },
+  "result": {
+    "id": "minecraft:composter"
+  }
+}

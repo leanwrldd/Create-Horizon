@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "#minecraft:spruce_logs"
+  ],
+  "result": {
+    "count": 4,
+    "id": "minecraft:spruce_planks"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:sulfur_bricks"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:sulfur_brick_wall"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "# #",
+    "#R#"
+  ],
+  "key": {
+    "#": "minecraft:cobblestone",
+    "R": "minecraft:redstone"
+  },
+  "result": {
+    "id": "minecraft:dropper"
+  }
+}

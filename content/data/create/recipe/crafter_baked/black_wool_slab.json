@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:black_wool"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:black_wool_slab"
+  }
+}

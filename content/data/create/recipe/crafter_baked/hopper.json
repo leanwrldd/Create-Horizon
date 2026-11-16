@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "I I",
+    "ICI",
+    " I "
+  ],
+  "key": {
+    "C": "minecraft:chest",
+    "I": "minecraft:iron_ingot"
+  },
+  "result": {
+    "id": "minecraft:hopper"
+  }
+}

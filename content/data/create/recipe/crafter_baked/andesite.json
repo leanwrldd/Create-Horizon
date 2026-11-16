@@ -1,0 +1,11 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:diorite",
+    "minecraft:cobblestone"
+  ],
+  "result": {
+    "count": 2,
+    "id": "minecraft:andesite"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:resin_brick"
+  },
+  "result": {
+    "id": "minecraft:resin_bricks"
+  }
+}

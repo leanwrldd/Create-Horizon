@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    " L ",
+    " R ",
+    " L "
+  ],
+  "key": {
+    "L": "minecraft:pale_oak_log",
+    "R": "minecraft:resin_block"
+  },
+  "result": {
+    "id": "minecraft:creaking_heart"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    " # ",
+    "# #",
+    " # "
+  ],
+  "key": {
+    "#": "minecraft:brick"
+  },
+  "result": {
+    "id": "minecraft:decorated_pot"
+  }
+}

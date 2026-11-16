@@ -1,0 +1,17 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:prismarine_shard",
+    "minecraft:prismarine_shard",
+    "minecraft:prismarine_shard",
+    "minecraft:prismarine_shard",
+    "minecraft:prismarine_shard",
+    "minecraft:prismarine_shard",
+    "minecraft:prismarine_shard",
+    "minecraft:prismarine_shard",
+    "minecraft:prismarine_shard"
+  ],
+  "result": {
+    "id": "minecraft:prismarine_bricks"
+  }
+}

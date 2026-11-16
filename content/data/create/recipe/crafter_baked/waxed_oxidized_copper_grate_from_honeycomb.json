@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:oxidized_copper_grate",
+    "minecraft:honeycomb"
+  ],
+  "result": {
+    "id": "minecraft:waxed_oxidized_copper_grate"
+  }
+}

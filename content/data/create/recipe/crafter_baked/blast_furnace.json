@@ -1,0 +1,16 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "III",
+    "IXI",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:smooth_stone",
+    "I": "minecraft:iron_ingot",
+    "X": "minecraft:furnace"
+  },
+  "result": {
+    "id": "minecraft:blast_furnace"
+  }
+}

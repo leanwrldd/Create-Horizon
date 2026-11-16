@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:iron_ingot",
+    "minecraft:flint"
+  ],
+  "result": {
+    "id": "minecraft:flint_and_steel"
+  }
+}

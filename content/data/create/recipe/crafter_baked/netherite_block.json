@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:netherite_ingot"
+  },
+  "result": {
+    "id": "minecraft:netherite_block"
+  }
+}

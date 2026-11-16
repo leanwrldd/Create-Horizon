@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:polished_cinnabar"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:polished_cinnabar_stairs"
+  }
+}

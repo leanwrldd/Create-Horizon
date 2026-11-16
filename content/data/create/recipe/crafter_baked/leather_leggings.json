@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "XXX",
+    "X X",
+    "X X"
+  ],
+  "key": {
+    "X": "minecraft:leather"
+  },
+  "result": {
+    "id": "minecraft:leather_leggings"
+  }
+}

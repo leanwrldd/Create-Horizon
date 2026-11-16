@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "@@",
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "#minecraft:planks",
+    "@": "minecraft:flint"
+  },
+  "result": {
+    "id": "minecraft:fletching_table"
+  }
+}

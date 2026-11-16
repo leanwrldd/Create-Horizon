@@ -1,0 +1,12 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:blue_wool_slab"
+  },
+  "result": {
+    "id": "minecraft:blue_cushion"
+  }
+}

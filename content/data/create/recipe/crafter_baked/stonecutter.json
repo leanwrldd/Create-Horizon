@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    " I ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:stone",
+    "I": "minecraft:iron_ingot"
+  },
+  "result": {
+    "id": "minecraft:stonecutter"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:andesite"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:andesite_slab"
+  }
+}

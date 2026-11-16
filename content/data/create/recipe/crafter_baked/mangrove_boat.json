@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "# #",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:mangrove_planks"
+  },
+  "result": {
+    "id": "minecraft:mangrove_boat"
+  }
+}

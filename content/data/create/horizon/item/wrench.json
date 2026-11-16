@@ -27,6 +27,7 @@
             "create:copycat_base",
             "create:copycat_step",
             "create:copycat_panel",
+            "create:mechanical_crafter",
             "create:creative_crate",
             "create:crushing_wheel",
             "create:deployer",

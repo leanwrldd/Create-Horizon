@@ -307,6 +307,16 @@ fn use_block(
         use_up(host, pos, items, manual.keep_held);
         return;
     }
+    // A Mechanical Crafter reacts to its own `useItemOn`: a cover, an item for the grid, or
+    // the grid thrown out (`MechanicalCrafterBlock`).
+    if block == super::crafter_world::ID
+        && let Some(new_held) = super::crafter_world::deploy(host, clicked, facing.opposite(), held.as_ref())
+    {
+        if let Some(first) = items.first_mut() {
+            *first = new_held;
+        }
+        return;
+    }
     if held.as_ref().is_some_and(|stack| &*stack.item == "minecraft:ender_pearl") {
         return;
     }

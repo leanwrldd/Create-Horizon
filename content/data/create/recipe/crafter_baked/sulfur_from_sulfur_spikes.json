@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:sulfur_spike"
+  },
+  "result": {
+    "id": "minecraft:sulfur"
+  }
+}

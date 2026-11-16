@@ -1,0 +1,16 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "#$#",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:glass_pane",
+    "$": "minecraft:white_dye"
+  },
+  "result": {
+    "count": 8,
+    "id": "minecraft:white_stained_glass_pane"
+  }
+}

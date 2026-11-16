@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###",
+    " | "
+  ],
+  "key": {
+    "#": "minecraft:purple_wool",
+    "|": "minecraft:stick"
+  },
+  "result": {
+    "id": "minecraft:purple_banner"
+  }
+}

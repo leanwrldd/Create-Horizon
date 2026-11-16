@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:dark_oak_planks"
+  },
+  "result": {
+    "count": 3,
+    "id": "minecraft:dark_oak_door"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "-",
+    "#"
+  ],
+  "key": {
+    "#": "minecraft:leather",
+    "-": "minecraft:string"
+  },
+  "result": {
+    "id": "minecraft:bundle"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:spruce_planks"
+  ],
+  "result": {
+    "id": "minecraft:spruce_button"
+  }
+}

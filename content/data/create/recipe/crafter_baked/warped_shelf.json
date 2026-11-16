@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "   ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:stripped_warped_stem"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:warped_shelf"
+  }
+}

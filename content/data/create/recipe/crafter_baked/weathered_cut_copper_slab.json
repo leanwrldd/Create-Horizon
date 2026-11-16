@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:weathered_cut_copper"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:weathered_cut_copper_slab"
+  }
+}

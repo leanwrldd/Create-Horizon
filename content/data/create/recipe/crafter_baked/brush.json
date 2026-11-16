@@ -1,0 +1,16 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "X",
+    "#",
+    "I"
+  ],
+  "key": {
+    "#": "minecraft:copper_ingot",
+    "I": "minecraft:stick",
+    "X": "minecraft:feather"
+  },
+  "result": {
+    "id": "minecraft:brush"
+  }
+}

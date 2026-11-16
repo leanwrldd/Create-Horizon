@@ -229,13 +229,14 @@ pub(crate) fn items_of(host: &mut dyn Host, pos: Pos) -> Option<Vec<(usize, Item
 /// Create's own blocks that hold items for hoppers (their `block_entity_container`). Horizon
 /// can't say whether a mod block has a container, and an empty one saves no `Items` list, so
 /// they are named here.
-const CONTAINERS: [&str; 6] = [
+const CONTAINERS: [&str; 7] = [
     "create:basin",
     "create:millstone",
     "create:mechanical_saw",
     "create:crushing_wheel_controller",
     VAULT,
     "create:creative_crate",
+    super::crafter_world::ID,
 ];
 
 /// The Item Vault (`item_vault.rs`), one inventory across all its blocks (`initCapability`).
@@ -400,6 +401,11 @@ pub fn insert(
 ) -> Option<ItemStack> {
     if let Some(rest) = crate::belt::handler_insert(host, pos, stack, simulate) {
         return Some(rest);
+    }
+    // A Mechanical Crafter is the inventory of its whole grid (`ConnectedInput.getItemHandler`),
+    // and answers a simulation too.
+    if host.block(pos) == super::crafter_world::ID {
+        return Some(super::crafter_world::handler_insert(host, pos, stack, simulate));
     }
     if !is_inventory(host, pos) {
         return None;

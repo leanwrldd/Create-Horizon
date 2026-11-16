@@ -1,0 +1,12 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:poplar_planks"
+  },
+  "result": {
+    "id": "minecraft:poplar_pressure_plate"
+  }
+}

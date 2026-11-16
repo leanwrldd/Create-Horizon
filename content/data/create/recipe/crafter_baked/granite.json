@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:diorite",
+    "minecraft:quartz"
+  ],
+  "result": {
+    "id": "minecraft:granite"
+  }
+}

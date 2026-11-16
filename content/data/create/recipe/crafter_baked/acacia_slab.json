@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:acacia_planks"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:acacia_slab"
+  }
+}

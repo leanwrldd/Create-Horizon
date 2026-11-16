@@ -1,0 +1,9 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:lapis_lazuli"
+  ],
+  "result": {
+    "id": "minecraft:blue_dye"
+  }
+}

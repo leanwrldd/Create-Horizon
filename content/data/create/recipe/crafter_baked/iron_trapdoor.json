@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:iron_ingot"
+  },
+  "result": {
+    "id": "minecraft:iron_trapdoor"
+  }
+}

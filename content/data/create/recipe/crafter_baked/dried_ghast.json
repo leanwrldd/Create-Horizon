@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "#X#",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:ghast_tear",
+    "X": "minecraft:soul_sand"
+  },
+  "result": {
+    "id": "minecraft:dried_ghast"
+  }
+}

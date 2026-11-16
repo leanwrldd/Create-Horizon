@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "X X",
+    "X X"
+  ],
+  "key": {
+    "X": "minecraft:diamond"
+  },
+  "result": {
+    "id": "minecraft:diamond_boots"
+  }
+}

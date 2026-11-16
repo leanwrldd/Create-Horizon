@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:polished_granite"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:polished_granite_slab"
+  }
+}

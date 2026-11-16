@@ -1,0 +1,36 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 3.0,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:gold_block",
+    "map_color": 40,
+    "render_shape": "MODEL"
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    },
+    "pointing": {
+      "type": "enum",
+      "values": [
+        "up",
+        "left",
+        "down",
+        "right"
+      ]
+    }
+  },
+  "default_state": {
+    "facing": "north",
+    "pointing": "up"
+  }
+}

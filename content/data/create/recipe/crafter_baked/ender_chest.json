@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "#E#",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:obsidian",
+    "E": "minecraft:ender_eye"
+  },
+  "result": {
+    "id": "minecraft:ender_chest"
+  }
+}

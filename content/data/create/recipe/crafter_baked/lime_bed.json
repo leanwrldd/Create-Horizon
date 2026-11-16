@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "XXX"
+  ],
+  "key": {
+    "#": "minecraft:lime_wool",
+    "X": "#minecraft:planks"
+  },
+  "result": {
+    "id": "minecraft:lime_bed"
+  }
+}

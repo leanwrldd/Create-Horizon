@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "#minecraft:poplar_logs"
+  ],
+  "result": {
+    "count": 4,
+    "id": "minecraft:poplar_planks"
+  }
+}

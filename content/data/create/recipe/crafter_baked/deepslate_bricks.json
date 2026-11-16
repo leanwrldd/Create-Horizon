@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:polished_deepslate"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:deepslate_bricks"
+  }
+}

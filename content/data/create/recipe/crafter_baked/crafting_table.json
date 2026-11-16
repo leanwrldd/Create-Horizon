@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "#minecraft:planks"
+  },
+  "result": {
+    "id": "minecraft:crafting_table"
+  }
+}

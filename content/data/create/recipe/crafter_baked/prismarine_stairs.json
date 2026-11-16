@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:prismarine"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:prismarine_stairs"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:nether_brick"
+  },
+  "result": {
+    "id": "minecraft:nether_bricks"
+  }
+}

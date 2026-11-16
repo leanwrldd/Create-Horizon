@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:copper_nugget"
+  },
+  "result": {
+    "id": "minecraft:copper_ingot"
+  }
+}

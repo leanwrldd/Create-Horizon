@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    " # ",
+    "#X#"
+  ],
+  "key": {
+    "#": "minecraft:amethyst_shard",
+    "X": "minecraft:sculk_sensor"
+  },
+  "result": {
+    "id": "minecraft:calibrated_sculk_sensor"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "X X",
+    "XXX",
+    "XXX"
+  ],
+  "key": {
+    "X": "minecraft:copper_ingot"
+  },
+  "result": {
+    "id": "minecraft:copper_chestplate"
+  }
+}

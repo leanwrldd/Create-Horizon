@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#W#",
+    "#W#"
+  ],
+  "key": {
+    "#": "minecraft:stick",
+    "W": "minecraft:bamboo_planks"
+  },
+  "result": {
+    "id": "minecraft:bamboo_fence_gate"
+  }
+}

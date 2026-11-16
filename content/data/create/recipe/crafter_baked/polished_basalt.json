@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "SS",
+    "SS"
+  ],
+  "key": {
+    "S": "minecraft:basalt"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:polished_basalt"
+  }
+}

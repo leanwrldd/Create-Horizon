@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "XXX",
+    "###"
+  ],
+  "key": {
+    "#": "#minecraft:planks",
+    "X": "minecraft:book"
+  },
+  "result": {
+    "id": "minecraft:bookshelf"
+  }
+}

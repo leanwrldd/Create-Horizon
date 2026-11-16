@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:polished_andesite"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:polished_andesite_stairs"
+  }
+}

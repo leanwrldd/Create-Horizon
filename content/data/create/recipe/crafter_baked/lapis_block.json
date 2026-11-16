@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:lapis_lazuli"
+  },
+  "result": {
+    "id": "minecraft:lapis_block"
+  }
+}

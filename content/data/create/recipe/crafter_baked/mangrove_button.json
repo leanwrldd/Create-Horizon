@@ -1,0 +1,9 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:mangrove_planks"
+  ],
+  "result": {
+    "id": "minecraft:mangrove_button"
+  }
+}

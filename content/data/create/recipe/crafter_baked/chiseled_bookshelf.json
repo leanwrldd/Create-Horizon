@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "XXX",
+    "###"
+  ],
+  "key": {
+    "#": "#minecraft:planks",
+    "X": "#minecraft:wooden_slabs"
+  },
+  "result": {
+    "id": "minecraft:chiseled_bookshelf"
+  }
+}

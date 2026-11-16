@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###",
+    " | "
+  ],
+  "key": {
+    "#": "minecraft:light_blue_wool",
+    "|": "minecraft:stick"
+  },
+  "result": {
+    "id": "minecraft:light_blue_banner"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:red_wool"
+  },
+  "result": {
+    "count": 3,
+    "id": "minecraft:red_carpet"
+  }
+}

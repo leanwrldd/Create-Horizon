@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "///",
+    " / ",
+    "/_/"
+  ],
+  "key": {
+    "/": "minecraft:stick",
+    "_": "minecraft:smooth_stone_slab"
+  },
+  "result": {
+    "id": "minecraft:armor_stand"
+  }
+}

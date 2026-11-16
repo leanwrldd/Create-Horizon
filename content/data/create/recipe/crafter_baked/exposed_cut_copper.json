@@ -1,0 +1,14 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:exposed_copper"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:exposed_cut_copper"
+  }
+}

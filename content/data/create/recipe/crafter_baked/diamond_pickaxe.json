@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "XXX",
+    " # ",
+    " # "
+  ],
+  "key": {
+    "#": "minecraft:stick",
+    "X": "#minecraft:diamond_tool_materials"
+  },
+  "result": {
+    "id": "minecraft:diamond_pickaxe"
+  }
+}

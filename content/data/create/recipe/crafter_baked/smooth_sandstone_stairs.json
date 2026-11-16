@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:smooth_sandstone"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:smooth_sandstone_stairs"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:light_blue_concrete"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:light_blue_concrete_slab"
+  }
+}

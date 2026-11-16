@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:mossy_cobblestone"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:mossy_cobblestone_slab"
+  }
+}

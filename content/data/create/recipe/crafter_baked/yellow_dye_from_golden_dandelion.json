@@ -1,0 +1,9 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:golden_dandelion"
+  ],
+  "result": {
+    "id": "minecraft:yellow_dye"
+  }
+}

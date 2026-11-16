@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:exposed_lightning_rod",
+    "minecraft:honeycomb"
+  ],
+  "result": {
+    "id": "minecraft:waxed_exposed_lightning_rod"
+  }
+}

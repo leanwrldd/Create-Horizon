@@ -1,0 +1,9 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:cocoa_beans"
+  ],
+  "result": {
+    "id": "minecraft:brown_dye"
+  }
+}

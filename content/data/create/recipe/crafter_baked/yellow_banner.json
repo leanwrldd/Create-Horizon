@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###",
+    "###",
+    " | "
+  ],
+  "key": {
+    "#": "minecraft:yellow_wool",
+    "|": "minecraft:stick"
+  },
+  "result": {
+    "id": "minecraft:yellow_banner"
+  }
+}

@@ -18,6 +18,7 @@
     "create:content_observer",
     "create:copycat_step",
     "create:copycat_panel",
+    "create:mechanical_crafter",
     "create:creative_crate",
     "create:cuckoo_clock",
     "create:mysterious_cuckoo_clock",

@@ -1,0 +1,10 @@
+{
+  "type": "create:crafter_baked_shapeless",
+  "ingredients": [
+    "minecraft:candle",
+    "minecraft:blue_dye"
+  ],
+  "result": {
+    "id": "minecraft:blue_candle"
+  }
+}

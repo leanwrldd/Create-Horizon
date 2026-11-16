@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "#  ",
+    "## ",
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:pale_oak_planks"
+  },
+  "result": {
+    "count": 4,
+    "id": "minecraft:pale_oak_stairs"
+  }
+}

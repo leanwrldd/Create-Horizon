@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:orange_concrete"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:orange_concrete_slab"
+  }
+}

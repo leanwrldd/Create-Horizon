@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:amethyst_shard"
+  },
+  "result": {
+    "id": "minecraft:amethyst_block"
+  }
+}

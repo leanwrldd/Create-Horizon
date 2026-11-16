@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "###"
+  ],
+  "key": {
+    "#": "minecraft:cobbled_deepslate"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:cobbled_deepslate_slab"
+  }
+}

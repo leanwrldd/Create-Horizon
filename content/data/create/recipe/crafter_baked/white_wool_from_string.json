@@ -1,0 +1,13 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "##",
+    "##"
+  ],
+  "key": {
+    "#": "minecraft:string"
+  },
+  "result": {
+    "id": "minecraft:white_wool"
+  }
+}

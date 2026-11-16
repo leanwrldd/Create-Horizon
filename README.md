@@ -18,11 +18,11 @@ is not pinned to one Horizon commit.
 | Materials | 18 | 20 | 90% |
 | Logistics | 21 | 52 | 40% |
 | Fluids | 16 | 18 | 89% |
-| Contraptions | 13 | 42 | 31% |
+| Contraptions | 14 | 42 | 33% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **151** | **246** | **61.4%** |
+| **All** | **152** | **246** | **61.8%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -128,6 +128,7 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Small kinetics | Weighted Ejector (throws items and entities along Create's arc to a target picked with the item), Turntable, Cuckoo Clock and Mysterious Cuckoo Clock, Large Water Wheel, Wooden and Metal Brackets on shafts, cogwheels and pipes |
 | Deployer | Uses its held item on the block or entity two in front (USE), or attacks and mines (PUNCH, toggled with the Wrench); over a belt or depot it applies Create's 167 deploying and 7 item-application recipes; the hand and pole are drawn moving |
 | Mechanical Arm | Picks up from inputs and puts down into outputs selected by clicking blocks with the arm in hand (within 5 blocks): belts, depots, ejectors, funnels, chutes, basins, Blaze Burners, deployers, millstones, crushing wheels, the upright saw, campfires, composter, jukebox and respawn anchor; round robin, forced round robin or prefer-first (Wrench steps it); redstone locks it; a record in a jukebox point makes it dance. As in Create, chests and vaults are reached through a funnel. Unplayed |
+| Mechanical Crafter | Wrench-join crafters into a grid (click the edge of a face), turn the pointing with the Wrench on the front, items in by hand, funnel, chute, Mechanical Arm, Deployer or hopper (one item to each crafter in reading order), a Crafter Slot Cover to leave a hole. A full grid, or a redstone pulse, passes the items along the arrows to the last crafter, which crafts (crafting-table recipes and Create's `create:mechanical_crafting`) and hands the result to the belt, depot, chest or basin it points at, or throws everything out. The items and the result are drawn moving along. Vanilla shaped and shapeless crafting recipes are baked into the content (Horizon gives a mod none to read), so a data pack's changes to them aren't seen; no connected textures. Unplayed |
 | Storage blocks | Item Vault (merges up to 3 wide and 3 times as long, 20 stacks a block; chutes, funnels and comparators see the whole vault), Creative Crate (endless supply of the item it's clicked with), Smart Observer, Threshold Switch |
 | Redstone parts | Redstone Link (frequency set by clicking each half with an item), Analog Lever, Pulse Repeater, Pulse Extender and Pulse Timer (the Wrench on a side steps the delay), Powered Latch and Toggle Latch, Rose Quartz Lamp |
 | Display Link, Display Board, Nixie Tubes | Display Link: reads the block it sits on and writes text to a sign, a lectern, a row of Nixie Tubes or a Display Board up to 64 blocks away; click the target with the link in hand, then place it. Sources: Speedometer (RPM), Stressometer (bar, percent, su, capacity, remaining), Cuckoo Clock (time of day, stopwatch), Smart Observer (item count, item list, fluid amount, fluid list), Threshold Switch (fill level), belts, depots and weighted ejectors (item names), Seats (rider's name), a vanilla Target block (redstone power) and Nixie Tubes. Type of information, display option, label and start line are set by clicks (below). Display Board: a flap display on a 30 RPM cogwheel that joins into boards up to 32 wide and tall, shows lines of text on flaps that spin before they settle, and takes a name tag (a line), a dye (its colour), a glow ink sac and an empty hand (clears a line). Nixie Tubes: sixteen colours, two glowing digits showing redstone strength, or text from a name tag or a link along a row of tubes; a dye recolours the whole row |
@@ -139,7 +140,9 @@ Display Link clicks, in place of Create's screen (`display_link.rs`): right-clic
 Broad gaps across these modules:
 
 - No vanilla crafting, smelting, smoking or blasting recipe can be read by a mod, so the fan doesn't smoke
-  or blast items and the mixer doesn't do shapeless crafting.
+  or blast items and the mixer doesn't do shapeless crafting. (The Mechanical Crafter bakes the shaped
+  and shapeless crafting recipes of the prepared game data, 1,202 of them, as `create:crafter_baked_*`
+  recipes: `tools/content/_crafter_recipes_gen.py`.)
 - Copper shingles and tiles don't weather or wax, metal scaffolding has no collision, sliding doors swing
   like vanilla doors, and no connected textures are drawn.
 - Redstone and neighbour changes are polled each tick rather than heard.
@@ -212,7 +215,7 @@ item icons.
 
 ### Not done, and known differences from Create
 
-- Tunnels, the mechanical crafter, open pipe ends, most contraptions, trains, the rest of logistics
+- Tunnels, open pipe ends, most contraptions, trains, the rest of logistics
   and schematics.
 - The Deployer, the storage blocks, the Mechanical Arm, girders, seats and copycats have not been tried in
   game. The Spout, Item Drain, valves, smart pipes, redstone parts and small kinetic blocks were (build

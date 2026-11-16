@@ -1,0 +1,15 @@
+{
+  "type": "create:crafter_baked_shaped",
+  "pattern": [
+    "W#W",
+    "W#W"
+  ],
+  "key": {
+    "#": "minecraft:nether_brick",
+    "W": "minecraft:nether_bricks"
+  },
+  "result": {
+    "count": 6,
+    "id": "minecraft:nether_brick_fence"
+  }
+}
