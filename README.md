@@ -16,13 +16,13 @@ is not pinned to one Horizon commit.
 |---|---:|---:|---:|
 | Kinetics | 44 | 57 | 77% |
 | Materials | 18 | 20 | 90% |
-| Logistics | 16 | 52 | 31% |
+| Logistics | 17 | 52 | 33% |
 | Fluids | 16 | 18 | 89% |
 | Contraptions | 13 | 42 | 31% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **146** | **246** | **59.3%** |
+| **All** | **147** | **246** | **59.8%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -125,6 +125,7 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter (sneak-click with an item); a fluid pipe encased with a copper casing |
 | Small kinetics | Weighted Ejector (throws items and entities along Create's arc to a target picked with the item), Turntable, Cuckoo Clock and Mysterious Cuckoo Clock, Large Water Wheel, Wooden and Metal Brackets on shafts, cogwheels and pipes |
 | Deployer | Uses its held item on the block or entity two in front (USE), or attacks and mines (PUNCH, toggled with the Wrench); over a belt or depot it applies Create's 167 deploying and 7 item-application recipes; the hand and pole are drawn moving |
+| Mechanical Arm | Picks up from inputs and puts down into outputs selected by clicking blocks with the arm in hand (within 5 blocks): belts, depots, ejectors, funnels, chutes, basins, Blaze Burners, deployers, millstones, crushing wheels, the upright saw, campfires, composter, jukebox and respawn anchor; round robin, forced round robin or prefer-first (Wrench steps it); redstone locks it; a record in a jukebox point makes it dance. As in Create, chests and vaults are reached through a funnel. Unplayed |
 | Storage blocks | Item Vault (merges up to 3 wide and 3 times as long, 20 stacks a block; chutes, funnels and comparators see the whole vault), Creative Crate (endless supply of the item it's clicked with), Smart Observer, Threshold Switch |
 | Redstone parts | Redstone Link (frequency set by clicking each half with an item), Analog Lever, Pulse Repeater, Pulse Extender and Pulse Timer (the Wrench on a side steps the delay), Powered Latch and Toggle Latch, Rose Quartz Lamp |
 | Building blocks | 364 blocks: metal ladders, bars, scaffolding and doors, copper shingles and tiles, glass and windows, 14 stone types in every pattern |
@@ -162,9 +163,10 @@ A structure is saved in the controller's block entity in Create's layout (`Ancho
 a reload resumes it. Known differences from Create: nothing collides with a moving structure (no one rides,
 stands on or is pushed by it), blocks in it are drawn as their block model only, no actors, seats or
 movement interactions, only the "move and place" mode, Super Glue, chassis and the windmill are not here yet,
-belts and tanks can't be moved, and a controller destroyed by an explosion loses its structure. Not yet
-tested in game: the bearing, the sticky piston, glue-less structures with slime, save and reload; a first test
-of the piston extended and kept a chest's items, the retract and the fixes after it are untested.
+belts and tanks can't be moved, and a controller destroyed by an explosion loses its structure. Tested in
+game (build `8d883ba`): extend and retract, sticky pistons and the slime ball, stopping at an obstacle, slime
+structures, the bearing turning and setting down every way, save and reload mid-stroke, and breaking a
+controller while it runs.
 
 ### Ponder
 
@@ -205,10 +207,12 @@ item icons.
 
 ### Not done, and known differences from Create
 
-- Tunnels, deployers, the mechanical crafter, open pipe ends, most contraptions, trains, the rest of logistics
+- Tunnels, the mechanical crafter, open pipe ends, most contraptions, trains, the rest of logistics
   and schematics.
-- The Spout, Item Drain, valves, smart pipes, redstone parts, small kinetic blocks, the Deployer and the storage blocks have not been
-  tried in game. Their
+- The Deployer, the storage blocks, the Mechanical Arm, girders, seats and copycats have not been tried in
+  game. The Spout, Item Drain, valves, smart pipes, redstone parts and small kinetic blocks were (build
+  `8d883ba`); empty-hand clicks on the Analog Lever, the link's mode and the pulse diodes act twice, and a
+  Rose Quartz Lamp row reads 0 at a comparator past the first lamp. Their
   filters and settings use click stand-ins until Create's value boxes are ported, and redstone is polled
   every tick rather than heard.
 - The Creative Motor's speed is set with the Wrench, not Create's scroll-value box.
