@@ -149,9 +149,35 @@ pub fn passes(filter: &Filter, fluid: Option<&str>) -> bool {
     }
 }
 
+/// `FilteringBehaviour.canShortInteract`: every item sets the filter but the wrench and the
+/// Mechanical Arm (which keep their own use).
+pub fn can_short_interact(item: &str) -> bool {
+    item != "create:wrench" && item != "create:mechanical_arm"
+}
+
+/// `FilteringBehaviour.onShortInteract`: a click sets the filter to a copy of the item in hand
+/// (`setFilter(toApply)`), an empty hand sets it empty, which clears it. The same item again
+/// leaves the filter as it is: Create has no toggle, so a click that arrives twice can't undo
+/// itself.
+pub fn short_interact<T: Clone>(hand: Option<&T>) -> Option<T> {
+    hand.cloned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_click_sets_the_item_and_an_empty_hand_clears() {
+        assert_eq!(short_interact(Some(&"minecraft:lava_bucket")), Some("minecraft:lava_bucket"));
+        assert_eq!(short_interact::<&str>(None), None);
+        // Setting what is already set is the same filter, not an undo.
+        let first = short_interact(Some(&"minecraft:lava_bucket"));
+        assert_eq!(short_interact(first.as_ref()), first);
+        assert!(can_short_interact("minecraft:lava_bucket"));
+        assert!(!can_short_interact("create:wrench"));
+        assert!(!can_short_interact("create:mechanical_arm"));
+    }
 
     #[test]
     fn looking_south_level_gives_the_vanilla_order() {

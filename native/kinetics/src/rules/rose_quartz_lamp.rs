@@ -7,7 +7,8 @@
 //! - Create reacts to `neighborChanged` and schedules a tick; each lamp has a block entity here
 //!   that reads `hasNeighborSignal` once a tick and runs the scheduled tick on the next one.
 //! - The lamps of the cluster that a lighting lamp turns off are told to their neighbours at once,
-//!   not a tick later.
+//!   not a tick later, but only after the lit lamp's own state is set (`lighting`): a comparator
+//!   beside the row must read the new distance when it is told.
 //! - Vanilla's `getStateForPlacement` sets `POWERED` from the signal beside the lamp: that is done
 //!   when it is placed (`place_block`), not in the placement state.
 
@@ -57,6 +58,28 @@ pub fn cluster(origin: Pos, is_lamp: impl Fn(Pos) -> bool) -> Vec<Pos> {
         }
     }
     found
+}
+
+/// One step of a lamp lighting, in the order the glue applies them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Step {
+    /// Set `POWERING` of the lamp at the position.
+    Powering(Pos, bool),
+    /// Tell the neighbours of the lamp at the position (`Level.updateNeighborsAt`).
+    Notify(Pos),
+}
+
+/// `RoseQuartzLampBlock.neighborChanged`, the lighting branch: every lamp of the cluster goes
+/// dark and the origin lights. Create tells the neighbours of the cluster's lamps from their
+/// scheduled tick, a tick after the origin's `POWERING` is set (`scheduleActivation`, then `tick`
+/// ends with `updateNeighborsAt`), so a comparator beside the row reads the lit lamp. Here every
+/// state is set first and every lamp is told afterwards, in the same tick.
+pub fn lighting(origin: Pos, cluster: &[Pos]) -> Vec<Step> {
+    let mut steps: Vec<Step> = cluster.iter().map(|&p| Step::Powering(p, false)).collect();
+    steps.push(Step::Powering(origin, true));
+    steps.extend(cluster.iter().map(|&p| Step::Notify(p)));
+    steps.push(Step::Notify(origin));
+    steps
 }
 
 /// What a lamp's three states are: `POWERED` (a signal reaches it), `POWERING` (it gives power)
@@ -185,6 +208,22 @@ mod tests {
         let is_lamp = |p: Pos| matches!(p, [1, 0, 0] | [1, 1, 0] | [1, 1, 1] | [0, 0, 0]);
         let found = cluster([0, 0, 0], is_lamp);
         assert_eq!(found, vec![[1, 0, 0], [1, 1, 0], [1, 1, 1]]);
+    }
+
+    #[test]
+    fn lighting_sets_every_state_before_telling_anyone() {
+        // A row of lamps; the third from a comparator (at x = 0) lights.
+        let cluster = [[1, 0, 0], [2, 0, 0], [4, 0, 0]];
+        let steps = lighting([3, 0, 0], &cluster);
+        let first_notify = steps.iter().position(|s| matches!(s, Step::Notify(_))).unwrap();
+        let last_set = steps.iter().rposition(|s| matches!(s, Step::Powering(..))).unwrap();
+        assert!(last_set < first_notify);
+        assert!(steps.contains(&Step::Powering([3, 0, 0], true)));
+        assert!(steps.contains(&Step::Powering([1, 0, 0], false)));
+        // The lamp next to the comparator is told, which is what updates the comparator.
+        assert!(steps.contains(&Step::Notify([1, 0, 0])));
+        assert!(steps.contains(&Step::Notify([3, 0, 0])));
+        assert_eq!(steps.len(), 8);
     }
 
     #[test]

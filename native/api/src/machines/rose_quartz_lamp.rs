@@ -7,13 +7,14 @@
 //! - Create reacts to `neighborChanged` and schedules a tick; each lamp has a block entity here that
 //!   reads `hasNeighborSignal` once a tick, and runs the tick (`ACTIVATE`) on the next.
 //! - The lamps of the cluster a lighting lamp puts out are told to their neighbours at once, not a
-//!   tick later.
+//!   tick later, but after the lit lamp's state is set (a comparator beside the row reads it).
 //! - `getStateForPlacement` sets `POWERED` from the signal beside the lamp: done when it is placed,
 //!   not in the placement state.
 //! - A lamp gives its signal as a weak one only (`getDirectSignal` is not overridden in Create).
 
 use create_kinetics::rules::rose_quartz_lamp::{
-    Lamp, Reaction, cluster, distance_to_powered, lit, react, scheduled_tick, signal as lamp_signal,
+    Lamp, Reaction, Step, cluster, distance_to_powered, lighting, lit, react, scheduled_tick,
+    signal as lamp_signal,
 };
 use create_kinetics::Pos;
 use horizon_client::mod_api::{
@@ -74,15 +75,19 @@ fn tick(host: &mut dyn Host, pos: Pos) {
         Reaction::None => {}
         Reaction::Unpower => set(host, pos, "powered", false),
         Reaction::Light => {
-            for other in lamps_around(host, pos) {
-                set(host, other, "powering", false);
-                host.update_signal_neighbors(dimension, other);
-            }
+            // `lighting`: every state is set before any lamp is told, so a comparator beside
+            // the row reads the lit lamp (Create tells the cluster from their scheduled ticks).
             let next = lit();
             set(host, pos, "powered", next.powered);
-            set(host, pos, "powering", next.powering);
             set(host, pos, "activate", next.activate);
-            host.update_signal_neighbors(dimension, pos);
+            for step in lighting(pos, &lamps_around(host, pos)) {
+                match step {
+                    Step::Powering(at, on) => set(host, at, "powering", on),
+                    Step::Notify(at) => {
+                        host.update_signal_neighbors(dimension, at);
+                    }
+                }
+            }
         }
     }
 }

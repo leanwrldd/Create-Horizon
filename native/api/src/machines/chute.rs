@@ -19,7 +19,10 @@
 //!   every 4 ticks and when it is placed, not on each shape update; a chute placed on the side of
 //!   a block faces down again at once where no chute can take its items (`ChuteBlock
 //!   .getStateForPlacement` reads the neighbours; Horizon's placement hook can't). The Smart
-//!   Chute's `powered` is polled every other tick the same way (`neighborChanged`).
+//!   Chute's `powered` is polled every other tick the same way (`neighborChanged`), and a placed
+//!   one starts unpowered (the declared default, where Create registers `true` and sets it from
+//!   `hasNeighborSignal` in `getStateForPlacement`), so it doesn't read as powered for the ticks
+//!   before the poll.
 //! - A chute under a diagonal one is not refused at placement (`ChuteBlock.canSurvive`: the
 //!   placement hook can't read neighbours).
 //! - Putting items into a container is tried for real when the item is half way through the

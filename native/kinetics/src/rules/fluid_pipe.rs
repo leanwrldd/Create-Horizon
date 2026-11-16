@@ -62,6 +62,28 @@ pub fn update_sides(
     state
 }
 
+/// `FluidPipeBlock.updateBlockState`'s first lines: a pipe with a bracket on it returns its state
+/// as it is, so its sides stop changing while the bracket stays. Otherwise [`update_sides`].
+pub fn refreshed(
+    bracketed: bool,
+    previous: &Sides,
+    preferred: Dir,
+    ignore: Option<Dir>,
+    can_connect: impl Fn(Dir) -> bool,
+) -> Sides {
+    if bracketed {
+        return *previous;
+    }
+    update_sides(previous, preferred, ignore, can_connect)
+}
+
+/// `FluidPipeBlock.canConnectTo`, the `isPipe(neighbour)` branch: a pipe joins a neighbouring
+/// pipe, unless the neighbour carries a bracket and `towards` (the way from the pipe to the
+/// neighbour) is not along the neighbour's straight run (`getStraightPipeAxis`).
+pub fn joins_pipe(neighbour_bracketed: bool, neighbour_straight: Option<Axis>, towards: Dir) -> bool {
+    !neighbour_bracketed || neighbour_straight == Some(towards.axis())
+}
+
 /// `FluidPropagator.getStraightPipeAxis`: the axis of a pipe with exactly two open sides that
 /// face each other.
 pub fn straight_axis(sides: &Sides) -> Option<Axis> {
@@ -157,6 +179,20 @@ pub fn smart_pipe_axis(face: &str, facing: Dir) -> Axis {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bracketed_pipe_keeps_its_sides_and_only_joins_along_its_axis() {
+        // A straight pipe along y with a bracket: a pipe appearing to its east changes nothing.
+        let straight = sides(&[Dir::Up, Dir::Down]);
+        assert_eq!(refreshed(true, &straight, Dir::North, None, |d| d == Dir::East), straight);
+        assert_ne!(refreshed(false, &straight, Dir::North, None, |d| d == Dir::East), straight);
+        // The bracketed neighbour is joined along its axis, not across it.
+        assert!(joins_pipe(true, Some(Axis::Y), Dir::Up));
+        assert!(joins_pipe(true, Some(Axis::Y), Dir::Down));
+        assert!(!joins_pipe(true, Some(Axis::Y), Dir::East));
+        assert!(!joins_pipe(true, None, Dir::East));
+        assert!(joins_pipe(false, None, Dir::East));
+    }
 
     #[test]
     fn a_valve_runs_along_the_axis_its_shaft_does_not() {
