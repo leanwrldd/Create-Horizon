@@ -44,6 +44,8 @@
     "create:powered_toggle_latch",
     "create:display_link",
     "create:mechanical_drill",
+    "create:elevator_pulley",
+    "create:elevator_contact",
     "create:andesite_encased_shaft",
     "create:brass_encased_shaft",
     "create:andesite_encased_cogwheel",

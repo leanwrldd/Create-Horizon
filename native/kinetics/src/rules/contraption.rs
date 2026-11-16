@@ -200,6 +200,10 @@ pub enum Fail {
     TooManyPistonPoles,
     NoPistonPoles,
     NotEnoughSails(i32),
+    /// `ElevatorContraption.assemble`: no contact, more than one, or another cabin in the column.
+    NoContacts,
+    TooManyContacts,
+    ColumnConflict,
 }
 
 impl Fail {
@@ -217,6 +221,11 @@ impl Fail {
             }
             Fail::TooManyPistonPoles => format!("Too many extension poles behind the piston (more than {MAX_PISTON_POLES})"),
             Fail::NoPistonPoles => "The piston has no extension poles behind it".to_owned(),
+            Fail::NoContacts => "Elevators require a horizontal Contact attached to the structure".to_owned(),
+            Fail::TooManyContacts => "Cannot attach more than one Contact to Elevators".to_owned(),
+            Fail::ColumnConflict => {
+                "Another Elevator is already targeting this column of contacts".to_owned()
+            }
             Fail::NotEnoughSails(n) => format!(
                 "Attached structure does not include enough sail-like blocks: {n}
 A minimum of {} are required",

@@ -32,6 +32,8 @@
             "create:crushing_wheel",
             "create:deployer",
             "create:mechanical_drill",
+            "create:elevator_pulley",
+            "create:elevator_contact",
             "create:andesite_encased_shaft",
             "create:brass_encased_shaft",
             "create:andesite_encased_cogwheel",

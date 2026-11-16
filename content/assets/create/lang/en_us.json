@@ -56,6 +56,8 @@
   "block.create.mechanical_drill": "Mechanical Drill",
   "death.attack.create.mechanical_drill": "%1$s was impaled by a Mechanical Drill",
   "death.attack.create.mechanical_drill.player": "%1$s was thrown in front of a Drill by %2$s",
+  "block.create.elevator_pulley": "Elevator Pulley",
+  "block.create.elevator_contact": "Elevator Contact",
   "block.create.andesite_encased_shaft": "Andesite Encased Shaft",
   "block.create.brass_encased_shaft": "Brass Encased Shaft",
   "block.create.andesite_encased_cogwheel": "Andesite Encased Cogwheel",

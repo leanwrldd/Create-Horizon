@@ -33,6 +33,7 @@ pub mod diodes;
 pub mod display_link;
 pub mod drill;
 pub mod drill_hardness;
+pub mod elevator;
 pub mod encased;
 pub mod fan;
 pub mod fan_nozzle;
