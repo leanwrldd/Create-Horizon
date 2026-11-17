@@ -16,13 +16,13 @@ is not pinned to one Horizon commit.
 |---|---:|---:|---:|
 | Kinetics | 51 | 57 | 89% |
 | Materials | 18 | 20 | 90% |
-| Logistics | 26 | 52 | 50% |
+| Logistics | 27 | 52 | 52% |
 | Fluids | 18 | 18 | 100% |
 | Contraptions | 33 | 42 | 79% |
-| Schematics | 0 | 5 | 0% |
-| Curiosities | 11 | 13 | 85% |
+| Schematics | 5 | 5 | 100% |
+| Curiosities | 12 | 13 | 92% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **196** | **246** | **79.7%** |
+| **All** | **203** | **246** | **82.5%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
