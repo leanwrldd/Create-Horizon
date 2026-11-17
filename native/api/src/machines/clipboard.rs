@@ -26,7 +26,7 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use create_kinetics::rules::clipboard::{self as rules, Content, Edit, Entry};
+use create_kinetics::rules::clipboard::{self as rules, Content, Entry};
 use horizon_client::mod_api::{
     BlockEntityEvent, BlockStateId, Compound, ComponentTypesEvent, Direction, Flow, Hooks, Host,
     InventoryTickEvent, ItemStack, LeftClickBlockEvent, LevelHost, LootDropsEvent, NativeCommand,

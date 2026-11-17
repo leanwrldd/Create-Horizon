@@ -20,9 +20,9 @@ is not pinned to one Horizon commit.
 | Fluids | 16 | 18 | 89% |
 | Contraptions | 32 | 42 | 76% |
 | Schematics | 0 | 5 | 0% |
-| Curiosities | 0 | 13 | 0% |
+| Curiosities | 8 | 13 | 62% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **176** | **246** | **71.5%** |
+| **All** | **184** | **246** | **74.8%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
