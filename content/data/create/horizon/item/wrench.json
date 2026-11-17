@@ -444,6 +444,7 @@
             "create:pulley_magnet",
             "create:mechanical_pump",
             "create:mechanical_saw",
+            "create:schematicannon",
             "create:sequenced_gearshift",
             "create:smart_fluid_pipe",
             "create:encased_fluid_pipe",
