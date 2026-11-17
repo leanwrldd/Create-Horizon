@@ -31,6 +31,8 @@ pub fn impact(block: &str) -> f32 {
         "encased_fan" | "mechanical_crafter" | "mechanical_arm" | "weighted_ejector" => 2.0,
         // `BuilderTransformers.cuckooClock`: `CStress.setImpact(1)`.
         "cuckoo_clock" | "mysterious_cuckoo_clock" => 1.0,
+        // `AllBlocks.CHAIN_CONVEYOR`: `CStress.setImpact(1)`.
+        "chain_conveyor" => 1.0,
         // `TURNTABLE`, `MILLSTONE`, `MECHANICAL_MIXER`, `MECHANICAL_PUMP`, `MECHANICAL_BEARING`,
         // `MECHANICAL_DRILL`, `MECHANICAL_SAW`, `DEPLOYER`, and `mechanicalPiston(type)`.
         "turntable" | "millstone" | "mechanical_mixer" | "mechanical_pump" | "mechanical_bearing" | "clockwork_bearing"
@@ -439,6 +441,7 @@ mod tests {
         assert_eq!(impact("create:mechanical_mixer"), 4.0);
         assert_eq!(impact("create:mechanical_crafter"), 2.0);
         assert_eq!(impact("create:cuckoo_clock"), 1.0);
+        assert_eq!(impact("create:chain_conveyor"), 1.0);
         assert_eq!(impact("create:shaft"), 0.0);
         assert_eq!(impact("create:belt"), 0.0);
         assert_eq!(capacity("create:creative_motor"), 16384.0);

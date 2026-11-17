@@ -1,0 +1,37 @@
+{
+  "template": "minecraft:iron_sword",
+  "max_stack_size": 1,
+  "components": {
+    "!minecraft:max_damage": {},
+    "!minecraft:repairable": {},
+    "minecraft:attribute_modifiers": [
+      {
+        "type": "minecraft:attack_damage",
+        "id": "minecraft:base_attack_damage",
+        "amount": 5.0,
+        "operation": "add_value",
+        "slot": "mainhand"
+      },
+      {
+        "type": "minecraft:attack_speed",
+        "id": "minecraft:base_attack_speed",
+        "amount": 1.0,
+        "operation": "add_value",
+        "slot": "mainhand"
+      }
+    ],
+    "minecraft:cooking_fuel": {
+      "burn_time": {
+        "type": "minecraft:div",
+        "left": 1000,
+        "right": {
+          "type": "minecraft:conditional",
+          "condition": "minecraft:block/fast_cooking",
+          "on_false": "minecraft:cooking/normal_burn_time_reduction_factor",
+          "on_true": "minecraft:cooking/fast_burn_time_reduction_factor"
+        }
+      },
+      "speed_multiplier": "minecraft:cooking/speed_default"
+    }
+  }
+}

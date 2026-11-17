@@ -73,7 +73,22 @@ pub fn tick(
     entity: &mut ModBlockEntity,
     node: Node,
 ) -> Option<(f32, bool)> {
-    let (speed, breaks) = networks().report(host.dimension(), pos, node);
+    tick_linked(host, pos, entity, node, None)
+}
+
+/// [`tick`] for a Chain Conveyor, whose chains join it to other conveyors (`links`, world
+/// positions of the conveyors they reach): the network solves with them.
+pub fn tick_linked(
+    host: &mut dyn Host,
+    pos: Pos,
+    entity: &mut ModBlockEntity,
+    node: Node,
+    links: Option<&[Pos]>,
+) -> Option<(f32, bool)> {
+    let (speed, breaks) = match links {
+        Some(links) => networks().report_linked(host.dimension(), pos, node, links),
+        None => networks().report(host.dimension(), pos, node),
+    };
     if breaks {
         host.destroy_block(pos, None, false);
         return None;

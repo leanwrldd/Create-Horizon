@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::{Dir, Kind, Network, Node, Pos, solve};
+use crate::{Dir, Kind, Network, Node, Pos, solve_with_links};
 
 /// `Direction.getNearest` of a player's look (`getNearestLookingDirection`).
 pub fn looking(yaw: f32, pitch: f32) -> Dir {
@@ -35,6 +35,9 @@ pub struct Networks {
     tick: u64,
     /// Each block with the tick it last reported in.
     nodes: HashMap<&'static str, BTreeMap<Pos, (Node, u64)>>,
+    /// The chains of each Chain Conveyor that reported them (world positions of the conveyors
+    /// they reach), with the tick it last reported in.
+    links: HashMap<&'static str, BTreeMap<Pos, (Vec<Pos>, u64)>>,
     speeds: HashMap<&'static str, BTreeMap<Pos, f32>>,
     /// The speeds as they would be without overstress (`Solution::theoretical`).
     theoretical: HashMap<&'static str, BTreeMap<Pos, f32>>,
@@ -66,6 +69,17 @@ impl Networks {
             .copied()
             .unwrap_or(0.0);
         (speed, breaks)
+    }
+
+    /// [`Networks::report`] for a Chain Conveyor, which also names the conveyors its chains
+    /// reach (`links`, world positions).
+    pub fn report_linked(&mut self, dimension: &'static str, pos: Pos, node: Node, links: &[Pos]) -> (f32, bool) {
+        let tick = self.tick;
+        let known = self.links.entry(dimension).or_default();
+        if known.insert(pos, (links.to_vec(), tick)).map(|(old, _)| old).as_deref() != Some(links) {
+            self.dirty = true;
+        }
+        self.report(dimension, pos, node)
     }
 
     /// What the block at `pos` last reported to be, if it ticked lately: a placing block
@@ -102,6 +116,11 @@ impl Networks {
             nodes.retain(|_, (_, seen)| *seen + 1 >= tick);
             self.dirty |= nodes.len() != before;
         }
+        for links in self.links.values_mut() {
+            let before = links.len();
+            links.retain(|_, (_, seen)| *seen + 1 >= tick);
+            self.dirty |= links.len() != before;
+        }
         if !std::mem::take(&mut self.dirty) {
             return;
         }
@@ -111,7 +130,12 @@ impl Networks {
         self.stress.clear();
         for (&dimension, nodes) in &self.nodes {
             let nodes = nodes.iter().map(|(pos, (node, _))| (*pos, *node)).collect();
-            let solution = solve(&nodes);
+            let links: BTreeMap<Pos, Vec<Pos>> = self
+                .links
+                .get(dimension)
+                .map(|known| known.iter().map(|(pos, (to, _))| (*pos, to.clone())).collect())
+                .unwrap_or_default();
+            let solution = solve_with_links(&nodes, &links);
             self.breaks
                 .insert(dimension, solution.breaks.into_iter().collect());
             self.speeds.insert(dimension, solution.speeds);
@@ -189,6 +213,27 @@ mod tests {
         assert_eq!(network.stress, 256.0 * 16.0);
         assert!(!network.overstressed);
         assert_eq!(networks.network_at(dimension, [9, 9, 9]), None);
+    }
+
+    #[test]
+    fn chain_conveyors_turn_with_the_chain_their_ticks_report_and_stop_when_it_goes() {
+        let dimension = "minecraft:overworld";
+        let conveyor = Node::passive(Kind::chain_conveyor());
+        let mut networks = Networks::default();
+        networks.advance();
+        networks.report(dimension, [0, -1, 0], Node { kind: Kind::Motor(Dir::Up), ..motor() });
+        networks.report_linked(dimension, [0, 0, 0], conveyor, &[[6, 0, 0]]);
+        networks.report_linked(dimension, [6, 0, 0], conveyor, &[[0, 0, 0]]);
+        networks.advance();
+        assert_eq!(networks.report_linked(dimension, [6, 0, 0], conveyor, &[[0, 0, 0]]).0, 16.0);
+        // The chain is taken off (the first conveyor reports none, the other still lists it, as
+        // Create's `removeInvalidConnections` takes a moment to drop it): the link goes with the
+        // report, and the far conveyor stops once nothing reports the chain.
+        networks.report(dimension, [0, -1, 0], Node { kind: Kind::Motor(Dir::Up), ..motor() });
+        networks.report_linked(dimension, [0, 0, 0], conveyor, &[]);
+        networks.advance();
+        networks.advance();
+        assert_eq!(networks.report_linked(dimension, [6, 0, 0], conveyor, &[]).0, 0.0);
     }
 
     #[test]

@@ -247,7 +247,12 @@ pub(crate) fn items_of(host: &mut dyn Host, pos: Pos) -> Option<Vec<(usize, Item
 /// Create's own blocks that hold items for hoppers (their `block_entity_container`). Horizon
 /// can't say whether a mod block has a container, and an empty one saves no `Items` list, so
 /// they are named here.
-const CONTAINERS: [&str; 7] = [
+const CONTAINERS: [&str; 10] = [
+    // The package logistics: the Packager's tray, the Re-Packager's, the Frogport's inventory
+    // (the Postboxes are matched by name in `is_inventory`).
+    "create:packager",
+    "create:repackager",
+    "create:package_frogport",
     "create:basin",
     "create:millstone",
     "create:mechanical_saw",
@@ -298,7 +303,7 @@ pub(crate) fn vault_parts(host: &dyn Host, pos: Pos) -> Option<Vec<(Pos, usize)>
 pub fn is_inventory(host: &mut dyn Host, pos: Pos) -> bool {
     match host.block(pos).as_str() {
         crate::belt::ID | crate::depot::ID => true,
-        block if CONTAINERS.contains(&block) => true,
+        block if CONTAINERS.contains(&block) || super::postbox::is_postbox(block) => true,
         _ => items_of(host, pos).is_some(),
     }
 }

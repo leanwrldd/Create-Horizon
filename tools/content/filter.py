@@ -4,7 +4,7 @@ Create `mc1.21.1/dev` at 4148fd8: `AllItems.FILTER` (`FilterItem.regular`, `stac
 `ATTRIBUTE_FILTER` (`FilterItem.attribute`), `recipe/crafting/kinetics/filter`, `attribute_filter`,
 `recipe/crafting/appliances/filter_clear` and `attribute_filter_clear`. The item models are
 Create's `item/filter` and `item/attribute_filter`, read from the jar. The behaviour is
-`native/api/src/machines/filter.rs`; the Package Filter is not ported.
+`native/api/src/machines/filter.rs`; the Package Filter is `package.py`.
 """
 
 ITEMS = {name: {"template": "minecraft:iron_ingot", "max_stack_size": 1}

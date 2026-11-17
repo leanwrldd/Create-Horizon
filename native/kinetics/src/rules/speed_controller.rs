@@ -144,6 +144,12 @@ pub fn cog_pos(controller: Pos) -> Pos {
 /// Solves again with each working controller's cogwheel a generator of its target, and counts
 /// the networks it joins as one. `plain` is [`solve_once`] of `nodes`.
 pub fn resolve(nodes: &BTreeMap<Pos, Node>, plain: Solution) -> Solution {
+    resolve_with(nodes, plain, &solve_once)
+}
+
+/// [`resolve`] with the solver to run again with the controllers' output in
+/// (`solve_with_links` passes one that knows the Chain Conveyors' chains).
+pub fn resolve_with(nodes: &BTreeMap<Pos, Node>, plain: Solution, solve_once: &dyn Fn(&BTreeMap<Pos, Node>) -> Solution) -> Solution {
     // The controllers that have something to give: a shaft that turns, a target, a cogwheel.
     let mut outputs: Vec<(Pos, Pos, f32)> = Vec::new();
     for (pos, axis, target) in controllers(nodes) {
