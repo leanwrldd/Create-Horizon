@@ -503,4 +503,28 @@ impl Hooks for Create {
         }
         Flow::Continue
     }
+
+    fn living_knockback(&self, event: &mut LivingKnockbackEvent<'_>) -> Flow {
+        for module in &self.modules {
+            if let Flow::Cancel = module.living_knockback(event) {
+                return Flow::Cancel;
+            }
+        }
+        Flow::Continue
+    }
+
+    fn hears_projectile_impacts(&self, host: &dyn Host, event: &mut HearsProjectileImpactsEvent) {
+        for module in &self.modules {
+            module.hears_projectile_impacts(host, event);
+        }
+    }
+
+    fn projectile_impact(&self, host: &mut dyn Host, event: &mut ProjectileImpactEvent<'_>) -> Flow {
+        for module in &self.modules {
+            if let Flow::Cancel = module.projectile_impact(host, event) {
+                return Flow::Cancel;
+            }
+        }
+        Flow::Continue
+    }
 }

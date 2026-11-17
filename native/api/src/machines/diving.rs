@@ -73,6 +73,20 @@ fn id_of(host: &dyn Host, uuid: u128, slot: EquipmentSlot) -> Option<ItemStack> 
     host.player_equipment(uuid, slot)
 }
 
+/// `BacktankUtil.canAbsorbDamage` for another module (the Extendo Grip): the worn tank pays `n` air if
+/// it has any, and the answer says whether it did.
+pub(crate) fn owe_air(uuid: u128, n: i32) -> bool {
+    let mut all = worn();
+    let Some(entry) = all.get_mut(&uuid) else {
+        return false;
+    };
+    let has_air = entry.chest.as_ref().is_some_and(|(id, air)| tank::is_backtank(id) && *air - entry.owed > 0);
+    if has_air {
+        entry.owed += n;
+    }
+    has_air
+}
+
 impl Hooks for Diving {
     /// Reads the player's gear and what it asks for.
     fn player_tick(&self, host: &mut dyn Host, _: &mut PlayerTickEvent) {
