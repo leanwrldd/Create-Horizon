@@ -87,3 +87,4 @@ pub mod turntable;
 pub mod vertical_gearbox;
 pub mod weighted_ejector;
 pub mod windmill;
+pub mod worldshaper;

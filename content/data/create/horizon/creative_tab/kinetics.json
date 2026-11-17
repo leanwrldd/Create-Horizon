@@ -171,6 +171,7 @@
     "create:weighted_ejector",
     "create:windmill_bearing",
     "create:sail_frame",
-    "create:white_sail"
+    "create:white_sail",
+    "create:handheld_worldshaper"
   ]
 }

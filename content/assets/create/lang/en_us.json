@@ -647,5 +647,6 @@
   "block.create.brown_sail": "Brown Sail",
   "block.create.green_sail": "Green Sail",
   "block.create.red_sail": "Red Sail",
-  "block.create.black_sail": "Black Sail"
+  "block.create.black_sail": "Black Sail",
+  "item.create.handheld_worldshaper": "Creative Worldshaper"
 }
