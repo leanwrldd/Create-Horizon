@@ -312,6 +312,20 @@ Smart Fluid Pipe (a List Filter passes the fluids its buckets hold; an Attribute
 and the Placard. Where a belt or depot calls the test while holding the world (a Smart Chute over a belt, a Smart
 Observer over a belt), the attributes that ask the game (tags, recipes, placeable) don't match.
 
+### Schematics
+
+Five items and blocks; type-checked and unit-tested only (the rules' tests include that the anchor the
+tools store matches the cells a cannon prints for every size, turn and mirror), none has been played yet. Schematic
+files are Create's: vanilla structure `.nbt` files (gzip), kept in `<instance folder>/schematics/`.
+
+| Item | What it does here | Differences from Create |
+|---|---|---|
+| Schematic And Quill | Right-click two blocks to select a box (outlined in blue), a third click saves it as `my_schematic.nbt` (then `my_schematic_1.nbt`...); `/schematic save <name>` saves under a name; sneak discards; `/schematic expand <n>` grows the box the way you look. | No name screen (the third click names it "My Schematic"), no selecting in the air, no Ctrl-scroll on a face, no entities or glue saved. |
+| Empty Schematic | The ingredient and what the table writes onto. | None. |
+| Schematic | Names a file. Right-click a block to put its footprint's centre there (again to move it), sneak-right-click to turn it a quarter turn about its centre; `/schematic rotate [cw\|ccw]`, `flip x\|z`, `move <x> <y> <z>`, `undeploy`, `info`, and `print` (Creative: places it at once). The hologram follows. | No tool belt, scrolling or edit screen. The hologram is translucent boxes in the blocks' map colours (outline in Create's blue), not the blocks' models; an unpositioned one shows the box it would fill. One `create:schematic` component instead of Create's `schematic_*` ones. |
+| Schematic Table | Right-click opens a hopper-shaped menu: slot 1 takes an Empty Schematic (or a Quill or a Schematic), slot 2 gives the written one. `/schematic list`, then `/schematic write <number or name>` writes it. | No screen or upload (the Schematic names a file of the one folder), slots 3 to 5 unused, the menu doesn't check what goes in a slot, no hopper access. |
+| Schematicannon | Right-click opens a hopper-shaped menu (1 Schematic, 2 the Empty Schematic comes out, 5 gunpowder; 3 and 4 unused). It prints a positioned Schematic in Create's order (rows east, then south, then up, fragile blocks last), one block per 10 ticks, 400 per gunpowder, taking items from containers beside it (chests, barrels, hoppers, shulker boxes, vaults, a Creative Crate beside it makes it free), skipping what is already right, pausing when an item or the gunpowder is missing. The cannon turns to its target, recoils and the block flies to its place; it dings when finished. Wrench: play or pause (sneaking picks it up). `/schematicannon status\|checklist\|play\|pause\|stop\|replace dont\|solid\|any\|empty\|skip on\|off\|protect on\|off` act on the cannon you clicked last. | No Material List printing (book slot), no entities, no belts (a belt is built by connecting shafts, so `create:belt` blocks are skipped; their shafts print), settings not copied onto the dropped item. Costs come from vanilla's data plus Create's special cases for this mod's encased shafts and cogwheels, belt funnels, blaze burners, pipes and nixie tubes (no copycat, bracket, backtank, clipboard or placard extras). Block entity data is printed only for Create's safe-NBT blocks and signs. States are turned by property name (facing, axis, rotation, sides, rails, stairs, doors, crafters), not each block's own `rotate`. |
+
 ### Settings
 
 Create's value boxes (the scroll value, the option boxes) aren't ported yet. Where a block has one, a click
@@ -347,6 +361,12 @@ Where Create's screen or value box had more to set than one click can:
 - **Contraption Controls** (its filter slot): an item in `create:contraption_controlled` (a drill, saw, deployer, funnel,
   door, bell, campfire, dispenser, dropper) right-clicked on it sets the filter; a sneaking empty hand clears it; the
   Wrench turns it a quarter turn. A plain click toggles it, as in Create.
+- **Schematic And Quill, Schematic, Schematic Table and Schematicannon** (their name screen, tool belt, upload screen and
+  cannon screen): see the Schematics table above. In short: three clicks with the Quill save a box (`/schematic save
+  <name>` to name it, `/schematic expand <n>` to resize); a Schematic is positioned by right-clicking a block and turned
+  by sneak-right-clicking or `/schematic rotate|flip|move|undeploy|info|print`; the table is its menu plus
+  `/schematic list` and `/schematic write <n>`; the cannon is its menu, the Wrench (play and pause) and
+  `/schematicannon status|checklist|play|pause|stop|replace|skip|protect`.
 
 ### Ponder
 
@@ -387,8 +407,9 @@ item icons.
 
 ### Not done, and known differences from Create
 
-- Open pipe ends, the Clockwork Bearing, the Cart Assembler, trains, the rest of
-  logistics and schematics.
+- Open pipe ends, the Clockwork Bearing, the Cart Assembler, trains and the rest of
+  logistics. Schematics are in, with the differences listed in their section (the Schematicannon's
+  Material List, entities and belts are missing).
 - The Deployer, the storage blocks, the Mechanical Arm, the Mechanical Crafter, tunnels, the Display Link,
   Display Board and Nixie Tubes, girders, seats and copycats have not been tried in
   game. The Spout, Item Drain, valves, smart pipes, redstone parts and small kinetic blocks were (build
