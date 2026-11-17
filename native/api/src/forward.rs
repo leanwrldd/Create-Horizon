@@ -455,4 +455,16 @@ impl Hooks for Create {
             module.living_entity_use_item_finish(host, event);
         }
     }
+
+    fn entity_tick_listened(&self, host: &mut dyn Host, event: &mut EntityTickListenedEvent) {
+        for module in &self.modules {
+            module.entity_tick_listened(host, event);
+        }
+    }
+
+    fn entity_tick_post(&self, host: &mut dyn Host, event: &mut EntityTickPostEvent<'_>) {
+        for module in &self.modules {
+            module.entity_tick_post(host, event);
+        }
+    }
 }
