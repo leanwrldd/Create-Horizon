@@ -32,6 +32,9 @@ def write(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if "horizon" in path.parts and "block" in path.parts:
         _tables(value)
+    if "horizon" in path.parts and "item" in path.parts and isinstance(value, dict) and "place_block" in value:
+        # the new item schema places a block with `block` (the old loader's `place_block`)
+        value["block"] = value.pop("place_block")
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 

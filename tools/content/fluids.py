@@ -21,27 +21,28 @@ FLUIDS = {
 
 
 def _fluid(name, viscosity):
+    # The new loader's fluid file (launcher 0.2.70+): a client look and a `world` object that makes the fluid exist,
+    # with its own liquid block `create:<name>`. Create's viscosity, density and explosion resistance have no field
+    # there (a gap: the fluid flows as water does). The bucket stays the explicit item below.
     return {
-        "template": "minecraft:water",
-        "viscosity": viscosity,
-        "density": 1400,
-        "level_decrease_per_block": 2,
-        "tick_rate": 25,
-        "slope_find_distance": 3,
-        "explosion_resistance": 100.0,
-        "bucket": f"create:{name}_bucket",
-        "block": f"create:{name}",
-        "still": f"create:fluid/{name}_still",
-        "flowing": f"create:fluid/{name}_still",
+        "sprite": f"create:fluid/{name}_still",
+        "world": {
+            "tick_delay": 25,
+            "drop_off": 2,
+            "slope_find_distance": 3,
+            "source_conversion": False,
+            "bucket": False,
+        },
     }
 
 
 FILES = {f"data/create/horizon/fluid/{name}.json": _fluid(name, **values)
          for name, values in FLUIDS.items()}
 # The liquid block copies the fluid's template and holds it at its `level`; it has no item.
-BLOCKS = {name: {"template": "minecraft:water", "item": False} for name in FLUIDS}
-LOOT = {name: None for name in FLUIDS}
-MINEABLE = {name: [] for name in FLUIDS}
+# The liquid block is made by the fluid's `world` object now.
+BLOCKS = {}
+LOOT = {}
+MINEABLE = {}
 MODELS = [f"block/{name}" for name in FLUIDS]  # the particle model that names the still sprite
 ITEMS = {f"{name}_bucket": {"template": "minecraft:water_bucket"} for name in FLUIDS}
 TAB = [f"{name}_bucket" for name in FLUIDS]
