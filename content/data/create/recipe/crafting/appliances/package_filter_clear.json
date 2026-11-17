@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    "create:package_filter"
+  ],
+  "result": {
+    "id": "create:package_filter"
+  }
+}

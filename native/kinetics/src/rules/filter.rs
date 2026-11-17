@@ -14,7 +14,9 @@
 //! - The attributes about processing (`washable`, `hauntable`, `crushable`, `smeltable`,
 //!   `smokable`, `blastable`) read this port's own recipes, so they match what its machines do.
 //!   `fluid_container` and `has_fluid` know the four vanilla buckets only.
-//! - The Package Filter (`PackageFilterItem`) belongs to the logistics update and isn't ported.
+//! - The Package Filter (`PackageFilterItem`, `PackageFilterItemStack`) is [`Filter::Package`]: it
+//!   passes a package whose address matches the filter's (`rules::package::match_address`). Its
+//!   address is set with the `/address` command rather than in Create's text screen.
 
 /// `AllDataComponents.FILTER_ITEMS` (a container's contents), `FILTER_ITEMS_BLACKLIST`,
 /// `FILTER_ITEMS_RESPECT_NBT`, `ATTRIBUTE_FILTER_WHITELIST_MODE` and
@@ -454,6 +456,8 @@ pub enum Filter<S> {
     List(ListFilter<S>),
     /// `AttributeFilterItemStack`.
     Attribute(AttributeFilter),
+    /// `PackageFilterItemStack`: the address a package has to match.
+    Package(String),
 }
 
 /// `ListFilterItemStack`.
@@ -479,6 +483,10 @@ pub trait Env<S> {
     fn same_components(&self, filter: &S, stack: &S) -> bool;
     /// Whether the stack has the attribute (`ItemAttribute.appliesTo`).
     fn has(&self, attribute: &Attribute, stack: &S) -> bool;
+    /// `PackageItem.getAddress` of a stack that is a package (`PackageItem.isPackage`), else none.
+    fn package_address(&self, _stack: &S) -> Option<String> {
+        None
+    }
 }
 
 impl<S> Filter<S> {
@@ -503,6 +511,10 @@ impl<S> Filter<S> {
                 list.blacklist
             }
             Self::Attribute(filter) => filter.test(env, stack),
+            // `PackageFilterItemStack.test`: `isPackage(stack) && matchAddress(stack, filterString)`.
+            Self::Package(address) => env
+                .package_address(stack)
+                .is_some_and(|boxed| super::package::match_address(&boxed, address)),
         }
     }
 }

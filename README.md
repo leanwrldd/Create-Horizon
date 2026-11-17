@@ -300,7 +300,7 @@ only: none has been played yet.
 | Crushed Raw Osmium and the eight other compat crushed ores | Declared, tagged `create:crushed_raw_materials`, left out of the creative tab as Create hides them without the metal. Their crushing recipes read their own `c:` tags, so they work once something fills a tag. | `neoforge:conditions` is not evaluated: the `tag_empty` recipes are kept (an empty tag never matches) and the `mod_loaded` smelting, blasting and splashing ones are left out. |
 | Placard | Wall, floor or ceiling plate. A click with an item sets what it shows; a click with a matching item (or one a Filter item held in it accepts) gives a 19 tick pulse with Create's sounds and dust; left-click takes the item back. | Stacks with components can be set in Creative only; no waterlogging; the signal is mirrored in a table the block entity fills. Create's display link doesn't target it either. |
 | Desk Bell | A click rings it (`create:desk_bell`), powers it for 20 ticks and animates its plunger and bell. The Wrench turns it. | No elevator ring on contraptions (`BellMovementBehaviour`). |
-| List Filter, Attribute Filter | Filter items, accepted by every place the port takes a filter item (below). | No screen: see **Settings**. Attributes `in_item_group` and the Package Filter are left out; the processing attributes read this port's recipes; `fluid_container` knows vanilla's buckets. |
+| List Filter, Attribute Filter | Filter items, accepted by every place the port takes a filter item (below). | No screen: see **Settings**. Attribute `in_item_group` is left out; the processing attributes read this port's recipes; `fluid_container` knows vanilla's buckets. |
 | Tree Fertilizer | Right-click a sapling: it grows at once (a square of four for the dark oak, pale oak and the mega spruce and jungle). | Placed with `/place feature`, so room checks apply (the sapling is put back and the item dropped if the tree doesn't fit); no bees. Create's recipe needs another mod. |
 | Crafting Blueprint | A thin plate block. Sneak-click with an item to set the recipe that makes it (again for the next recipe); a click crafts it from your inventory, sneaking with an empty hand until the ingredients run out (64 at most). Wrench clears it. | A block stands in for the entity (size 1 only), no menu, no overlay, recipes from the baked crafting tables (to drop for `recipe_for`), plain stacks only. |
 | Minecart Coupling | Click one minecart and then another: they keep their distance and pull each other along; the Wrench removes the couplings. Drawn as a line. | Only the soft velocity step runs, no hard step or rail shape; couplings are a list saved with the level by entity id, so they don't survive a restart; no chain model. |
@@ -311,6 +311,21 @@ Deployer, Smart Observer, Threshold Switch, Mechanical Arm's funnel check, the D
 Smart Fluid Pipe (a List Filter passes the fluids its buckets hold; an Attribute Filter passes none, as in Create)
 and the Placard. Where a belt or depot calls the test while holding the world (a Smart Chute over a belt, a Smart
 Observer over a belt), the attributes that ask the game (tags, recipes, placeable) don't match.
+
+### Package logistics
+
+The cardboard-box half of Create's logistics update (`content/logistics/box`, `packager`, `packagePort`,
+`content/kinetics/chainConveyor`). The stock network (Stock Link, Ticker, Requester, Factory Gauge, Table Cloths)
+isn't here, but what it will need is: `rules/package.rs` already holds the order data on a box, Create's address
+matching, and `pack` with the Stock Ticker's request mode. Each module's header lists its differences in full;
+type-checked and unit-tested only, none of it has been played.
+
+| Block or item | What it does here | Differences from Create |
+|---|---|---|
+| Cardboard Package (four sizes), Rare Package (ten) | A box holding up to nine stacks and an address (`create:package_contents`, `create:package_address`, `create:package_order_data`, `create:package_order_context`, saved as registered components). A sneaking click opens it into the inventory; holding the use button charges a throw as a bow does, and letting go throws it; a click on a block sets it down there. Packagers make them: there is no recipe. | Create's package entity isn't there (Horizon has no entity type of a mod's own): a thrown or set-down package is an **item entity**. No spawn-egg spawning, no particles. |
+| Package Filter | Passes a package whose address matches the filter's, by Create's rules (blank takes blank, `*` takes all, otherwise either side is a glob against the other: `*`, `?`, `[a-z]`, `{a,b}`, `{!x}`). Accepted wherever a filter item is. | Set with `/address <text>` (no text clears) while holding it, instead of the screen. |
+| Packager | Redstone (a rising edge, or held: every 10 ticks) packs up to nine stacks of the inventory behind it into a package, addressed by a sign touching it, and slides it out of its tray. The box is its one item slot, so hoppers, funnels, chutes and arms take it and put packages in; a package that arrives is unpacked into the inventory if it fits, else it stays in the slot. A belt that ends at it hands packages in. A package right-clicked on it unpacks; an empty hand takes the held box; the Wrench turns it. | Never `linked` (no Stock Link yet); no comparator signal of 15 (a vanilla container reading); the inventory is read from saved data and can't be asked first (chests, barrels, shulker boxes, hoppers, droppers, vaults are checked for room, others take the items for real and drop the rest); the sounds are played by the server. |
+| Re-Packager | Takes whole packages out of the inventory behind it: one that is not a piece of an order passes straight out (with the sign's address); the pieces of an order are collected until every link and fragment is there, then poured into fresh boxes in the order asked, split by recipe where the order has crafting information. Put in whole, it takes a package into the inventory. | As the Packager; the order of unordered items in a box can differ (Create's hash map order isn't defined). |
 
 ### Settings
 
@@ -327,6 +342,8 @@ stands in for it, written the same way for each:
   item it doesn't have yet (sneaking adds the opposite, "is not ..."); with the other hand empty, a click cycles
   the mode (List: allow, allow with data, deny, deny with data; Attribute: any, all, deny) and sneaking clears it.
   The filter is shown on the action bar and its lines under its name;
+- the **Package Filter** (and any package) takes its address from `/address <text>` with it in the main hand (no
+  text clears it); a Packager reads the text of a sign touching it;
 - the **Crafting Blueprint** is set by a sneaking click with the item to craft, and the **Creative Worldshaper**
   by sneaking right-clicks (empty off hand: brush, Wrench: tool, stick: size, paper: placement) and a left-click
   on the block to use.

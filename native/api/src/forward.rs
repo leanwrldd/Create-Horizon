@@ -545,4 +545,10 @@ impl Hooks for Create {
             module.world_primitives(host, event);
         }
     }
+
+    fn release_using(&self, host: &mut dyn Host, event: &mut ReleaseUsingEvent<'_>) {
+        for module in &self.modules {
+            module.release_using(host, event);
+        }
+    }
 }

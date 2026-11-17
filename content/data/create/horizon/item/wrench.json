@@ -113,6 +113,8 @@
             "create:green_nixie_tube",
             "create:red_nixie_tube",
             "create:black_nixie_tube",
+            "create:packager",
+            "create:repackager",
             "create:andesite_bars",
             "create:brass_bars",
             "create:copper_bars",

@@ -44,6 +44,9 @@ use crate::{recipes, util};
 
 pub const LIST: &str = "create:filter";
 pub const ATTRIBUTE: &str = "create:attribute_filter";
+/// `AllItems.PACKAGE_FILTER` (`PackageFilterItem`): its address is a package component, set with
+/// `/address` (`machines/package.rs`).
+pub const PACKAGE: &str = "create:package_filter";
 
 /// Blocks that take a filter themselves: a click on one with a filter sets that block's filter.
 const TAKES_A_FILTER: &[&str] = &[
@@ -66,6 +69,11 @@ pub fn hooks() -> Box<dyn Hooks> {
 }
 
 pub fn is_filter_item(item: &str) -> bool {
+    item == LIST || item == ATTRIBUTE || item == PACKAGE
+}
+
+/// The filters that are edited by clicking with them (the Package Filter is set by command).
+fn is_editable(item: &str) -> bool {
     item == LIST || item == ATTRIBUTE
 }
 
@@ -102,6 +110,12 @@ pub fn read(stack: &ItemStack) -> Filter<ItemStack> {
         {
             Filter::Attribute(read_attributes(stack))
         }
+        // `PackageFilterItemStack`: `PackageItem.getAddress(filter)`; a package filter without an
+        // address is an ordinary item.
+        PACKAGE => match super::package::address_of(stack) {
+            Some(address) => Filter::Package(address),
+            None => Filter::Item(stack.clone()),
+        },
         _ => Filter::Item(stack.clone()),
     }
 }
@@ -228,6 +242,10 @@ impl Env<ItemStack> for World<'_> {
     fn has(&self, attribute: &Attribute, stack: &ItemStack) -> bool {
         rules::applies(attribute, &ItemFacts { host: self.host, stack })
     }
+
+    fn package_address(&self, stack: &ItemStack) -> Option<String> {
+        super::package::is_package(stack).then(|| super::package::address_of(stack).unwrap_or_default())
+    }
 }
 
 /// `FilterItemStack.of(filter).test(world, stack)`: whether `stack` passes the filter item
@@ -255,7 +273,7 @@ pub fn matches_fluid(filter: &ItemStack, fluid: &str) -> bool {
     let holds = |item: &ItemStack| fluids::emptied(&item.item).is_some_and(|held| held.fluid == fluid);
     match read(filter) {
         Filter::Item(item) => holds(&item),
-        Filter::Attribute(_) => false,
+        Filter::Attribute(_) | Filter::Package(_) => false,
         Filter::List(list) => {
             let hit = list.items.iter().any(|entry| matches!(entry, Filter::Item(item) if holds(item)));
             hit != list.blacklist
@@ -466,7 +484,7 @@ fn edit(
 
 /// A click with a filter in the main hand: queues the edit and shows the line.
 fn click(host: &mut dyn Host, stack: &ItemStack) -> Flow {
-    if !is_filter_item(&stack.item) {
+    if !is_editable(&stack.item) {
         return Flow::Continue;
     }
     let Some(player) = host.acting_player() else {
@@ -533,7 +551,7 @@ impl Hooks for FilterItems {
 
     /// `FilterItem.use` on a block (`useOn`): a click on a block that takes no filter.
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
-        if !is_filter_item(&event.stack.item) {
+        if !is_editable(&event.stack.item) {
             return Flow::Continue;
         }
         let pos = event.pos;
@@ -551,7 +569,7 @@ impl Hooks for FilterItems {
 
     /// `FilterItem.use`: a click in the air.
     fn use_item(&self, host: &mut dyn Host, event: &mut UseItemEvent<'_>) -> Flow {
-        if !is_filter_item(&event.stack.item) {
+        if !is_editable(&event.stack.item) {
             return Flow::Continue;
         }
         let Some(player) = host.acting_player() else {
@@ -608,6 +626,8 @@ mod tests {
     fn only_the_two_filters_are_filter_items() {
         assert!(is_filter_item("create:filter"));
         assert!(is_filter_item("create:attribute_filter"));
+        assert!(is_filter_item("create:package_filter"));
+        assert!(!is_editable("create:package_filter"));
         assert!(!is_filter_item("minecraft:stick"));
     }
 

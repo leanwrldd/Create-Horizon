@@ -131,6 +131,8 @@
     "create:green_nixie_tube",
     "create:red_nixie_tube",
     "create:black_nixie_tube",
+    "create:packager",
+    "create:repackager",
     "create:andesite_ladder",
     "create:brass_ladder",
     "create:copper_ladder",
