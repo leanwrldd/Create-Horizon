@@ -72,6 +72,7 @@ pub mod hose_pulley;
 pub mod item_drain;
 pub mod item_vault;
 pub mod large_water_wheel;
+pub mod lectern_controller;
 pub mod linked_controller;
 pub mod millstone;
 pub mod mixer;
