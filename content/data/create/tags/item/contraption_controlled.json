@@ -1,5 +1,15 @@
 {
   "values": [
+    "minecraft:bell",
+    "minecraft:campfire",
+    "minecraft:soul_campfire",
+    "minecraft:dispenser",
+    "minecraft:dropper",
+    "create:mechanical_drill",
+    "create:mechanical_saw",
+    "create:deployer",
+    "create:andesite_funnel",
+    "create:brass_funnel",
     "create:andesite_door",
     "create:brass_door",
     "create:copper_door",
