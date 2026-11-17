@@ -14,15 +14,15 @@ is not pinned to one Horizon commit.
 <!-- progress:start -->
 | Area | Done | Total | |
 |---|---:|---:|---:|
-| Kinetics | 51 | 57 | 89% |
-| Materials | 18 | 20 | 90% |
-| Logistics | 27 | 52 | 52% |
+| Kinetics | 52 | 57 | 91% |
+| Materials | 19 | 20 | 95% |
+| Logistics | 31 | 52 | 60% |
 | Fluids | 18 | 18 | 100% |
 | Contraptions | 38 | 42 | 90% |
 | Schematics | 5 | 5 | 100% |
 | Curiosities | 12 | 13 | 92% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **208** | **246** | **84.6%** |
+| **All** | **214** | **246** | **87.0%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
