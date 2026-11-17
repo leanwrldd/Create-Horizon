@@ -41,7 +41,8 @@ impl Hooks for Create {
 
     fn block_entity_update_tag(&self, event: &mut BlockEntityUpdateTagEvent<'_>) -> Option<Compound> {
         for module in &self.modules {
-            if let Some(answer) = module.block_entity_update_tag(event) {
+            if let Some(mut answer) = module.block_entity_update_tag(event) {
+                crate::machines::value_box::decorate(&event.entity.id, &event.entity.nbt, &mut answer);
                 return Some(answer);
             }
         }

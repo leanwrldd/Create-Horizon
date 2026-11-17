@@ -63,6 +63,14 @@ for name in names:
                 f"            if let Flow::Cancel = {call} {{",
                 "                return Flow::Cancel;", "            }", "        }",
                 "        Flow::Continue"]
+    elif name == "block_entity_update_tag":
+        # The value boxes' saved values (filters, scroll values) go to the client with every block's tag: a
+        # module needn't send them (`machines/value_box.rs`, `decorate`).
+        body = [f"        for module in &self.modules {{",
+                f"            if let Some(mut answer) = {call} {{",
+                "                crate::machines::value_box::decorate(&event.entity.id, &event.entity.nbt, &mut answer);",
+                "                return Some(answer);", "            }", "        }",
+                "        None"]
     elif returns.startswith("Option<"):
         body = [f"        for module in &self.modules {{",
                 f"            if let Some(answer) = {call} {{",

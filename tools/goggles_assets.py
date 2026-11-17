@@ -15,7 +15,7 @@ OUT = "assets/create/goggles/lang.json"
 
 # What `CreateLang.translate` and `translateDirect` read in the goggle overlay: `GoggleOverlayRenderer`,
 # `KineticBlockEntity`, `IRotate`, the gauges, `BoilerData`, `TooltipHelper.addHint`, the hints,
-# `IDisplayAssemblyExceptions`, the chute, deployer, tunnel, lever and whistle.
+# `IDisplayAssemblyExceptions`, the chute, deployer, tunnel, lever and whistle, and the value boxes.
 PREFIXES = (
     "create.generic.",
     "create.gui.goggles.",
@@ -28,6 +28,17 @@ PREFIXES = (
     "create.hint.",
     # `SequencedAssemblyRecipe.addToTooltip` and `IAssemblyRecipe.getDescriptionForAssembly`.
     "create.recipe.assembly.",
+    # The value boxes (`machines/value_box*.rs`): their hints, the board's tip, the filter labels, the
+    # boxes' own labels and the option names.
+    "create.gui.value_settings.",
+    "create.logistics.filter",
+    "create.logistics.fluid_filter",
+    "create.logistics.recipe_filter",
+    "create.logistics.when_multiple_outputs_available",
+    "create.kinetics.creative_motor.",
+    "create.kinetics.speed_controller.",
+    "create.tunnel.selection_mode.",
+    "create.mechanical_arm.selection_mode.",
 )
 KEYS = ("create.gui.assembly.exception", "create.recipe.sequenced_assembly")
 
