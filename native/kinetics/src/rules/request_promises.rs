@@ -114,7 +114,7 @@ impl<K: PartialEq + Clone> Queue<K> {
     pub fn flatten(&self, sorted: bool) -> Vec<Promise<K>> {
         let mut all = self.promises.clone();
         if sorted {
-            all.sort_by(|a, b| b.ticks_existed.cmp(&a.ticks_existed));
+            all.sort_by_key(|p| std::cmp::Reverse(p.ticks_existed));
         }
         all
     }

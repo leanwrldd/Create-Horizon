@@ -613,15 +613,14 @@ pub enum Sale<K> {
 }
 
 /// `StockTickerInteractionHandler.interactWithShop`: `ticker_network` is the ticker's frequency
-/// and `list_network` the list's (`shopNetwork`); `order` and `payment` are the list's baked
-/// entries (`ShoppingList.bakeEntries`: the goods, and the price); `recent` is the ticker's
+/// and `list_network` the list's (`shopNetwork`); `baked` is the list's baked entries
+/// (`ShoppingList.bakeEntries`: the goods, and the price); `recent` is the ticker's
 /// summary (`getRecentSummary`, after `getAccurateSummary` refreshed it); `received` the cash
 /// register's slots; `player` the player's 36 main inventory slots.
 pub fn sell<K: PartialEq + Clone>(
     ticker_network: Freq,
     list_network: Freq,
-    order: &Summary<K>,
-    payment: &Summary<K>,
+    baked: (&Summary<K>, &Summary<K>),
     recent: &Summary<K>,
     received: &[Option<Big<K>>],
     player: &[Option<Big<K>>],
@@ -630,6 +629,7 @@ pub fn sell<K: PartialEq + Clone>(
     if ticker_network != list_network {
         return Sale::WrongNetwork;
     }
+    let (order, payment) = baked;
     let goods = order.stacks_by_count();
 
     // Check stock levels.
@@ -937,7 +937,7 @@ mod tests {
         let stock = summary(&[("cog", 20)]);
         // The player has 7 + 9 nuggets in slots 2 and 5, and other things.
         let player = inventory(&[(0, "dirt", 30), (2, "nugget", 7), (5, "nugget", 9)]);
-        let sale = sell(1, 1, &order, &payment, &stock, &register(), &player, &max);
+        let sale = sell(1, 1, (&order, &payment), &stock, &register(), &player, &max);
         match sale {
             Sale::Sold { removed, received, order } => {
                 // 7 from slot 2, then the 3 still owed from slot 5.
@@ -956,27 +956,27 @@ mod tests {
         let payment = summary(&[("nugget", 10)]);
         let stock = summary(&[("cog", 20)]);
         let rich = inventory(&[(0, "nugget", 64)]);
-        assert_eq!(sell(1, 2, &order, &payment, &stock, &register(), &rich, &max), Sale::WrongNetwork);
-        assert_eq!(sell(1, 1, &order, &payment, &summary(&[("cog", 5)]), &register(), &rich, &max), Sale::StockTooLow);
+        assert_eq!(sell(1, 2, (&order, &payment), &stock, &register(), &rich, &max), Sale::WrongNetwork);
+        assert_eq!(sell(1, 1, (&order, &payment), &summary(&[("cog", 5)]), &register(), &rich, &max), Sale::StockTooLow);
         // The cash register: 27 full slots of other things leave no room for one more stack.
         let mut full = register();
         for slot in full.iter_mut() {
             *slot = Some(("junk", 64));
         }
-        assert_eq!(sell(1, 1, &order, &payment, &stock, &full, &rich, &max), Sale::CashRegisterFull);
+        assert_eq!(sell(1, 1, (&order, &payment), &stock, &full, &rich, &max), Sale::CashRegisterFull);
         // Not counting stacks it could add to: 26 full slots and one holding nuggets still
         // refuse a price of one more stack ... but an empty slot makes room.
         let mut nearly = full.clone();
         nearly[26] = None;
-        assert!(matches!(sell(1, 1, &order, &payment, &stock, &nearly, &rich, &max), Sale::Sold { .. }));
+        assert!(matches!(sell(1, 1, (&order, &payment), &stock, &nearly, &rich, &max), Sale::Sold { .. }));
         // 9 nuggets can't pay 10.
-        assert_eq!(sell(1, 1, &order, &payment, &stock, &register(), &inventory(&[(0, "nugget", 9)]), &max), Sale::TooBroke);
+        assert_eq!(sell(1, 1, (&order, &payment), &stock, &register(), &inventory(&[(0, "nugget", 9)]), &max), Sale::TooBroke);
         // A price of 2 stacks (eggs stack to 16: 20 eggs are 2 slots) in a register with one free slot.
         let eggs = summary(&[("egg", 20)]);
         let mut one_free = full.clone();
         one_free[0] = None;
         assert_eq!(
-            sell(1, 1, &order, &eggs, &stock, &one_free, &inventory(&[(0, "egg", 20)]), &max),
+            sell(1, 1, (&order, &eggs), &stock, &one_free, &inventory(&[(0, "egg", 20)]), &max),
             Sale::CashRegisterFull
         );
     }

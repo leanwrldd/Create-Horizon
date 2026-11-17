@@ -817,7 +817,7 @@ impl<K: PartialEq + Clone> Summary<K> {
     /// `InventorySummary.getStacksByCount`: the most first (a stable sort, `BigItemStack.comparator`).
     pub fn stacks_by_count(&self) -> Vec<Big<K>> {
         let mut stacks = self.stacks.clone();
-        stacks.sort_by(|a, b| b.1.cmp(&a.1));
+        stacks.sort_by_key(|s| std::cmp::Reverse(s.1));
         stacks
     }
 

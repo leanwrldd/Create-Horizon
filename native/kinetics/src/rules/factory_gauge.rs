@@ -1243,7 +1243,7 @@ mod tests {
         let mut dry = gauge("cobble", 100);
         dry.recipe_address = "Self".into();
         let out = dry.tick_requests([0, 64, 0], &restocker, &mut env);
-        assert_eq!(out.effects[0].success, false);
+        assert!(!out.effects[0].success);
         assert!(out.promised.is_none());
         // A restocker with no packager inventory asks for nothing, and a restocker ignores inputs.
         env.restocked_packager_has_inventory = Some(false);
