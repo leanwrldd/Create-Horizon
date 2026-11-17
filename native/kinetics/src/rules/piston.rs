@@ -375,6 +375,37 @@ mod tests {
         (grid, piston)
     }
 
+    /// The in-game "piston stops one block short after a drill" report: casing (4,0), Drill (5,0)
+    /// and a glued chest (4,1) moving east, cobblestone at y=0 x=7..10 and y=1 x=7..9. The drill
+    /// has broken x=7 and x=8 and the cell ahead of it is free, but the chest at offset 2 meets the
+    /// cobblestone above (7,1), so Create stops it there too (`ContraptionCollider`): not a bug.
+    #[test]
+    fn a_chest_above_a_drill_stops_the_piston_at_the_stone_above() {
+        use super::super::contraption::{blocked_by, colliders};
+        let mut grid = Grid(HashMap::new());
+        for x in 9..=10 {
+            grid.set([x, 0, 0], "minecraft:cobblestone");
+        }
+        for x in 7..=9 {
+            grid.set([x, 1, 0], "minecraft:cobblestone");
+        }
+        let mut blocks = std::collections::BTreeMap::new();
+        blocks.insert([0, 0, 0], State::new("create:andesite_casing"));
+        blocks.insert([1, 0, 0], State::new("create:mechanical_drill"));
+        blocks.insert([0, 1, 0], State::new("minecraft:chest"));
+        let solid = |_: &State| true;
+        let cells = colliders(&blocks, Dir::East, &solid);
+        assert!(cells.contains(&[0, 1, 0]) && cells.contains(&[1, 0, 0]));
+        let blocked = |offset: f32| {
+            let position = self::position([4, 0, 0], Dir::East, offset);
+            let cell = collision_anchor(position, Dir::East);
+            cells.iter().any(|c| blocked_by(&grid, [cell[0] + c[0], cell[1] + c[1], cell[2] + c[2]]))
+        };
+        assert!(!blocked(1.9));
+        // At offset 2 the chest's next cell (7,1) is stone, whatever the drill has cleared.
+        assert!(blocked(2.0));
+    }
+
     #[test]
     fn a_retracted_piston_with_poles() {
         let (mut grid, piston) = piston_with_poles(3, Dir::East);
