@@ -440,6 +440,10 @@ pub fn insert(
     if host.block(pos) == super::portable_interface::ITEMS {
         return Some(super::portable_interface::insert(host, pos, stack, simulate));
     }
+    // The Item Drain's item handler (`ItemDrainItemHandler`), which answers a simulation too.
+    if host.block(pos) == super::item_drain::ID {
+        return Some(super::item_drain::handler_insert(host, pos, face, stack, simulate));
+    }
     if !is_inventory(host, pos) {
         return None;
     }

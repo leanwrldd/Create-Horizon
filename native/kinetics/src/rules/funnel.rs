@@ -346,9 +346,24 @@ pub fn flap_value(inward: bool, ticks: f32) -> f32 {
     start * (1.0 - FLAP_CHASE).powf(ticks.max(0.0))
 }
 
+/// Whether a click clears a brass funnel's filter (the stand-in for taking the item out of Create's filter slot):
+/// sneaking with nothing in either hand. Any item is another handler's (setting the filter, the Wrench, placing).
+pub fn clears_filter(brass: bool, sneaking: bool, main_hand_empty: bool, off_hand_empty: bool) -> bool {
+    brass && sneaking && main_hand_empty && off_hand_empty
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_sneaking_empty_handed_click_on_a_brass_funnel_clears_its_filter() {
+        assert!(clears_filter(true, true, true, true));
+        assert!(!clears_filter(false, true, true, true), "an Andesite Funnel has no filter");
+        assert!(!clears_filter(true, false, true, true));
+        assert!(!clears_filter(true, true, false, true));
+        assert!(!clears_filter(true, true, true, false));
+    }
 
     #[test]
     fn a_funnels_activity_follows_its_state_and_redstone() {
