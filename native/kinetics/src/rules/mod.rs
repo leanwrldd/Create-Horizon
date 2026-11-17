@@ -3,6 +3,8 @@
 //! The rules of one machine per module: numbers and state machines ported from Create, with
 //! no game types, so `cargo test` covers them.
 
+pub mod actor;
+pub mod actor_facts;
 pub mod analog_lever;
 pub mod arm;
 pub mod arm_items;
@@ -68,6 +70,7 @@ pub mod goggles;
 pub mod goggles_blocks;
 pub mod goggles_kinetic;
 pub mod goggles_overlay;
+pub mod harvester;
 pub mod hose_pulley;
 pub mod item_drain;
 pub mod item_vault;
@@ -78,6 +81,7 @@ pub mod mixer;
 pub mod nixie_tube;
 pub mod piston;
 pub mod placard;
+pub mod plough;
 pub mod portable_interface;
 pub mod potato_cannon;
 pub mod pulley;

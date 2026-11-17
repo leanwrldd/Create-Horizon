@@ -81,9 +81,11 @@
 //! - Blocks inside a structure are drawn as their block model only: what their block entity
 //!   draws (a press head, a funnel's flap) is missing, kinetic parts don't turn, items on
 //!   depots aren't drawn. Lit by the controller's light, not each block's.
-//! - Actors (`MovementBehaviour`: drills, saws, harvesters...) don't act on a structure, seats
-//!   don't carry riders, and movement interactions (doors, levers on a structure) are not
-//!   clickable. Belts, fluid tanks and the other blocks whose block entity holds the position of
+//! - Actors (`MovementBehaviour`: drills, saws, harvesters, ploughs, deployers, funnels) act on the
+//!   structures of pistons, bearings and windmills through one hook, `actor.rs` (`actor::tick`
+//!   each tick the structure runs, `actor::stop` first thing in the controller's `set_down`); the
+//!   gantry, the pulleys and the elevator don't run them. Seats don't carry riders, and movement
+//!   interactions (doors, levers on a structure) are not clickable. Belts, fluid tanks and the other blocks whose block entity holds the position of
 //!   another block can't be moved (`rules::contraption::movement_allowed`).
 //! - A structure whose controller disappears without the `destroy_block` hook (an explosion, a
 //!   command) is lost, and one in a chunk that unloads stops until it loads.
@@ -849,6 +851,8 @@ fn draw_entity_block(host: &dyn Host, draw: &mut BlockEntityDraw, state: &State)
 /// controller's corner), under the pose in force. `skip` leaves a block out (a piston's pole at
 /// the piston's own cell, which Create draws too: it's the shaft inside).
 pub fn draw_blocks(host: &dyn Host, draw: &mut BlockEntityDraw, parsed: &Parsed, base: [f32; 3]) {
+    // How the structure moves, for the actors' turning heads (`actor_draw.rs`).
+    let motion = super::actor_draw::take_motion();
     for block in &parsed.moving.blocks {
         draw.push();
         draw.translate([
@@ -857,6 +861,7 @@ pub fn draw_blocks(host: &dyn Host, draw: &mut BlockEntityDraw, parsed: &Parsed,
             base[2] + block.local[2] as f32,
         ]);
         draw_state(host, draw, &block.state);
+        super::actor_draw::draw_actor(host, draw, &block.state, block.local, motion);
         draw.pop();
     }
 }

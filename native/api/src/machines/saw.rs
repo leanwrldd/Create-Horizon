@@ -57,7 +57,7 @@ const RECIPE_TYPE: &str = "create:cutting";
 /// `CreateDamageSources.saw`.
 const DAMAGE_TYPE: &str = "create:mechanical_saw";
 /// `AllPartialModels.SAW_BLADE_*`.
-const BLADES: [&str; 6] = [
+pub(super) const BLADES: [&str; 6] = [
     "create:block/mechanical_saw/blade_horizontal_active",
     "create:block/mechanical_saw/blade_horizontal_inactive",
     "create:block/mechanical_saw/blade_horizontal_reversed",
@@ -117,43 +117,62 @@ fn is_log(host: &dyn Host, block: &str) -> bool {
         || block == "minecraft:mushroom_stem"
 }
 
+/// `SawBlockEntity.isSawable`.
+pub(super) fn sawable(host: &dyn Host, block: &str) -> bool {
+    rules::is_sawable(
+        block,
+        in_tag(host, block, "minecraft:saplings"),
+        is_log(host, block),
+        in_tag(host, block, "minecraft:leaves"),
+        in_tag(host, block, "create:roots"),
+        in_tag(host, block, "create:solid_crops"),
+    )
+}
+
+/// `TreeCutter.findTree(..).destroyBlocks`: the tree a cut at `breaking` held up, each block
+/// broken in order and its drops handed to `sink` (the block's position and the stack). Shared
+/// with the saw on a structure (`actor_tools.rs`), which sends them to the structure's storage.
+pub(super) fn cut_tree(
+    host: &mut dyn Host,
+    breaking: Pos,
+    block: &str,
+    sink: &mut dyn FnMut(&mut dyn Host, Pos, ItemStack),
+) {
+    let broken = Class {
+        vertical_plant: rules::is_vertical_plant(block),
+        chorus: rules::is_chorus(block),
+        ..Class::NOTHING
+    };
+    let found = {
+        let mut world = Blocks {
+            host: &*host,
+            seen: HashMap::new(),
+        };
+        tree::find_tree(&mut world, breaking, broken)
+    };
+    for (at, _effect_chance) in found.in_order() {
+        let Some(drops) = host.destroy_block(at, None, true) else {
+            continue;
+        };
+        for stack in drops {
+            sink(host, at, stack);
+        }
+    }
+}
+
 impl Tool for Saw {
     /// `SawBlockEntity.isSawable`.
     fn allowed(&self, host: &dyn Host, _at: Pos, block: &str) -> bool {
-        rules::is_sawable(
-            block,
-            in_tag(host, block, "minecraft:saplings"),
-            is_log(host, block),
-            in_tag(host, block, "minecraft:leaves"),
-            in_tag(host, block, "create:roots"),
-            in_tag(host, block, "create:solid_crops"),
-        )
+        sawable(host, block)
     }
 
     /// `SawBlockEntity.onBlockBroken`: the block breaks as a drill's does, then the tree it held up.
     fn broken(&self, host: &mut dyn Host, pos: Pos, breaking: Pos, block: &str) {
         drill::drop_block(host, breaking);
-        let broken = Class {
-            vertical_plant: rules::is_vertical_plant(block),
-            chorus: rules::is_chorus(block),
-            ..Class::NOTHING
-        };
-        let found = {
-            let mut world = Blocks {
-                host: &*host,
-                seen: HashMap::new(),
-            };
-            tree::find_tree(&mut world, breaking, broken)
-        };
         let normal = util::add(breaking, pos.map(|v| -v));
-        for (at, _effect_chance) in found.in_order() {
-            let Some(drops) = host.destroy_block(at, None, true) else {
-                continue;
-            };
-            for stack in drops {
-                drop_cut_item(host, at, breaking, normal, &stack);
-            }
-        }
+        cut_tree(host, breaking, block, &mut |host, at, stack| {
+            drop_cut_item(host, at, breaking, normal, &stack);
+        });
     }
 }
 

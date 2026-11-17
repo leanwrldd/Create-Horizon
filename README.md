@@ -275,6 +275,41 @@ differences. The ones worth knowing:
   and it drops itself); no floor screen, door controls, Contraption Controls or Display Link source; a contact
   doesn't light while it powers; the draw's orientation is unchecked.
 
+### Actors on moving structures
+
+Blocks that act while the structure they are part of moves (`MovementBehaviour`; the engine hook is
+`native/api/src/machines/actor.rs`, the behaviours `actor_tools.rs`, the rules `rules/actor.rs`,
+`harvester.rs`, `plough.rs`):
+
+| Block | Behaviour |
+|---|---|
+| Mechanical Drill, Mechanical Saw | On a moving structure break the block in front a stage at a time (`BlockBreakingMovementBehaviour`: the structure waits for the block, the crack shows, the speed is the structure's motion over 500) and hurt and throw what they run into. The Saw fells the tree it cuts. Drops go into the structure's chests, barrels, shulker boxes and vaults first; the rest is thrown out. The Drill's head and the Saw's blade turn with the structure's speed |
+| Mechanical Harvester | Placed against a wall, on a moving structure it reaps grown crops, sugar cane, leaves (with shears), berries, cocoa and the like in the cell in front and replants (`HarvesterMovementBehaviour`: seeds stay in the ground, `harvestPartiallyGrown` off, `harvesterReplants` on) |
+| Mechanical Plough | On a moving structure breaks plants without a collision box (and snow), never over farmland, and tills the dirt, grass and paths under it with a hoe (`HoeItem`: coarse dirt and rooted dirt become dirt); throws entities without hurting them |
+| Deployer | On a moving structure it takes its item from the structure's storage and uses or punches the cell two blocks in front at each new position, as the stationary one does (a block being mined holds the structure still, a punch every 20 ticks); the hand is saved in the block when the structure stops |
+| Andesite Funnel, Brass Funnel | On a moving structure take the items lying in the cell they enter into the structure's storage (the filter decides) or, extracting, drop one (or the filter's count) from it into the cell |
+| Contraption Controls | The Controls' `Disabled` and `Filter` decide which actors start disabled on the structure: no filter stops all of them, a filter item stops the actors of that block |
+
+Both the piston and the bearing (so the windmill) run actors and are held still by them; the rest of the
+actors, the structure's storage and the stalls follow Create's `tickActors`: an actor's position is the
+block's centre plus its active-area offset turned with the structure; a new block position (or the first
+movement) calls `visitNewPosition`. Known differences from Create:
+
+- **Only pistons, bearings and windmills run actors.** The Gantry, Rope Pulley and Elevator Pulley structures
+  don't (they cannot be held still yet), so a drill on a rope pulley does not mine.
+- Contexts (`MovementContext`) live in memory, not in the structure's NBT: a reload begins every actor again
+  (a half-broken block starts over). What actors collect and a Deployer's hand are saved in the structure.
+- The Mechanical Roller, the Seat's riders (`SeatMovementBehaviour`), `DeployerMovementBehaviour`'s
+  schematic printing, bells, campfires, dispensers and the moving interactions (clicking a door, lever or the
+  Controls on a structure to toggle them) are not here: nobody can click a moving structure, so the Controls
+  only start the actors enabled or disabled as their data says.
+- Hurting entities looks at the cell the actor enters; there is no collision, so `isPassengerOfSameVehicle`
+  does not matter. Players are hurt but not thrown (a server mod can't move a player). No hit sounds.
+- The Harvester's replant is the crop at age 0 without `canSurvive`; Farmer's Delight's mushrooms are another
+  mod's. The Plough's hoe needs no fake player and only tills (`HoeItem.TILLABLES`). Placement of these blocks
+  takes the clicked face, not a neighbour's facing; they don't break when the wall behind them goes.
+- The facing of a Deployer on a turning structure is the nearest block direction, not the exact angle.
+
 ### Curiosities (equipment)
 
 Each module's header (`native/api/src/machines/<name>.rs`) lists its differences from Create in full.
