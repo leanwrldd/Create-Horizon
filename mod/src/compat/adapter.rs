@@ -240,6 +240,77 @@ impl Host for Adapter<'_> {
         }
     }
 
+    // --- players -------------------------------------------------------------------------------------------
+
+    fn acting_player(&self) -> Option<NativeServerPlayer> {
+        // `acting_player` is a server service: nobody acts on a client (gap).
+        let Adapter::Server(server) = self else { return None };
+        let player = server.players().acting_player()?;
+        let host = self.new_host();
+        let uuid = player.uuid();
+        // The player handle has no position, rotation, health or entity id (gaps): placeholders.
+        let position = [0.0; 3];
+        Some(NativeServerPlayer {
+            uuid,
+            name: player.name(host).unwrap_or_default(),
+            permission: player.permission_level(host).unwrap_or(0),
+            dimension: host.dimension().to_owned(),
+            position,
+            game_mode: player.game_mode(host).map_or(0, |mode| mode as i32),
+            health: 20.0,
+            // The new handle has no yaw / pitch read on the player itself (gap): facing south.
+            yaw: 0.0,
+            pitch: 0.0,
+            entity_id: -1,
+            address: String::new(),
+            latency: 0,
+            protocol: 0,
+            xp_level: 0,
+            xp_progress: 0.0,
+            on_ground: true,
+            flying: false,
+            may_fly: player.may_fly(host).unwrap_or(false),
+            invulnerable: false,
+            walk_speed: 0.1,
+            fly_speed: 0.05,
+            sneaking: player.is_secondary_use_active(host).unwrap_or(false),
+            eye_height: 1.62,
+            selected_slot: player.selected_slot(host).unwrap_or(0) as u8,
+            nickname: None,
+            hidden: None,
+            fake: player.is_fake(host).unwrap_or(false),
+            using_item: false,
+            blocking: false,
+            sprinting: false,
+            gliding: false,
+        })
+    }
+
+    fn held_stack(&self, uuid: u128) -> Option<ItemStack> {
+        let host = self.new_host();
+        let player = host.player(uuid)?;
+        let slot = player.selected_slot(host)?;
+        let stack = player.inventory_slots(host)?.into_iter().find(|(index, _)| *index as usize == slot)?.1;
+        events::stack_old(host, &stack)
+    }
+
+    fn tell(&mut self, uuid: u128, line: Text) -> bool {
+        let Adapter::Server(host) = self else { return false };
+        let Some(player) = host.player(uuid) else { return false };
+        player.tell(&mut **host, line).unwrap_or(false)
+    }
+
+    fn action_bar(&mut self, uuid: u128, line: Text) -> bool {
+        let Adapter::Server(host) = self else { return false };
+        let Some(player) = host.player(uuid) else { return false };
+        player.action_bar(&mut **host, line).unwrap_or(false)
+    }
+
+    fn neighbor_signal(&mut self, dimension: &str, pos: [i32; 3]) -> i32 {
+        let host = self.new_host();
+        host.level(dimension).and_then(|level| level.best_neighbor_signal(host, pos)).unwrap_or(0)
+    }
+
     fn window(&self) -> bool {
         matches!(self, Adapter::Client(_) | Adapter::ClientMut(_))
     }
