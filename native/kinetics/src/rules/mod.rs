@@ -99,6 +99,7 @@ pub mod speed_controller;
 pub mod spout;
 pub mod steam_engine;
 pub mod steam_engine_whistle;
+pub mod sticker;
 pub mod stockpile_switch;
 pub mod super_glue;
 pub mod toolbox;

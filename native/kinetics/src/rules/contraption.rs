@@ -508,6 +508,9 @@ pub fn not_supportive(world: &dyn World, state: &State, facing: Dir) -> bool {
             "piston_extension_pole" | "mechanical_piston_head" => {
                 return state.dir("facing").map(Dir::axis) != Some(facing.axis());
             }
+            // `BlockMovementChecksImpl.isNotSupportiveFallback`: a Sticker that isn't extended
+            // holds nothing on its face.
+            "sticker" if !state.flag("extended") => return state.dir("facing") == Some(facing),
             _ => {}
         }
     } else if path.ends_with("_carpet") && path != "moss_carpet" {
@@ -699,6 +702,18 @@ pub fn search(world: &dyn World, config: &Config<'_>) -> Result<Found, Fail> {
             }
         }
 
+        // `Contraption.moveBlock`: an extended Sticker takes the block in front of it along.
+        if state.is(crate::rules::sticker::ID) && state.flag("extended") {
+            if let Some(facing) = state.dir("facing") {
+                let attached = relative(pos, facing, 1);
+                if !visited.contains(&attached)
+                    && world.state(attached).is_some_and(|front| !not_supportive(world, &front, facing.opposite()))
+                {
+                    add(attached, &mut frontier, &mut queued);
+                }
+            }
+        }
+
         // Slime blocks and super glue drag adjacent blocks if possible.
         for offset in Dir::ALL {
             let offset_pos = relative(pos, offset, 1);
@@ -716,7 +731,12 @@ pub fn search(world: &dyn World, config: &Config<'_>) -> Result<Found, Fail> {
             }
             let was_visited = visited.contains(&offset_pos);
             let face_has_glue = world.glued(pos, offset);
-            let attached = attached_towards(world, &neighbour, offset.opposite());
+            // `isBlockAttachedTowardsFallback`: an extended Sticker is attached to the block it holds.
+            let stuck_on = neighbour.is(crate::rules::sticker::ID)
+                && neighbour.flag("extended")
+                && neighbour.dir("facing") == Some(offset.opposite())
+                && !not_supportive(world, &state, offset);
+            let attached = stuck_on || attached_towards(world, &neighbour, offset.opposite());
             let brittle = is_brittle(world, &neighbour);
             let mut can_stick = !brittle && can_stick_to(&state, &neighbour);
             if can_stick {
@@ -1327,6 +1347,29 @@ mod tests {
         let found = search(&grid, &config(None, [0, 0, 0])).expect("found");
         let positions: HashSet<Pos> = found.blocks.iter().map(|(p, _)| *p).collect();
         assert!(positions.contains(&[0, 1, 0]) && positions.contains(&[0, 2, 0]));
+    }
+
+    #[test]
+    fn an_extended_sticker_holds_the_block_in_front_and_goes_with_it() {
+        let mut grid = Grid::new();
+        grid.set([0, 0, 0], "create:sticker[facing=east,extended=true,powered=true]");
+        grid.set([1, 0, 0], "minecraft:stone");
+        grid.set([2, 0, 0], "minecraft:stone");
+        // From the sticker: the block in front, not the one behind that.
+        let found = search(&grid, &config(None, [0, 0, 0])).expect("found");
+        let positions: HashSet<Pos> = found.blocks.iter().map(|(p, _)| *p).collect();
+        assert!(positions.contains(&[0, 0, 0]) && positions.contains(&[1, 0, 0]));
+        assert!(!positions.contains(&[2, 0, 0]));
+        // From the block it holds: the sticker comes too.
+        let found = search(&grid, &config(None, [1, 0, 0])).expect("found");
+        let positions: HashSet<Pos> = found.blocks.iter().map(|(p, _)| *p).collect();
+        assert!(positions.contains(&[0, 0, 0]));
+        // A retracted one holds nothing, and nothing is supported on its face.
+        grid.set([0, 0, 0], "create:sticker[facing=east,extended=false,powered=false]");
+        let found = search(&grid, &config(None, [0, 0, 0])).expect("found");
+        assert_eq!(found.blocks.len(), 1);
+        let found = search(&grid, &config(None, [1, 0, 0])).expect("found");
+        assert!(!found.blocks.iter().any(|(p, _)| *p == [0, 0, 0]));
     }
 
     #[test]

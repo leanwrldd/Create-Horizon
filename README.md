@@ -310,6 +310,11 @@ movement) calls `visitNewPosition`. Known differences from Create:
   takes the clicked face, not a neighbour's facing; they don't break when the wall behind them goes.
 - The facing of a Deployer on a turning structure is the nearest block direction, not the exact angle.
 
+### Sticker, Clockwork Bearing, Redstone Contact, Cart Assembler
+
+| Block | Behaviour |
+|---|---|
+| Sticker | Each rise of the redstone signal toggles it; extended, it glues the block in front of it to a structure that moves (the structure takes that block along, and the block takes the Sticker if it is the one gathered: Contraption.moveBlock, BlockMovementChecksImpl); retracted, nothing is supported on its face. The head slides out and in. The Wrench turns it. Unplayed. Differences: the signal is polled by the block entity, no hit sound or glue particles, no slime bounce on an upright Sticker |
 ### Curiosities (equipment)
 
 Each module's header (`native/api/src/machines/<name>.rs`) lists its differences from Create in full.
