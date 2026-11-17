@@ -18,6 +18,8 @@
             "create:netherite_backtank",
             "create:basin",
             "create:mechanical_bearing",
+            "create:peculiar_bell",
+            "create:haunted_bell",
             "create:blaze_burner",
             "create:lit_blaze_burner",
             "create:encased_chain_drive",

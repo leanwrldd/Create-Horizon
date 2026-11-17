@@ -10,6 +10,7 @@ pub mod arm_points;
 pub mod backtank;
 pub mod basin;
 pub mod bearing;
+pub mod bell;
 pub mod bracket;
 pub mod burner;
 pub mod chain_drive;
