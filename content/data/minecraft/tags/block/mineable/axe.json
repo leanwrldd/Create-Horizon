@@ -65,6 +65,8 @@
     "create:sticky_mechanical_piston",
     "create:piston_extension_pole",
     "create:mechanical_piston_head",
+    "create:portable_storage_interface",
+    "create:portable_fluid_interface",
     "create:rope_pulley",
     "create:rope",
     "create:pulley_magnet",
