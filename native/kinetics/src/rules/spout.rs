@@ -9,8 +9,8 @@
 //! - Filling happens in the Spout's own tick, at the tick `processingTicks` reaches 5, where
 //!   Create does it inside `whenItemHeld` when the belt asks at that tick. The held item, the
 //!   times and what is taken are the same; [`Spout::held`] answers only Hold, Pass or Start.
-//! - A custom `BlockSpoutingBehaviour` (a Spout over a basin, a cauldron, a bee nest, a campfire)
-//!   is not ported: the Spout fills only items riding a belt or lying on a depot.
+//! - The blocks a Spout fills (`BlockSpoutingBehaviour`) are `spout_blocks`; a belt or a depot's
+//!   items are this module's. Create has no behaviour for a basin, a bee nest or a campfire.
 
 use crate::belt::Processing;
 

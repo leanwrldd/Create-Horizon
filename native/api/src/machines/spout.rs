@@ -4,17 +4,24 @@
 //! `create_kinetics::rules::spout`; what an item takes and gives is `spout_fill`. The belt
 //! and the depot hand it their items through `belt::register_processor`, as they do the press.
 //!
-//! Known differences from Create: see `rules/spout.rs` (no custom `BlockSpoutingBehaviour`, so
-//! no filling a basin, a cauldron or a campfire; the fill happens in the Spout's own tick) and
-//! `spout_fill.rs` (the containers known). Also:
+//! It also fills the blocks Create gives a `BlockSpoutingBehaviour` (`rules/spout_blocks.rs`): dirt to mud,
+//! farmland, a water cauldron and an empty cauldron. Create 6.0.10 has none for a basin or a campfire.
+//!
+//! Known differences from Create: see `rules/spout.rs` (the fill happens in the Spout's own tick),
+//! `rules/spout_blocks.rs` (no Tinkers' Construct `SpoutCasting`, no splash) and `spout_fill.rs` (the
+//! containers known). Also:
 //! - Create's Spout fills items on a belt or a depot only (`BeltProcessingBehaviour` over a
 //!   `TransportedItemStackHandlerBehaviour`), not items lying on the ground, and neither does this one.
 //! - The fluid in the tank rises at once where Create's `LerpedFloat` chases it; there are no
 //!   splash or stream particles (`FluidFX`, `sendSplash`), no comparator signal
 //!   (`ComparatorUtil.levelOfSmartFluidTank`: the hook gets no block entity), no advancement and no waterlogging.
 
+use std::collections::HashSet;
+use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
+
 use create_kinetics::belt::Processing;
 use create_kinetics::rules::spout::{self as rules, Held, Item, Spout};
+use create_kinetics::rules::spout_blocks as blocks;
 use horizon_client::mod_api::{
     BlockEntityEvent, BlockEntityFluidsEvent, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent,
     BlockEntityTickEvent, BlockEntityTicksEvent, BlockEntityUpdateTagEvent, Compound, Hooks, Host,
@@ -158,6 +165,38 @@ fn fill_below(host: &mut dyn Host, pos: Pos, saved: &Saved) -> Option<i32> {
     done.then_some(saved.amount - required)
 }
 
+/// The Spouts whose fill is a block's (`customProcess`), by dimension and position: not saved, as Create's isn't.
+static CUSTOM: LazyLock<Mutex<HashSet<(&'static str, Pos)>>> = LazyLock::new(Default::default);
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// `BlockSpoutingBehaviour.fillBlock(.., simulate = true)` for the block two below the Spout: what it would take and
+/// become (`rules::spout_blocks`).
+fn block_fill(host: &dyn Host, pos: Pos, saved: &Saved) -> Option<blocks::Fill> {
+    let fluid = saved.fluid.as_deref()?;
+    let target = [pos[0], pos[1] - 2, pos[2]];
+    let text = host.level(host.dimension())?.block_state(host, target)?;
+    blocks::fill(&text, fluid, saved.amount)
+}
+
+/// The same with `simulate = false`, at the tick the fill happens: the block changes. Answers the fluid left in the
+/// tank, `None` when the behaviour no longer takes it.
+fn fill_block(host: &mut dyn Host, pos: Pos, saved: &Saved) -> Option<i32> {
+    let fill = block_fill(&*host, pos, saved)?;
+    let target = [pos[0], pos[1] - 2, pos[2]];
+    let line = format!(
+        "execute in {} run setblock {} {} {} {} replace",
+        host.dimension(),
+        target[0],
+        target[1],
+        target[2],
+        fill.state
+    );
+    host.run_command(&line).then_some(saved.amount - fill.amount)
+}
+
 // --- the hooks ----------------------------------------------------------------------------------
 
 impl Hooks for Spouts {
@@ -195,12 +234,26 @@ impl Hooks for Spouts {
         let pos = event.pos;
         let mut saved = read(&event.entity.nbt);
         let before = saved.spout;
+        let dimension = host.dimension();
+        // An idle Spout with fluid asks the block two below for a behaviour (`BlockSpoutingBehaviour.get`): if it
+        // would take some, the 20 ticks start and the behaviour is the one that fills.
+        if saved.spout.processing_ticks == -1 && block_fill(&*host, pos, &saved).is_some() {
+            saved.spout.processing_ticks = rules::FILLING_TIME;
+            lock(&CUSTOM).insert((dimension, pos));
+        }
         let filled = saved.spout.tick();
         let mut changed = false;
-        if filled && let Some(left) = fill_below(host, pos, &saved) {
-            let fluid = saved.fluid.clone();
-            fill::set_tank(&mut event.entity.nbt, fluid.as_deref(), left);
-            changed = true;
+        if filled {
+            let left = if lock(&CUSTOM).remove(&(dimension, pos)) {
+                fill_block(host, pos, &saved)
+            } else {
+                fill_below(host, pos, &saved)
+            };
+            if let Some(left) = left {
+                let fluid = saved.fluid.clone();
+                fill::set_tank(&mut event.entity.nbt, fluid.as_deref(), left);
+                changed = true;
+            }
         }
         if saved.spout != before {
             event.entity.nbt.insert(TICKS.into(), Tag::Int(saved.spout.processing_ticks));

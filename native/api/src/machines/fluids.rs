@@ -215,13 +215,16 @@ pub fn draw_fluid(
     bounds: [f32; 6],
     render_bottom: bool,
 ) {
+    // A potion fluid (`rules/potion_fluid.rs`) is water in the potion's colour, as Create's `PotionFluidType` tints it.
+    let potion = create_kinetics::rules::potion_fluid::parse(fluid);
+    let colour = potion.as_ref().map(|p| horizon_client::brewing::potion_color(p.potion.as_deref()));
     let stack = NativeFluidStack {
-        fluid: fluid.to_owned(),
+        fluid: if potion.is_some() { "minecraft:water" } else { fluid }.to_owned(),
         amount,
         components: Compound::new(),
     };
     let options = NativeFluidRenderOptions {
-        argb: None,
+        argb: colour.map(|rgb| 0xFF00_0000 | rgb),
         render_bottom,
         uv_shrink_ratio: 4.0 / 1024.0,
     };
@@ -238,6 +241,6 @@ pub fn draw_fluid(
         [x0, y0, z0],
         [x1, y1, z1],
         [face; 6],
-        create_kinetics::rules::fluids::tint(fluid),
+        colour.unwrap_or_else(|| create_kinetics::rules::fluids::tint(fluid)),
     );
 }
