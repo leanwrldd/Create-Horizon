@@ -25,6 +25,7 @@
     "create:radial_chassis",
     "create:chute",
     "create:smart_chute",
+    "create:clipboard",
     "create:clutch",
     "create:content_observer",
     "create:copycat_base",

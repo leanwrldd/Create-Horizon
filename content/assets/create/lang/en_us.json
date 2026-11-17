@@ -31,6 +31,7 @@
   "block.create.radial_chassis": "Radial Chassis",
   "block.create.chute": "Chute",
   "block.create.smart_chute": "Smart Chute",
+  "block.create.clipboard": "Clipboard",
   "block.create.clutch": "Clutch",
   "block.create.content_observer": "Smart Observer",
   "block.create.copycat_base": "Copycat Base",

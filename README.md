@@ -237,6 +237,7 @@ Each module's header (`native/api/src/machines/<name>.rs`) lists its differences
 | Item | What it does here |
 |---|---|
 | Toolbox (16 colours) | 8 compartments of 4 stacks, one kind of item each; a left click picks it up with its contents (`create:toolbox_inventory`), a dye recolours it (also a crafting recipe that keeps the contents), the Wrench picks it up too. **Stand-ins for the radial menu and screen:** a right click opens a 9 x 4 chest view (a column per compartment; items that don't belong are handed back on close); a sneak right click links the selected hotbar slot to a compartment (with a matching item in hand, again to unlink; with an empty hand it steps through the compartments), and the box keeps that slot at half a stack within 10 blocks. Links are not saved across a reload; no hopper or comparator access, no lid animation. Unplayed: type-checked and unit-tested only |
+| Clipboard | Pages of checklist entries that the item carries and a block keeps, placed on a floor, wall or ceiling (sneak-click to place, left click or sneak-click to take it back with its pages), Create's recipe and clearing recipe. **Stand-in for the screen:** a right click writes the open page into the chat, and `/clipboard add\|check\|uncheck\|toggle\|remove\|edit\|page\|newpage\|removepage\|clear\|show` edits the clipboard in the main hand (else the placed one right-clicked last). No settings copying between blocks. Unplayed |
 
 ### Settings
 

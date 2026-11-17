@@ -15,6 +15,7 @@ pub mod chain_drive;
 pub mod chassis;
 pub mod chute;
 pub mod click;
+pub mod clipboard;
 pub mod content_observer;
 pub mod content_observer_target;
 pub mod contraption;

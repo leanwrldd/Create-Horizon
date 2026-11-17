@@ -455,4 +455,25 @@ impl Hooks for Create {
             module.living_entity_use_item_finish(host, event);
         }
     }
+
+    fn menu_input_closed(&self, host: &mut dyn Host, event: &mut MenuInputClosedEvent<'_>) {
+        for module in &self.modules {
+            module.menu_input_closed(host, event);
+        }
+    }
+
+    fn register_commands(&self, host: &mut dyn Host, event: &mut RegisterCommandsEvent<'_>) {
+        for module in &self.modules {
+            module.register_commands(host, event);
+        }
+    }
+
+    fn perform_command(&self, host: &mut dyn Host, event: &mut PerformCommandEvent<'_>) -> Flow {
+        for module in &self.modules {
+            if let Flow::Cancel = module.perform_command(host, event) {
+                return Flow::Cancel;
+            }
+        }
+        Flow::Continue
+    }
 }
