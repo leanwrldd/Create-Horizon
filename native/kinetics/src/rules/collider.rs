@@ -47,20 +47,20 @@ fn rad(degrees: f32) -> f32 {
     (f64::from(degrees) / 180.0 * std::f64::consts::PI) as f32
 }
 
-/// `AngleHelper.getShortestAngleDiff`.
+/// `AngleHelper.getShortestAngleDiff`: worked in doubles, as Catnip's takes them, then made a float.
 fn shortest_angle_diff(current: f32, target: f32) -> f32 {
-    let (c, t) = (current % 360.0, target % 360.0);
-    (((t - c) % 360.0 + 540.0) % 360.0) - 180.0
+    let (c, t) = (f64::from(current) % 360.0, f64::from(target) % 360.0);
+    ((((t - c) % 360.0 + 540.0) % 360.0) - 180.0) as f32
 }
 
-/// `AngleHelper.angleLerp`.
+/// `AngleHelper.angleLerp`: `(float) (current + getShortestAngleDiff(current, target) * pct)`, in doubles.
 fn angle_lerp(pct: f32, current: f32, target: f32) -> f32 {
-    current + shortest_angle_diff(current, target) * pct
+    (f64::from(current) + f64::from(shortest_angle_diff(current, target)) * f64::from(pct)) as f32
 }
 
 /// `VecHelper.rotate(vec, deg, axis)`: a turn of `degrees` about an axis (the vector as it is for
-/// no axis or no angle). Catnip's source is not in the local clone; this is the formula the crate's
-/// other ports of it use (`arm.rs`), with `Mth`'s sine table.
+/// no axis or no angle), with `Mth`'s sine table. Checked against Catnip's source (ponder-common
+/// 1.0.85+mc1.21.1, `net.createmod.catnip.math.VecHelper`).
 pub fn rotate(v: Vec3, degrees: f64, axis: Option<Axis>) -> Vec3 {
     if degrees == 0.0 {
         return v;

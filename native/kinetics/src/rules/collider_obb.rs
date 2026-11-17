@@ -185,7 +185,9 @@ impl Aabb {
         r
     }
 
-    /// `AABB.contract(x, y, z)`: shrunk on the side the vector points to.
+    /// `AABB.contract(x, y, z)`: shrunk on the side the vector points to. The result goes through
+    /// `new AABB(..)`, which sorts each axis's corners, so a box contracted past itself turns over
+    /// instead of going negative (Horizon's `Aabb::contract` does the same).
     pub fn contract(&self, x: f64, y: f64, z: f64) -> Self {
         let v = [x, y, z];
         let mut r = *self;
@@ -194,6 +196,11 @@ impl Aabb {
                 r.min[i] -= c;
             } else if c > 0.0 {
                 r.max[i] -= c;
+            }
+        }
+        for i in 0..3 {
+            if r.min[i] > r.max[i] {
+                std::mem::swap(&mut r.min[i], &mut r.max[i]);
             }
         }
         r
