@@ -43,7 +43,10 @@ use horizon_client::mod_api::{
 use super::contraption::{
     self as engine, ASSEMBLE, CONTRAPTION, HostWorld, LAST_EXCEPTION, RUNNING, SYNC_TIME,
 };
+use super::actor;
+use super::actor_draw;
 use super::portable_interface_motion as psi_motion;
+use create_kinetics::rules::actor::Carrier;
 use crate::{kinetic, util};
 
 const MECHANICAL: &str = "create:mechanical_bearing";
@@ -184,6 +187,8 @@ fn assemble(
 /// `ControlledContraptionEntity.disassemble` does.
 fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, facing: Dir, angle: f32) {
     let dimension = host.dimension().to_owned();
+    // `Contraption.stop`: the actors on the structure stop first.
+    actor::stop(host, pos, nbt);
     if let Some(live) = engine::live(&dimension, pos, nbt) {
         let transform: Transform = bearing_rules::disassembly(live.moving.anchor, facing, angle);
         engine::place_in_world(host, &live.moving, &transform, &mut |_, _, _| false);
@@ -323,7 +328,9 @@ impl Hooks for Bearing {
                 let spin = psi_motion::moving_rpm(entity, rpm);
                 let angle = |t: f64| f64::from(angle_at(state.angle, state.time, spin, t));
                 let pose = psi_motion::Pose::Turning { anchor: live.moving.anchor, axis: facing.axis(), angle: &angle };
-                let want = psi_motion::tick(host, pos, &live.moving, &pose, now);
+                // The actors on the structure (drills, saws...) may stall it too (`tickActors`).
+                let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, false);
+                let want = psi_motion::tick(host, pos, &live.moving, &pose, now) | acted;
                 if want != held {
                     let at = angle_at(state.angle, state.time, spin, now as f64);
                     util::set_float(&mut entity.nbt, ANGLE, at);
@@ -408,6 +415,11 @@ impl Hooks for Bearing {
             }
             let anchor = parsed.moving.anchor;
             let base = [0, 1, 2].map(|i| (anchor[i] - event.pos[i]) as f32);
+            actor_draw::set_motion(if psi_motion::is_stalled(&event.entity.nbt) {
+                actor_draw::Motion::Stalled
+            } else {
+                actor_draw::Motion::Turn { axis: facing.axis(), radians: (rate as f32).to_radians() }
+            });
             engine::draw_blocks(host, draw, &parsed, base);
             draw.still();
         }

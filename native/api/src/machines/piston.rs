@@ -38,7 +38,10 @@ use horizon_client::mod_api::{
 use super::contraption::{
     self as engine, ASSEMBLE, CONTRAPTION, HostWorld, LAST_EXCEPTION, RUNNING, SYNC_TIME,
 };
+use super::actor;
+use super::actor_draw;
 use super::portable_interface_motion as psi_motion;
+use create_kinetics::rules::actor::Carrier;
 use crate::{kinetic, util};
 
 const NORMAL: &str = "create:mechanical_piston";
@@ -199,6 +202,8 @@ fn assemble(
 /// facing, as `ControlledContraptionEntity.disassemble` does. Returns the offset it settled at.
 fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, facing: Dir, offset: f32, range: i32) -> Option<i32> {
     let dimension = host.dimension().to_owned();
+    // `Contraption.stop`: the actors on the structure stop first.
+    actor::stop(host, pos, nbt);
     let live = engine::live(&dimension, pos, nbt)?;
     let moving = &live.moving;
     let settled = piston_rules::grid_offset(offset, range);
@@ -346,7 +351,9 @@ impl Hooks for Piston {
                 piston_rules::position(anchor, facing, offset)
             };
             let pose = psi_motion::Pose::Translating { origin: &origin };
-            let want = psi_motion::tick(host, pos, &live.moving, &pose, now);
+            // The actors on the structure (drills, saws...) may stall it too (`tickActors`).
+            let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, false);
+            let want = psi_motion::tick(host, pos, &live.moving, &pose, now) | acted;
             if want != held {
                 let offset = piston_rules::offset_at(state.offset, state.time, speed, now as f64, state.range);
                 util::set_float(&mut entity.nbt, OFFSET, offset);
@@ -443,6 +450,13 @@ impl Hooks for Piston {
         let n = facing.normal();
         let anchor = parsed.moving.anchor;
         let base = [0, 1, 2].map(|i| (anchor[i] - event.pos[i]) as f32 + n[i] as f32 * offset);
+        // How it moves, for the actors' heads.
+        let speed = piston_rules::velocity(psi_motion::moving_rpm(event.entity, rpm), facing);
+        actor_draw::set_motion(if psi_motion::is_stalled(&event.entity.nbt) {
+            actor_draw::Motion::Stalled
+        } else {
+            actor_draw::Motion::Slide(speed.abs())
+        });
         engine::draw_blocks(host, draw, &parsed, base);
     }
 

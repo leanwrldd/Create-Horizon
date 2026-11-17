@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "ISI",
+    "CRC"
+  ],
+  "key": {
+    "I": "create:andesite_alloy",
+    "C": "#c:cobblestones",
+    "R": "#c:dusts/redstone",
+    "S": "#c:slimeballs"
+  },
+  "result": {
+    "id": "create:sticker",
+    "count": 1
+  }
+}

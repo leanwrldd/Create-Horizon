@@ -36,7 +36,7 @@ use crate::{kinetic, util};
 
 const ID: &str = "create:mechanical_drill";
 /// `AllPartialModels.DRILL_HEAD`.
-const HEAD: &str = "create:block/mechanical_drill/head";
+pub(super) const HEAD: &str = "create:block/mechanical_drill/head";
 const CENTRE: [f32; 3] = [0.5; 3];
 /// `CreateDamageSources.drill`.
 const DAMAGE_TYPE: &str = "create:mechanical_drill";

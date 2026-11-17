@@ -89,7 +89,7 @@ pub enum Pose<'a> {
 
 impl Pose<'_> {
     /// The world position of the centre of the structure's block at `local` (relative to the anchor).
-    fn centre(&self, t: f64, local: Pos) -> [f64; 3] {
+    pub(crate) fn centre(&self, t: f64, local: Pos) -> [f64; 3] {
         let l = local.map(f64::from);
         match self {
             Pose::Translating { origin } => {
@@ -105,10 +105,19 @@ impl Pose<'_> {
     }
 
     /// How a vector fixed in the structure is turned at `t`.
-    fn rotate(&self, t: f64, v: [f64; 3]) -> [f64; 3] {
+    pub(crate) fn rotate(&self, t: f64, v: [f64; 3]) -> [f64; 3] {
         match self {
             Pose::Translating { .. } => v,
             Pose::Turning { axis, angle, .. } => rules::rotate_vec(v, *axis, angle(t)),
+        }
+    }
+
+    /// The other way: a world vector in the structure's own frame (`reverseRotation`), for the
+    /// actors (`actor.rs`).
+    pub(crate) fn unrotate(&self, t: f64, v: [f64; 3]) -> [f64; 3] {
+        match self {
+            Pose::Translating { .. } => v,
+            Pose::Turning { axis, angle, .. } => rules::rotate_vec(v, *axis, -angle(t)),
         }
     }
 }
