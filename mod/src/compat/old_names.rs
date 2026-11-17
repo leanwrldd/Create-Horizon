@@ -2,6 +2,7 @@
 pub use self::old_api::{
     Hooks,
     Host,
+    dispatch_block_signal,
     AnalogOutputEvent,
     BlockChangedEvent,
     BlockEntityAcceptsFluidEvent,

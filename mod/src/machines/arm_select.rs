@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 use create_kinetics::rules::arm_points::{self as points, Selection};
+use crate::compat::TextExt;
 use crate::compat::{
     EquipmentSlot, Flow, Hooks, Host, LeftClickBlockEvent, ParticleOptions, PlaceBlockEvent,
     RightClickBlockEvent, ServerTickEvent, ServerTickPhase, Text,

@@ -222,7 +222,7 @@ fn inventory_tag(inventory: &Inventory<ItemStack>) -> Tag {
 
 fn game_time(host: &dyn Host) -> i64 {
     host.level(host.dimension())
-        .and_then(|level| level.game_time(host))
+        .and_then(|level| level.game_time(host.new_host()))
         .unwrap_or(0)
 }
 

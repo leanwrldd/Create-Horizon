@@ -35,6 +35,7 @@ use create_kinetics::rules::arm_points::block_title;
 use create_kinetics::rules::display_link::{Config, Source, bulb_glow, sources_for};
 use create_kinetics::rules::steam_engine::{horizontal_angle, vertical_angle};
 use create_kinetics::{Dir, Pos};
+use crate::compat::TextExt;
 use crate::compat::{
     BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockEntityUpdateTagEvent, BlockStateId, Compound, Flow, Hooks, Host, LevelHost, RightClickBlockEvent,

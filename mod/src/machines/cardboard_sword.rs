@@ -84,7 +84,7 @@ impl Hooks for Sword {
                 continue;
             }
             if let Some(entity) = host.entity(id) {
-                entity.push(host, push_for(yaw, strength));
+                entity.push(host.new_server(), push_for(yaw, strength));
                 let _ = util::game_time(&*host);
             }
         }

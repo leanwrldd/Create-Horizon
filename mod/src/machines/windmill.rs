@@ -38,7 +38,7 @@ const BLOCKS: usize = 4;
 
 fn state_at(host: &dyn Host, pos: Pos) -> Option<State> {
     let level = host.level(host.dimension())?;
-    level.block_state(host, pos).map(|text| State::parse(&text))
+    crate::compat::state_text(host, level, pos).map(|text| State::parse(&text))
 }
 
 fn is_sail_block(name: &str) -> bool {

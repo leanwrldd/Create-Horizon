@@ -196,16 +196,16 @@ impl Hooks for Cannon {
             }
             if let Some(entity) = host.entity(target) {
                 if kind.fire_ticks > 0 {
-                    entity.set_fire(host, kind.fire_ticks / 20 * 20);
+                    entity.set_remaining_fire_ticks(host.new_server(), kind.fire_ticks / 20 * 20);
                 }
-                if let Some(uuid) = entity.uuid(host) {
+                if let Some(uuid) = entity.uuid(host.new_server()) {
                     for effect in kind.effects {
                         host.run_command(&rules::effect_command(uuid, effect));
                     }
                 }
-                let flight = host.entity(event.projectile).and_then(|p| p.velocity(host)).map_or([0.0, 0.0], |v| [v[0], v[2]]);
+                let flight = host.entity(event.projectile).and_then(|p| p.velocity(host.new_host())).map_or([0.0, 0.0], |v| [v[0], v[2]]);
                 if let Some(push) = rules::extra_knockback_push(kind, flight) {
-                    entity.push(host, push);
+                    entity.push(host.new_server(), push);
                 }
             }
         }

@@ -177,7 +177,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 fn block_fill(host: &dyn Host, pos: Pos, saved: &Saved) -> Option<blocks::Fill> {
     let fluid = saved.fluid.as_deref()?;
     let target = [pos[0], pos[1] - 2, pos[2]];
-    let text = host.level(host.dimension())?.block_state(host, target)?;
+    let text = crate::compat::state_text(host, host.level(host.dimension())?, target)?;
     blocks::fill(&text, fluid, saved.amount)
 }
 

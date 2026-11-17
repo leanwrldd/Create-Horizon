@@ -18,7 +18,7 @@ mod old_api;
 include!("old_names.rs");
 
 mod types;
-pub use types::*;
+include!("types_names.rs");
 
 pub mod adapter;
 pub use adapter::Adapter;

@@ -20,6 +20,7 @@ use create_kinetics::rules::contraption_controls::{
     self as rules, Controls, FILTER_TAG, button_axis, button_at_rest, button_value, model_turn,
 };
 use create_kinetics::{Axis, Dir, Pos, looking};
+use crate::compat::TextExt;
 use crate::compat::{
     BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockEntityUpdateTagEvent, BlockStateId, Compound, Flow, Hooks, Host, ItemStack, LevelHost,

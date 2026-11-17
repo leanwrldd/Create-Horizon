@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use create_kinetics::Pos;
 use create_kinetics::rules::display_link::within_range;
+use crate::compat::TextExt;
 use crate::compat::{
     EquipmentSlot, Flow, Hooks, Host, ParticleOptions, PlaceBlockEvent, RightClickBlockEvent, ServerTickEvent,
     ServerTickPhase, Text,

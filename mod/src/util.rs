@@ -185,7 +185,7 @@ pub fn direction(dir: Dir) -> Direction {
 /// The game time of the level a hook runs in; 0 outside one.
 pub fn game_time(host: &dyn Host) -> i64 {
     host.level(host.dimension())
-        .and_then(|level| level.game_time(host))
+        .and_then(|level| level.game_time(host.new_host()))
         .unwrap_or(0)
 }
 

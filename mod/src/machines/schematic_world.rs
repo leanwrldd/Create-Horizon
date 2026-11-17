@@ -77,7 +77,7 @@ pub fn export(host: &mut dyn Host, dimension: &str, first: Pos, second: Pos) -> 
     let template = {
         let mut read = |rel: Pos| -> Option<WorldBlock> {
             let at = [low[0] + rel[0], low[1] + rel[1], low[2] + rel[2]];
-            let Some(text) = level.block_state(&*host, at) else {
+            let Some(text) = crate::compat::state_text(&*host, level, at) else {
                 missing += 1;
                 return None;
             };
@@ -103,7 +103,7 @@ pub fn export(host: &mut dyn Host, dimension: &str, first: Pos, second: Pos) -> 
 pub fn existing(host: &mut dyn Host, pos: Pos) -> Existing {
     let state = host
         .level(host.dimension())
-        .and_then(|level| level.block_state(&*host, pos))
+        .and_then(|level| crate::compat::state_text(&*host, level, pos))
         .map_or_else(|| State::new("minecraft:air"), |text| State::parse(&text));
     let own = !state.name.starts_with("minecraft:") && host.mod_block_entity(pos).is_some();
     Existing { has_block_entity: has_block_entity(&state, own), state }
@@ -138,7 +138,7 @@ pub fn place_state(host: &mut dyn Host, pos: Pos, state: &State) -> bool {
     }
     // An unchanged block makes the command fail: that is a success too.
     if let Some(level) = host.level(dimension)
-        && level.block_state(&*host, pos).is_some_and(|text| create_kinetics::rules::schematic_printer::same_state(state, &State::parse(&text)))
+        && crate::compat::state_text(&*host, level, pos).is_some_and(|text| create_kinetics::rules::schematic_printer::same_state(state, &State::parse(&text)))
     {
         return true;
     }

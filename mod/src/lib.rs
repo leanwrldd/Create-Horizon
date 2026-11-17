@@ -38,7 +38,7 @@ use crate::compat::{
     StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
-pub(crate) fn hooks() -> Box<dyn Hooks> {
+pub(crate) fn create_hooks() -> Box<dyn Hooks> {
     let mut modules: Vec<Box<dyn Hooks>> = vec![Box::new(Core)];
     modules.extend(machines::all());
     modules.push(Box::new(ponder::Ponder::default()));

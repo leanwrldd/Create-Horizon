@@ -100,7 +100,7 @@ fn state_of(host: &dyn Host, pos: Pos) -> Option<(Dir, bool)> {
 /// The state of the piston at `pos` as the rules want it.
 fn block_state(host: &dyn Host, pos: Pos) -> Option<State> {
     let level = host.level(host.dimension())?;
-    level.block_state(host, pos).map(|text| State::parse(&text))
+    crate::compat::state_text(host, level, pos).map(|text| State::parse(&text))
 }
 
 /// `LinearActuatorBlockEntity.assemble` as `MechanicalPistonBlockEntity.assemble` does it.

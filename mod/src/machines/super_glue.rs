@@ -41,6 +41,7 @@ use create_kinetics::rules::super_glue::{
     self as rules, Click, GlueBox, GlueSet, ITEM, closer_than, has_charge, search_group, use_charge,
 };
 use create_kinetics::{Dir, Pos};
+use crate::compat::TextExt;
 use crate::compat::{
     AttachmentCodec, AttachmentType, Compound, Flow, Hooks, Holder, Host, LeftClickBlockEvent,
     LevelTickPostEvent, NativeInventoryKind, ParticleOptions, PlayerTickEvent, RightClickBlockEvent,
@@ -111,14 +112,14 @@ static SNAPSHOT: LazyLock<Mutex<HashMap<String, Arc<GlueSet>>>> = LazyLock::new(
 
 /// The level's glue, read from its attachment.
 pub fn load(host: &mut dyn Host) -> GlueSet {
-    match GLUE.get_existing(host, Holder::Level) {
+    match GLUE.get_existing(host.new_server(), Holder::Level) {
         Ok(Some(nbt)) => boxes_from_nbt(&nbt),
         _ => GlueSet::default(),
     }
 }
 
 fn store(host: &mut dyn Host, set: &GlueSet) {
-    let _ = GLUE.set(host, Holder::Level, boxes_to_nbt(set));
+    let _ = GLUE.set(host.new_server(), Holder::Level, boxes_to_nbt(set));
     lock(&SNAPSHOT).insert(host.dimension().to_owned(), Arc::new(set.clone()));
 }
 
@@ -221,7 +222,7 @@ fn eye_and_look(player: &crate::compat::NativeServerPlayer) -> ([f64; 3], [f64; 
 /// .glueItemAlwaysPlacesWhenUsed`).
 fn chassis_takes_it(host: &dyn Host, pos: Pos, face: Dir) -> bool {
     let Some(level) = host.level(host.dimension()) else { return false };
-    let Some(text) = level.block_state(host, pos) else { return false };
+    let Some(text) = crate::compat::state_text(host, level, pos) else { return false };
     let state = State::parse(&text);
     chassis::is_chassis(&state.name)
         && chassis::glueable_side(state.is(chassis::RADIAL), chassis::axis_of(&state), face).is_some()

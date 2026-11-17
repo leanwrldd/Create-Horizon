@@ -71,7 +71,7 @@ pub(super) struct Hand {
 
 fn state_at(host: &dyn Host, pos: Pos) -> State {
     host.level(host.dimension())
-        .and_then(|level| level.block_state(host, pos))
+        .and_then(|level| crate::compat::state_text(host, level, pos))
         .map_or_else(|| State::new("minecraft:air"), |text| State::parse(&text))
 }
 

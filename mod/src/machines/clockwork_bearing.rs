@@ -28,6 +28,7 @@ use create_kinetics::rules::clockwork::{self as rules, Clock, Hands};
 use create_kinetics::rules::contraption::{Transform, add};
 use create_kinetics::rules::drill as drill_rules;
 use create_kinetics::{Dir, Kind, Node, Pos, looking};
+use crate::compat::TextExt;
 use crate::compat::{
     BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
     BlockEntityTicksEvent, BlockEntityUpdateTagEvent, BlockStateId, Compound, DestroyBlockEvent, Flow, Hooks,

@@ -217,7 +217,7 @@ pub fn draw_fluid(
 ) {
     // A potion fluid (`rules/potion_fluid.rs`) is water in the potion's colour, as Create's `PotionFluidType` tints it.
     let potion = create_kinetics::rules::potion_fluid::parse(fluid);
-    let colour = potion.as_ref().map(|p| horizon_client::brewing::potion_color(p.potion.as_deref()));
+    let colour = potion.as_ref().map(|p| crate::compat::brewing::potion_color(p.potion.as_deref()));
     let stack = NativeFluidStack {
         fluid: if potion.is_some() { "minecraft:water" } else { fluid }.to_owned(),
         amount,

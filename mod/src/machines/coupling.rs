@@ -110,14 +110,14 @@ fn write(saved: &[Saved]) -> Compound {
 }
 
 fn load(host: &mut dyn Host) -> Vec<Saved> {
-    match COUPLINGS.get_existing(host, Holder::Level) {
+    match COUPLINGS.get_existing(host.new_server(), Holder::Level) {
         Ok(Some(nbt)) => read(&nbt),
         _ => Vec::new(),
     }
 }
 
 fn store(host: &mut dyn Host, saved: &[Saved]) {
-    let _ = COUPLINGS.set(host, Holder::Level, write(saved));
+    let _ = COUPLINGS.set(host.new_server(), Holder::Level, write(saved));
 }
 
 fn is_minecart(kind: &str) -> bool {

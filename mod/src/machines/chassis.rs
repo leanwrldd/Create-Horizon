@@ -46,7 +46,7 @@ fn new_entity() -> Compound {
 /// The block state at `pos` as the rules read it.
 fn state_at(host: &dyn Host, pos: Pos) -> Option<State> {
     let level = host.level(host.dimension())?;
-    level.block_state(host, pos).map(|text| State::parse(&text))
+    crate::compat::state_text(host, level, pos).map(|text| State::parse(&text))
 }
 
 /// A neighbour as `glueAllowedOnSide` wants it: its name and axis if it is a chassis.

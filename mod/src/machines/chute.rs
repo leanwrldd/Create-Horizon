@@ -806,7 +806,7 @@ fn flow_limit(host: &dyn Host, pos: Pos, max: f32) -> f32 {
     let level = host.level(dimension);
     fan::flow_limit(max, Dir::Down, |i| {
         let at = [pos[0], pos[1] - (i + 1), pos[2]];
-        if !level.is_some_and(|level| level.is_loaded(host, at)) {
+        if !level.is_some_and(|level| level.is_loaded(host.new_host(), at)) {
             return Passage::Unloaded;
         }
         let name = host.block(at);

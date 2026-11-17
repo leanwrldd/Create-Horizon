@@ -327,7 +327,7 @@ fn probe(
     dimension: &str,
     at: Pos,
 ) -> Passage {
-    if !level.is_some_and(|level| level.is_loaded(host, at)) {
+    if !level.is_some_and(|level| level.is_loaded(host.new_host(), at)) {
         return Passage::Unloaded;
     }
     let name = host.block(at);
@@ -610,7 +610,7 @@ fn type_process(
 /// `FanProcessing.canProcess` and `applyProcessing` for an item entity, one tick.
 fn process_item(host: &mut dyn Host, dimension: &str, kind: Kind, body: &Body, velocity: [f64; 3]) {
     let holder = Holder::Entity(body.id);
-    let mut progress = PROCESSING.get_existing(host, holder).ok().flatten();
+    let mut progress = PROCESSING.get_existing(host.new_server(), holder).ok().flatten();
     let known = fan::can_process(progress.as_ref(), kind);
     if known == Known::No {
         return;
@@ -630,12 +630,12 @@ fn process_item(host: &mut dyn Host, dimension: &str, kind: Kind, body: &Body, v
         let mut remembered = progress.take().unwrap_or_default();
         remembered.kind = Some(kind.id().to_owned());
         remembered.time = -1;
-        let _ = PROCESSING.set(host, holder, remembered);
+        let _ = PROCESSING.set(host.new_server(), holder, remembered);
         return;
     }
     let mut state = progress.unwrap_or_default();
     let left = fan::decrement(&mut state, kind, stack.count);
-    let _ = PROCESSING.set(host, holder, state);
+    let _ = PROCESSING.set(host.new_server(), holder, state);
     if left != 0 {
         return;
     }

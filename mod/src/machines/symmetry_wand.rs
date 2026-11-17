@@ -359,7 +359,7 @@ impl Hooks for SymmetryWand {
             return;
         }
         let dimension = host.dimension();
-        let Some(text) = host.level(dimension).and_then(|level| level.block_state(&*host, event.pos)) else {
+        let Some(text) = host.level(dimension).and_then(|level| crate::compat::state_text(&*host, level, event.pos)) else {
             return;
         };
         let mut jobs = lock(&JOBS);

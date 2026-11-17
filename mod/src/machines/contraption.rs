@@ -168,10 +168,7 @@ impl World for HostWorld<'_> {
         if let Some(known) = self.cache.borrow().get(&pos) {
             return known.clone();
         }
-        let state = self
-            .level
-            .block_state(self.host, pos)
-            .map(|text| State::parse(&text));
+        let state = crate::compat::state_text(self.host, self.level, pos).map(|text| State::parse(&text));
         self.cache.borrow_mut().insert(pos, state.clone());
         state
     }
@@ -531,7 +528,7 @@ pub fn remove_from_world(
             }
             let wet = host
                 .level(dimension)
-                .and_then(|level| level.block_property(host, at, "waterlogged"))
+                .and_then(|level| level.block_property(host.new_host(), at, "waterlogged"))
                 .is_some_and(|v| v == "true");
             let target = if wet { water.unwrap_or(air_state) } else { air_state };
             host.set_block(dimension, at, target, MOVE_FLAGS);
