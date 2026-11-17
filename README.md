@@ -14,7 +14,7 @@ is not pinned to one Horizon commit.
 <!-- progress:start -->
 | Area | Done | Total | |
 |---|---:|---:|---:|
-| Kinetics | 46 | 57 | 81% |
+| Kinetics | 48 | 57 | 84% |
 | Materials | 18 | 20 | 90% |
 | Logistics | 23 | 52 | 44% |
 | Fluids | 16 | 18 | 89% |
@@ -22,7 +22,7 @@ is not pinned to one Horizon commit.
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **170** | **246** | **69.1%** |
+| **All** | **172** | **246** | **69.9%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
