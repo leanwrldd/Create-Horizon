@@ -9,6 +9,7 @@ pub mod arm_items;
 pub mod arm_points;
 pub mod basin;
 pub mod bearing;
+pub mod blueprint;
 pub mod bracket;
 pub mod burner;
 pub mod chain_drive;

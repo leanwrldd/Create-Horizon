@@ -1,0 +1,176 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 0.0,
+    "explosion_resistance": 0.0,
+    "requires_tool": false,
+    "sounds": "minecraft:oak_planks",
+    "map_color": 0,
+    "render_shape": "MODEL"
+  },
+  "state_properties": {
+    "face": {
+      "type": "enum",
+      "values": [
+        "floor",
+        "wall",
+        "ceiling"
+      ]
+    },
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    }
+  },
+  "default_state": {
+    "face": "wall",
+    "facing": "north"
+  },
+  "shapes": {
+    "properties": [
+      "face",
+      "facing"
+    ],
+    "values": {
+      "floor,north": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          0.0625,
+          0.9375
+        ]
+      ],
+      "ceiling,north": [
+        [
+          0.0625,
+          0.9375,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "wall,north": [
+        [
+          0.0625,
+          0.0625,
+          0.9375,
+          0.9375,
+          0.9375,
+          1
+        ]
+      ],
+      "floor,south": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          0.0625,
+          0.9375
+        ]
+      ],
+      "ceiling,south": [
+        [
+          0.0625,
+          0.9375,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "wall,south": [
+        [
+          0.0625,
+          0.0625,
+          0,
+          0.9375,
+          0.9375,
+          0.0625
+        ]
+      ],
+      "floor,west": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          0.0625,
+          0.9375
+        ]
+      ],
+      "ceiling,west": [
+        [
+          0.0625,
+          0.9375,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "wall,west": [
+        [
+          0.9375,
+          0.0625,
+          0.0625,
+          1,
+          0.9375,
+          0.9375
+        ]
+      ],
+      "floor,east": [
+        [
+          0.0625,
+          0,
+          0.0625,
+          0.9375,
+          0.0625,
+          0.9375
+        ]
+      ],
+      "ceiling,east": [
+        [
+          0.0625,
+          0.9375,
+          0.0625,
+          0.9375,
+          1,
+          0.9375
+        ]
+      ],
+      "wall,east": [
+        [
+          0,
+          0.0625,
+          0.0625,
+          0.0625,
+          0.9375,
+          0.9375
+        ]
+      ]
+    },
+    "default": [
+      [
+        0.0625,
+        0.0625,
+        0.9375,
+        0.9375,
+        0.9375,
+        1
+      ]
+    ]
+  },
+  "collision_shapes": {
+    "default": []
+  }
+}

@@ -127,6 +127,8 @@ def import_assets(jar: ZipFile, content: Path, c, ponder_models=()):
         if name in copied:
             continue
         copied.add(name)
+        if f"{PREFIX}models/{name}.json" in c.files:
+            continue  # A model a plugin writes itself (`FILES`): its textures are imported above.
         model = json.loads(copy(f"models/{name}.json"))
         if model.get("loader") == "neoforge:obj":
             mesh = PurePosixPath(model["model"].removeprefix("create:"))

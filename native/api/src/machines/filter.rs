@@ -580,6 +580,21 @@ impl Hooks for FilterItems {
     }
 }
 
+/// An Attribute Filter that passes the items in a tag (`BlueprintItem.convertIItemListToFilter`
+/// for a tag): any of one `in_tag` attribute.
+pub(crate) fn attribute_filter_for_tag(host: &dyn Host, tag: &str) -> ItemStack {
+    let mut stack = ItemStack { item: ATTRIBUTE.into(), count: 1, damage: 0, extra: None };
+    write_attributes(host, &mut stack, Mode::WhitelistDisj, &[(Attribute::InTag(tag.to_owned()), false)]);
+    stack
+}
+
+/// A List Filter holding `items` (`BlueprintItem.convertIngredientToFilter` for several).
+pub(crate) fn list_filter(host: &dyn Host, items: &[ItemStack]) -> ItemStack {
+    let mut stack = ItemStack { item: LIST.into(), count: 1, damage: 0, extra: None };
+    write_list(host, &mut stack, items, false, false);
+    stack
+}
+
 /// The names of a List Filter's items for its tooltip.
 fn list_items_names(stack: &ItemStack) -> Vec<String> {
     list_items(stack).iter().map(name_of).collect()

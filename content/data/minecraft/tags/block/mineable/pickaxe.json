@@ -14,6 +14,7 @@
     "create:mechanical_arm",
     "create:basin",
     "create:mechanical_bearing",
+    "create:crafting_blueprint",
     "create:wooden_bracket",
     "create:metal_bracket",
     "create:blaze_burner",
