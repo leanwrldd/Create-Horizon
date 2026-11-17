@@ -82,12 +82,12 @@ METAL, DIRT, GRAY, PURPLE, PODZOL = 6, 10, 21, 24, 34
 
 
 def block(extra_states, default, base, map_color, shapes=None, sounds=None,
-          render_shape="ENTITYBLOCK_ANIMATED"):
+          render_shape="ENTITYBLOCK_ANIMATED", template="minecraft:glass"):
     properties = dict(base, map_color=map_color, render_shape=render_shape)
     if sounds:
         properties["sounds"] = sounds
     value = {
-        "template": "minecraft:glass",
+        "template": template,
         "item": True,
         "properties": properties,
     }
