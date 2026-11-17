@@ -11,6 +11,7 @@ pub mod basin;
 pub mod bearing;
 pub mod belt_carry;
 pub mod belt_look;
+pub mod belt_shapes;
 pub mod belt_slope;
 pub mod bracket;
 pub mod burner;

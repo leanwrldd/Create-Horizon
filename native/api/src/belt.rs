@@ -1,5 +1,6 @@
 //! The Mechanical Belt in the game: placing it with the Belt Connector, turning it with its
-//! network, carrying dropped stacks, and drawing it. The rules are `create_kinetics::belt`.
+//! network, carrying dropped stacks, and drawing it. The rules are `create_kinetics::belt`, and
+//! for a slope `rules::belt_slope`, `belt_look` and `belt_shapes` (Belts III).
 //!
 //! Ported from Create 6.0.10 (MIT): `BeltConnectorItem`, `BeltBlock`, `BeltBlockEntity`,
 //! `BeltInventory` and `BeltRenderer`. Every block of a belt has a block entity; the first
@@ -12,10 +13,11 @@ use std::hash::{BuildHasher, Hasher};
 use std::sync::Mutex;
 
 use create_kinetics::belt::{
-    self, Crossing, Ending, Insertion, Inventory, Item, Part, Processing, Surroundings, chain_speed,
-    clockwise, connect, entry, foresee, movement_facing, movement_speed, part_at, rotation_axis,
-    segment_position,
+    self, Chain, Connection, Crossing, Ending, Insertion, Inventory, Item, Part, Processing, Slope,
+    Surroundings, chain_speed, clockwise, connect, entry, foresee, movement_facing, movement_speed,
+    part_at, rotation_axis_of, segment_position,
 };
+use create_kinetics::rules::{belt_carry, belt_look, belt_slope};
 use create_kinetics::{Axis, Dir, Kind, Networks, Node, Pos};
 use horizon_client::item_data::{decode_components, encode_components};
 use horizon_client::mod_api::{
@@ -40,14 +42,6 @@ const INCOMING: &str = "Incoming";
 pub(crate) const CASING: &str = "Casing";
 /// `BeltBlockEntity.color`, the `DyeColor`'s name (`NBTHelper.writeEnum`); absent when undyed.
 pub(crate) const DYE: &str = "Dye";
-/// The casing's models (`belt_casing/horizontal_*`), drawn over a cased belt block; the module
-/// `belts_ii` names them to the game and its content declaration imports them.
-pub(crate) const CASING_MODELS: [&str; 4] = [
-    "create:block/belt_casing/horizontal_start",
-    "create:block/belt_casing/horizontal_middle",
-    "create:block/belt_casing/horizontal_pulley",
-    "create:block/belt_casing/horizontal_end",
-];
 const POSITIVE: &str = "PositiveOrder";
 /// The end the items last met (`Ending` as a byte), so clients stop them where the server does.
 const ENDING: &str = "Ending";
@@ -69,16 +63,13 @@ const PULLEY: &str = "create:block/belt_pulley";
 /// andesite casing's), which no model of Create's draws, so the game loads them: it is never
 /// drawn itself. `tools/content/belts_ii.py` writes it.
 pub(crate) const SPRITES: &str = "create:block/belt_scroll_sprites";
-pub const MODELS: [&str; 8] = [
-    SPRITES,
-    "create:block/belt/start",
-    "create:block/belt/middle",
-    "create:block/belt/end",
-    "create:block/belt/start_bottom",
-    "create:block/belt/middle_bottom",
-    "create:block/belt/end_bottom",
-    PULLEY,
-];
+/// The models the belt's own block entity draws: every part of its body on every slope
+/// (`belt_look::body_models`) and the pulley. The casing's are `belt_look::casing_models`.
+pub fn models() -> Vec<String> {
+    let mut models = vec![SPRITES.to_owned(), PULLEY.to_owned()];
+    models.extend(belt_look::body_models());
+    models
+}
 
 /// The first shaft each player clicked with a Belt Connector, standing in for Create's
 /// `BELT_FIRST_SHAFT` item component.
@@ -235,34 +226,50 @@ fn game_time(host: &dyn Host) -> i64 {
         .unwrap_or(0)
 }
 
-/// The belt block at `pos`: its facing and part, or none for another block or another slope.
-fn segment(host: &dyn Host, pos: Pos) -> Option<(Dir, Part)> {
-    if host.block(pos) != ID || host.block_property(pos, "slope").as_deref() != Some("horizontal")
-    {
+/// One block of a belt as its state says (`BeltBlock`): which way it faces, on what slope, and
+/// which part of the chain it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Seg {
+    pub facing: Dir,
+    pub slope: Slope,
+    pub part: Part,
+}
+
+/// The belt block at `pos` on any slope, or none for another block.
+pub(crate) fn seg(host: &dyn Host, pos: Pos) -> Option<Seg> {
+    if host.block(pos) != ID {
         return None;
     }
-    Some((
-        host.block_property(pos, "facing").as_deref().and_then(Dir::from_name)?,
-        host.block_property(pos, "part").as_deref().and_then(Part::from_name)?,
-    ))
+    Some(Seg {
+        facing: host.block_property(pos, "facing").as_deref().and_then(Dir::from_name)?,
+        slope: host.block_property(pos, "slope").as_deref().and_then(Slope::from_name)?,
+        part: host.block_property(pos, "part").as_deref().and_then(Part::from_name)?,
+    })
+}
+
+/// The horizontal belt block at `pos`: its facing and part, or none for another block or another
+/// slope. What only a flat belt has (a tunnel, a funnel, a processor above) asks this.
+fn segment(host: &dyn Host, pos: Pos) -> Option<(Dir, Part)> {
+    let s = seg(host, pos)?;
+    (s.slope == Slope::Horizontal).then_some((s.facing, s.part))
 }
 
 /// The neighbour `forward` (or back) of a block is the next block of the same belt.
-fn linked(host: &dyn Host, pos: Pos, facing: Dir, part: Part, forward: bool) -> bool {
-    let Some(next) = belt::next_segment(pos, facing, part, forward) else {
+fn linked(host: &dyn Host, pos: Pos, s: Seg, forward: bool) -> bool {
+    let Some(next) = belt_slope::next_segment(pos, s.facing, s.slope, s.part, forward) else {
         return true;
     };
-    matches!(segment(host, next), Some((f, p)) if f == facing
-        && if forward { p != Part::Start } else { p != Part::End })
+    matches!(seg(host, next), Some(n) if n.facing == s.facing && n.slope == s.slope
+        && if forward { n.part != Part::Start } else { n.part != Part::End })
 }
 
 /// `BeltBlock.initBelt`: the block's index from the start and the belt's length.
-fn locate(host: &dyn Host, pos: Pos, facing: Dir, part: Part) -> Option<(i32, i32)> {
+fn locate(host: &dyn Host, pos: Pos, s: Seg) -> Option<(i32, i32)> {
     let walk = |forward: bool| {
-        let (mut at, mut part, mut steps) = (pos, part, 0);
-        while let Some(next) = belt::next_segment(at, facing, part, forward) {
-            let (_, next_part) = segment(host, next)?;
-            (at, part, steps) = (next, next_part, steps + 1);
+        let (mut at, mut part, mut steps) = (pos, s.part, 0);
+        while let Some(next) = belt_slope::next_segment(at, s.facing, s.slope, part, forward) {
+            let n = seg(host, next).filter(|n| n.facing == s.facing && n.slope == s.slope)?;
+            (at, part, steps) = (next, n.part, steps + 1);
             if steps > 1000 {
                 return None;
             }
@@ -272,6 +279,16 @@ fn locate(host: &dyn Host, pos: Pos, facing: Dir, part: Part) -> Option<(i32, i3
     let index = walk(false)?;
     let after = walk(true)?;
     Some((index, index + after + 1))
+}
+
+/// The belt the block at `pos` is part of, as its block entity and its controller's say (length
+/// 0 where the belt isn't set up yet).
+pub(crate) fn chain_of(host: &dyn Host, pos: Pos) -> Option<Chain> {
+    let s = seg(host, pos)?;
+    let index = int(&host.mod_block_entity(pos)?.nbt, INDEX);
+    let controller = Chain::controller_of(pos, s.facing, s.slope, index);
+    let length = int(&host.mod_block_entity(controller)?.nbt, LENGTH);
+    Some(Chain { controller, facing: s.facing, slope: s.slope, length })
 }
 
 /// Whether a block can be built over (`BlockState.canBeReplaced`), for the ones a belt meets.
@@ -456,7 +473,7 @@ pub(crate) fn extra_processor(block: &str) -> Option<BeltProcessor> {
 /// a basin, an upright saw, and what other modules register (chutes, funnels).
 fn takes_belt_input(host: &dyn Host, pos: Pos) -> bool {
     match host.block(pos).as_str() {
-        ID => segment(host, pos).is_some(),
+        ID => seg(host, pos).is_some(),
         depot::ID | "create:basin" => true,
         // An upright saw takes items onto its blade (`SawBlockEntity`'s `DirectBeltInputBehaviour`).
         SAW => crate::util::facing(host, pos, "facing") == Some(Dir::Up),
@@ -467,12 +484,12 @@ fn takes_belt_input(host: &dyn Host, pos: Pos) -> bool {
 const SAW: &str = "create:mechanical_saw";
 
 /// `BeltInventory.resolveEnding`, without the funnels.
-fn resolve_ending(host: &dyn Host, controller: Pos, facing: Dir, length: i32, positive: bool) -> Ending {
-    let next = segment_position(controller, facing, if positive { length } else { -1 });
+fn resolve_ending(host: &dyn Host, chain: Chain, positive: bool) -> Ending {
+    let next = chain.at(if positive { chain.length } else { -1 });
     if takes_belt_input(host, next) {
         return Ending::Insert;
     }
-    let moving = if positive { facing } else { facing.opposite() };
+    let moving = if positive { chain.facing } else { chain.facing.opposite() };
     if face_full(host, next, moving.opposite()) {
         Ending::Blocked
     } else {
@@ -480,15 +497,14 @@ fn resolve_ending(host: &dyn Host, controller: Pos, facing: Dir, length: i32, po
     }
 }
 
-/// `BeltInventory.eject`: the stack flies off the belt's end as an item entity.
-fn eject(host: &mut dyn Host, controller: Pos, facing: Dir, rpm: f32, item: &Item<ItemStack>) {
-    let n = facing.normal().map(f64::from);
-    let along = f64::from(item.pos) - 0.5;
-    let c = centre(controller);
-    let mut out = [c[0] + n[0] * along, c[1], c[2] + n[2] * along];
+/// `BeltInventory.eject`: the stack flies off the belt where it lies, along the belt: up a slope
+/// going up it, down going down (`getBeltChainDirection`).
+fn eject(host: &mut dyn Host, chain: Chain, rpm: f32, item: &Item<ItemStack>) {
+    let mut out = belt_slope::vector_for_offset(chain, item.pos);
     let speed = f64::from(movement_speed(rpm).abs().max(1.0 / 8.0));
-    let moving = movement_facing(rpm, facing).normal().map(f64::from);
-    let motion = [moving[0] * speed, 1.0 / 8.0, moving[2] * speed];
+    let along = belt_slope::movement_direction(rpm, chain.facing, chain.slope, Part::Start, true, true)
+        .map(f64::from);
+    let motion = [along[0] * speed, along[1] * speed + 1.0 / 8.0, along[2] * speed];
     let norm = motion.iter().map(|m| m * m).sum::<f64>().sqrt();
     for i in 0..3 {
         out[i] += motion[i] / norm * 0.001;
@@ -513,9 +529,9 @@ fn spawn_item(host: &mut dyn Host, at: [f64; 3], stack: &ItemStack, motion: [f64
 }
 
 /// Every item the belt carries goes off where it lies (`BeltInventory.ejectAll`).
-fn eject_all(host: &mut dyn Host, controller: Pos, facing: Dir, rpm: f32, inventory: &Inventory<ItemStack>) {
+fn eject_all(host: &mut dyn Host, chain: Chain, rpm: f32, inventory: &Inventory<ItemStack>) {
     for item in &inventory.items {
-        eject(host, controller, facing, rpm, item);
+        eject(host, chain, rpm, item);
     }
 }
 
@@ -527,23 +543,45 @@ pub fn new_entity() -> (String, Compound) {
     (ID.to_owned(), nbt)
 }
 
+/// The game tick a moving belt that carries things last ran, for what only matters while one does
+/// (the mobs' carry listens to every mob only then).
+static LAST_MOVING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static NOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// The server's tick counter, advanced once a tick (`machines/belt_carry.rs`).
+pub(crate) fn next_tick() {
+    NOW.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether a belt that carries things has turned in the last few seconds.
+pub(crate) fn recently_moving() -> bool {
+    let now = NOW.load(std::sync::atomic::Ordering::Relaxed);
+    now.saturating_sub(LAST_MOVING.load(std::sync::atomic::Ordering::Relaxed)) < 100
+}
+
 /// A belt block's server tick (`BeltBlockEntity.tick`).
 pub fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, networks: &Mutex<Networks>) {
-    let Some((facing, part)) = segment(host, pos) else {
+    let Some(s) = seg(host, pos) else {
         return;
     };
     // `BeltBlock.onRemove` takes the whole belt down with one block; here each block goes
     // once its neighbour has, a block a tick. A pulley leaves its shaft behind.
-    if !linked(host, pos, facing, part, true) || !linked(host, pos, facing, part, false) {
+    if !linked(host, pos, s, true) || !linked(host, pos, s, false) {
         if int(&entity.nbt, INDEX) == 0 && int(&entity.nbt, LENGTH) > 0 {
             let rpm = float(&entity.nbt, SPEED).unwrap_or(0.0);
-            eject_all(host, pos, facing, rpm, &read_all(&entity.nbt));
+            let chain = Chain {
+                controller: pos,
+                facing: s.facing,
+                slope: s.slope,
+                length: int(&entity.nbt, LENGTH),
+            };
+            eject_all(host, chain, rpm, &read_all(&entity.nbt));
         }
         let dimension = host.dimension();
-        if part.has_pulley() {
+        if s.part.has_pulley() {
             if let Some(shaft) = host.default_state(SHAFT) {
                 host.set_block(dimension, pos, shaft, UPDATE_ALL);
-                host.set_block_property(pos, "axis", rotation_axis(facing).name());
+                host.set_block_property(pos, "axis", rotation_axis_of(s.facing, s.slope).name());
             }
         } else if let Some(air) = host.default_state("minecraft:air") {
             host.set_block(dimension, pos, air, UPDATE_ALL);
@@ -552,7 +590,7 @@ pub fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, networks
     }
     let mut sync = false;
     if int(&entity.nbt, LENGTH) == 0 {
-        let Some((index, length)) = locate(host, pos, facing, part) else {
+        let Some((index, length)) = locate(host, pos, s) else {
             return;
         };
         entity.nbt.insert(INDEX.into(), Tag::Int(index));
@@ -561,7 +599,7 @@ pub fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, networks
     }
     let (index, length) = (int(&entity.nbt, INDEX), int(&entity.nbt, LENGTH));
 
-    let node = Node::passive(Kind::Belt(facing, part));
+    let node = Node::passive(Kind::Belt(s.facing, s.part, s.slope));
     let report = networks
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -570,7 +608,8 @@ pub fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, networks
     if breaks {
         if index == 0 {
             let old = float(&entity.nbt, SPEED).unwrap_or(0.0);
-            eject_all(host, pos, facing, old, &read_all(&entity.nbt));
+            let chain = Chain { controller: pos, facing: s.facing, slope: s.slope, length };
+            eject_all(host, chain, old, &read_all(&entity.nbt));
         }
         host.destroy_block(pos, None, false);
         return;
@@ -579,8 +618,11 @@ pub fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, networks
         set_float(&mut entity.nbt, SPEED, rpm);
         sync = true;
     }
+    if rpm != 0.0 && s.slope.transports() {
+        LAST_MOVING.store(NOW.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+    }
     if index == 0 {
-        sync |= carry(host, pos, entity, facing, length, rpm);
+        sync |= carry(host, pos, entity, s, length, rpm);
     }
     if sync {
         entity.nbt.insert(TICK.into(), Tag::Long(game_time(host)));
@@ -592,9 +634,7 @@ pub fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, networks
 /// above (the press) and the block at the end.
 struct Around<'a> {
     host: &'a mut dyn Host,
-    controller: Pos,
-    facing: Dir,
-    length: i32,
+    chain: Chain,
     rpm: f32,
     positive: bool,
     ending: Ending,
@@ -603,14 +643,18 @@ struct Around<'a> {
 impl Around<'_> {
     /// The block of the belt at `segment` (`BeltHelper.getPositionForOffset`).
     fn at(&self, segment: i32) -> Pos {
-        segment_position(self.controller, self.facing, segment)
+        self.chain.at(segment)
     }
 
     /// `flapTunnel(this, lastOffset, movementFacing, false)`: an item left the belt's last block.
     fn flap_last_block(&mut self) {
+        // Tunnels sit on flat belts only.
+        if self.chain.slope != Slope::Horizontal {
+            return;
+        }
         if let Some(tunnels) = tunnels() {
-            let last = self.at(if self.positive { self.length - 1 } else { 0 });
-            (tunnels.left)(self.host, last, movement_facing(self.rpm, self.facing));
+            let last = self.at(if self.positive { self.chain.length - 1 } else { 0 });
+            (tunnels.left)(self.host, last, movement_facing(self.rpm, self.chain.facing));
         }
     }
 }
@@ -618,6 +662,11 @@ impl Around<'_> {
 impl Surroundings<ItemStack> for Around<'_> {
     fn ending(&mut self) -> Ending {
         self.ending
+    }
+
+    /// Processors, funnels and tunnels work on flat belts only (`BeltInventory.tick`'s `horizontal`).
+    fn horizontal(&self) -> bool {
+        self.chain.slope == Slope::Horizontal
     }
 
     /// `getBeltProcessingAtSegment(segment)`: the block two above.
@@ -651,22 +700,21 @@ impl Surroundings<ItemStack> for Around<'_> {
 
     /// `BeltTunnelInteractionHandler.flapTunnelsAndCheckIfStuck`.
     fn crossing(&mut self, from: i32, to: i32, item: &mut Item<ItemStack>) -> Crossing {
+        if self.chain.slope != Slope::Horizontal {
+            return Crossing::Pass;
+        }
         let Some(tunnels) = tunnels() else {
             return Crossing::Pass;
         };
-        let movement = movement_facing(self.rpm, self.facing);
+        let movement = movement_facing(self.rpm, self.chain.facing);
         let (from, to) = (self.at(from), self.at(to));
         (tunnels.cross)(self.host, item, from, to, movement)
     }
 
     /// `Ending.INSERT`: the item is at the end; the block past it may take it.
     fn insert(&mut self, item: &mut Item<ItemStack>) -> Insertion {
-        let next = segment_position(
-            self.controller,
-            self.facing,
-            if self.positive { self.length } else { -1 },
-        );
-        let side = movement_facing(self.rpm, self.facing);
+        let next = self.at(if self.positive { self.chain.length } else { -1 });
+        let side = movement_facing(self.rpm, self.chain.facing);
         if can_insert_from_side(self.host, next, side) != Some(true) {
             return Insertion::Nothing;
         }
@@ -697,13 +745,13 @@ pub(crate) fn blocked(host: &dyn Host, space: Pos) -> bool {
 pub(crate) fn can_insert_from_side(host: &dyn Host, pos: Pos, side: Dir) -> Option<bool> {
     match host.block(pos).as_str() {
         ID => {
-            let (facing, _) = segment(host, pos)?;
-            // `BeltBlockEntity.canInsertFrom`.
+            let s = seg(host, pos)?;
+            // `BeltBlockEntity.canInsertFrom`: a sideways or a vertical belt takes nothing.
             let rpm = host
                 .mod_block_entity(pos)
                 .and_then(|e| float(&e.nbt, SPEED))
                 .unwrap_or(0.0);
-            Some(rpm != 0.0 && movement_facing(rpm, facing) != side.opposite())
+            Some(s.slope.transports() && rpm != 0.0 && movement_facing(rpm, s.facing) != side.opposite())
         }
         depot::ID | "create:basin" => Some(true),
         SAW => Some(crate::util::facing(host, pos, "facing") == Some(Dir::Up)),
@@ -755,10 +803,14 @@ pub(crate) fn handler_insert(
 ) -> Option<ItemStack> {
     match host.block(pos).as_str() {
         ID => {
-            let (facing, _) = segment(host, pos)?;
+            let s = seg(host, pos)?;
+            // No item handler on a belt that only turns (`BeltBlockEntity.registerCapabilities`).
+            if !s.slope.transports() {
+                return None;
+            }
             let whole = stack.clone();
             let index = host.mod_block_entity(pos).map(|e| int(&e.nbt, INDEX))?;
-            let controller = segment_position(pos, facing, -index);
+            let controller = Chain::controller_of(pos, s.facing, s.slope, index);
             let ctl = host.mod_block_entity(controller)?;
             if int(&ctl.nbt, LENGTH) == 0 {
                 return Some(whole);
@@ -804,8 +856,13 @@ fn belt_insert(
     from_belt: bool,
     simulate: bool,
 ) -> Option<ItemStack> {
-    let (facing, _) = segment(host, pos)?;
+    let s = seg(host, pos)?;
+    let facing = s.facing;
     let whole = item.stack.clone();
+    // `tryInsertingFromSide`: `canTransportObjects`.
+    if !s.slope.transports() {
+        return Some(whole);
+    }
     let Some(entity) = host.mod_block_entity(pos) else {
         return Some(whole);
     };
@@ -820,7 +877,7 @@ fn belt_insert(
     if movement == side.opposite() {
         return Some(whole);
     }
-    let controller = segment_position(pos, facing, -index);
+    let controller = Chain::controller_of(pos, s.facing, s.slope, index);
     let Some(ctl) = host.mod_block_entity(controller) else {
         return Some(whole);
     };
@@ -866,9 +923,9 @@ pub(crate) fn take_centered(
     pos: Pos,
     accept: &mut dyn FnMut(&ItemStack) -> bool,
 ) -> Option<ItemStack> {
-    let (facing, _) = segment(host, pos)?;
+    let s = seg(host, pos)?;
     let index = host.mod_block_entity(pos).map(|e| int(&e.nbt, INDEX))?;
-    let controller = segment_position(pos, facing, -index);
+    let controller = Chain::controller_of(pos, s.facing, s.slope, index);
     let ctl = host.mod_block_entity(controller)?;
     let mut inventory = read_inventory(&ctl.nbt);
     let middle = index as f32 + 0.5;
@@ -910,14 +967,15 @@ pub(crate) fn edit_items(
     pos: Pos,
     edit: &mut dyn FnMut(&mut dyn Host, &Lane, &mut Vec<Item<ItemStack>>) -> bool,
 ) -> bool {
-    let Some((facing, _)) = segment(host, pos) else {
+    let Some(s) = seg(host, pos) else {
         return false;
     };
+    let facing = s.facing;
     let Some(entity) = host.mod_block_entity(pos) else {
         return false;
     };
     let index = int(&entity.nbt, INDEX);
-    let controller = segment_position(pos, facing, -index);
+    let controller = Chain::controller_of(pos, s.facing, s.slope, index);
     let Some(ctl) = host.mod_block_entity(controller) else {
         return false;
     };
@@ -1109,7 +1167,22 @@ pub(crate) fn apply_held(
 /// the belt get on, then everything moves (`BeltBlock.entityInside`,
 /// `ItemHandlerBeltSegment.insertItem`, `BeltInventory.tick`). True when clients need the items
 /// again.
-fn carry(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, facing: Dir, length: i32, rpm: f32) -> bool {
+fn carry(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, s: Seg, length: i32, rpm: f32) -> bool {
+    let facing = s.facing;
+    let chain = Chain { controller: pos, facing, slope: s.slope, length };
+    // `BeltBlock.initBelt`: a belt that only turns lets go of anything it holds.
+    if !chain.transports() {
+        let held = read_all(&entity.nbt);
+        let had = get(&entity.nbt, INVENTORY).is_some() && !held.items.is_empty();
+        if !held.items.is_empty() {
+            eject_all(host, chain, rpm, &held);
+        }
+        if had {
+            entity.nbt.insert(INVENTORY.into(), inventory_tag(&Inventory::default()));
+            crate::util::remove(&mut entity.nbt, INCOMING);
+        }
+        return had;
+    }
     let had = get(&entity.nbt, INVENTORY).is_some();
     let mut inventory = read_inventory(&entity.nbt);
     let mut changed = false;
@@ -1128,7 +1201,7 @@ fn carry(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, facing: Dir
 
     // Item entities in any block of the belt, not rising.
     let dimension = host.dimension();
-    let last = segment_position(pos, facing, length - 1);
+    let last = chain.at(length - 1);
     let min = [0, 1, 2].map(|i| f64::from(pos[i].min(last[i])));
     let max = [0, 1, 2].map(|i| f64::from(pos[i].max(last[i]) + 1));
     for found in host.item_entities(dimension, min, max) {
@@ -1140,11 +1213,9 @@ fn carry(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, facing: Dir
             continue;
         }
         let block = found.position.map(|v| v.floor() as i32);
-        let n = facing.normal();
-        let offset = (0..3).map(|i| (block[i] - pos[i]) * n[i]).sum::<i32>();
-        if !(0..length).contains(&offset) || segment_position(pos, facing, offset) != block {
+        let Some(offset) = (0..length).find(|&offset| chain.at(offset) == block) else {
             continue;
-        }
+        };
         if !inventory.can_insert_at(offset) {
             continue;
         }
@@ -1172,25 +1243,25 @@ fn carry(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, facing: Dir
         } else {
             inventory.positive
         };
-        let ending = resolve_ending(host, pos, facing, length, positive);
+        let ending = resolve_ending(host, chain, positive);
         if get(&entity.nbt, ENDING).is_none() || int(&entity.nbt, ENDING) != i32::from(ending.id()) {
             entity.nbt.insert(ENDING.into(), Tag::Byte(ending.id()));
             sync = true;
         }
         let mut around = Around {
             host: &mut *host,
-            controller: pos,
-            facing,
-            length,
+            chain,
             rpm,
             positive,
             ending,
         };
         let moved = inventory.tick_with(speed, length, &mut around);
         for item in &moved.ejected {
-            eject(host, pos, facing, rpm, item);
-            if let Some(tunnels) = tunnels() {
-                let last = segment_position(pos, facing, if positive { length - 1 } else { 0 });
+            eject(host, chain, rpm, item);
+            if s.slope == Slope::Horizontal
+                && let Some(tunnels) = tunnels()
+            {
+                let last = chain.at(if positive { length - 1 } else { 0 });
                 (tunnels.left)(host, last, movement_facing(rpm, facing));
             }
         }
@@ -1250,13 +1321,10 @@ pub(crate) fn set_casing(host: &mut dyn Host, pos: Pos, kind: i32) {
 /// `BeltBlockEntity.applyColor`: dyes the whole belt `color` (a `DyeColor` name), or washes it
 /// with `None`. False, changing nothing, when it already is that colour.
 pub(crate) fn apply_color(host: &mut dyn Host, pos: Pos, color: Option<&str>) -> bool {
-    let Some((facing, _)) = segment(host, pos) else {
+    let Some(chain) = chain_of(host, pos) else {
         return false;
     };
-    let Some(entity) = host.mod_block_entity(pos) else {
-        return false;
-    };
-    let controller = segment_position(pos, facing, -int(&entity.nbt, INDEX));
+    let controller = chain.controller;
     let current = match host.mod_block_entity(controller).and_then(|e| get(&e.nbt, DYE).cloned()) {
         Some(Tag::String(name)) => Some(name.to_string_lossy()),
         _ => None,
@@ -1264,11 +1332,8 @@ pub(crate) fn apply_color(host: &mut dyn Host, pos: Pos, color: Option<&str>) ->
     if current.as_deref() == color {
         return false;
     }
-    let length = host
-        .mod_block_entity(controller)
-        .map_or(0, |e| int(&e.nbt, LENGTH));
-    for offset in 0..length {
-        let at = segment_position(controller, facing, offset);
+    for offset in 0..chain.length {
+        let at = chain.at(offset);
         host.change_mod_block_entity(at, &mut |entity| match color {
             Some(name) => {
                 entity.nbt.insert(DYE.into(), Tag::String(name.into()));
@@ -1284,25 +1349,16 @@ pub(crate) fn apply_color(host: &mut dyn Host, pos: Pos, color: Option<&str>) ->
 
 /// The controller draws past its own block: its items ride the whole belt
 /// (`BeltBlockEntity.createRenderBoundingBox` inflates by the length).
-pub fn bounds(facing: Dir, entity: &ModBlockEntity, bounds: &mut [f32; 6]) {
+pub fn bounds(facing: Dir, slope: Slope, entity: &ModBlockEntity, bounds: &mut [f32; 6]) {
     if int(&entity.nbt, INDEX) != 0 {
         return;
     }
     let length = int(&entity.nbt, LENGTH).max(1);
-    let far = facing.normal().map(|v| (v * (length - 1)) as f32);
+    let each = belt_slope::step(facing, slope);
+    let far = each.map(|v| (v * (length - 1)) as f32);
     for i in 0..3 {
         bounds[i] = bounds[i].min(far[i] - 1.0);
         bounds[i + 3] = bounds[i + 3].max(far[i] + 2.0);
-    }
-}
-
-/// `AngleHelper.horizontalAngle`: south 0, east 90, north 180, west 270.
-fn horizontal_angle(facing: Dir) -> f32 {
-    match facing {
-        Dir::East => 90.0,
-        Dir::North => 180.0,
-        Dir::West => 270.0,
-        _ => 0.0,
     }
 }
 
@@ -1315,54 +1371,68 @@ fn dye_of(entity: &ModBlockEntity) -> Option<String> {
     }
 }
 
-/// `BeltRenderer.renderSafe` for a horizontal belt, then its items. Which sprite a half scrolls
-/// over and how far (`AllSpriteShifts`), and the casing's sprite, are `belt::belt_shift` and
-/// `belt::casing_shift`.
-pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, part: Part, entity: &ModBlockEntity) {
+/// `BeltRenderer.renderSafe`, then its items. Which sprite a half scrolls over and how far
+/// (`AllSpriteShifts`), and the casing's sprite, are `belt::belt_shift` and `belt::casing_shift`;
+/// which models and turns a slope takes are `belt_look`.
+pub fn draw(
+    host: &dyn Host,
+    draw: &mut BlockEntityDraw,
+    facing: Dir,
+    slope: Slope,
+    part: Part,
+    entity: &ModBlockEntity,
+) {
     let rpm = float(&entity.nbt, SPEED).unwrap_or(0.0);
-    let name = match part {
-        Part::Start => "start",
-        Part::End => "end",
-        Part::Middle | Part::Pulley => "middle",
-    };
     // `AnimationTickHolder.getRenderTime`.
     let time = draw.game_time as f64 + f64::from(draw.partial);
     let dye = dye_of(entity);
-    for (bottom, suffix) in [(true, "_bottom"), (false, "")] {
-        let shift = belt::belt_shift(rpm, facing, belt::Slope::Horizontal, bottom, dye.as_deref(), time);
+    let body = belt_look::body(facing, slope, part);
+    // `center().rotateY().rotateZ().rotateX().uncenter()` for the belt's own models.
+    for bottom in [true, false] {
+        let shift = belt::belt_shift(rpm, facing, slope, bottom, dye.as_deref(), time);
         draw.push();
-        draw.rotate_about(UP, horizontal_angle(facing), CENTRE);
-        crate::draw::draw_shifted(host, draw, &format!("create:block/belt/{name}{suffix}"), shift.as_ref());
+        draw.rotate_about(UP, body.y, CENTRE);
+        if body.z != 0.0 {
+            draw.rotate_about([0.0, 0.0, 1.0], body.z, CENTRE);
+        }
+        if body.x != 0.0 {
+            draw.rotate_about([1.0, 0.0, 0.0], body.x, CENTRE);
+        }
+        let model = belt_look::partial(body.diagonal, body.start, body.end, bottom);
+        crate::draw::draw_shifted(host, draw, &model, shift.as_ref());
         draw.pop();
+        // Diagonal belts do not have a separate bottom model.
+        if body.diagonal {
+            break;
+        }
     }
-    // A cased belt block has its casing round it (`belt_casing/horizontal_*`, the block's own
-    // model in Create), in the brass sprite or, shifted, the andesite one.
+    // A cased belt block has its casing round it (`belt_casing/*`, the block's own model in
+    // Create), in the brass sprite or, shifted, the andesite one.
     let casing = belt::Casing::from_ordinal(int(&entity.nbt, CASING));
     if casing != belt::Casing::None {
-        let model = match part {
-            Part::Start => CASING_MODELS[0],
-            Part::Middle => CASING_MODELS[1],
-            Part::Pulley => CASING_MODELS[2],
-            Part::End => CASING_MODELS[3],
-        };
+        // The blockstate turns x then y, clockwise.
+        let pose = belt_look::casing(facing, slope, part);
         draw.push();
-        draw.rotate_about(UP, horizontal_angle(facing), CENTRE);
-        crate::draw::draw_shifted(host, draw, model, belt::casing_shift(casing).as_ref());
+        draw.rotate_about(UP, -(pose.y as f32), CENTRE);
+        if pose.x != 0 {
+            draw.rotate_about([1.0, 0.0, 0.0], -(pose.x as f32), CENTRE);
+        }
+        crate::draw::draw_shifted(host, draw, &pose.model, belt::casing_shift(casing).as_ref());
         draw.pop();
     }
     if part.has_pulley() {
-        let axis = rotation_axis(facing);
-        crate::draw::spin(draw, axis.unit(), rpm * 0.3, 0.0, float(&entity.nbt, crate::ponder::ANGLE));
+        let pulley = belt_look::pulley(facing, slope);
+        crate::draw::spin(draw, pulley.axis.unit(), rpm * 0.3, 0.0, float(&entity.nbt, crate::ponder::ANGLE));
         draw.push();
-        if axis == Axis::X {
-            draw.rotate_about(UP, 90.0, CENTRE);
+        if pulley.y != 0.0 {
+            draw.rotate_about(UP, pulley.y, CENTRE);
         }
-        draw.rotate_about([1.0, 0.0, 0.0], 90.0, CENTRE);
+        draw.rotate_about([1.0, 0.0, 0.0], pulley.x, CENTRE);
         host.draw_model(draw, PULLEY, 0xFF_FFFF);
         draw.pop();
         draw.still();
     }
-    let drew_items = int(&entity.nbt, INDEX) == 0 && draw_items(host, draw, facing, rpm, entity);
+    let drew_items = int(&entity.nbt, INDEX) == 0 && draw_items(host, draw, facing, slope, rpm, entity);
     // Moving items and a scrolling texture read the time; a still belt without items is drawn
     // once (a new speed arrives as an update tag, which drops what was kept).
     if !drew_items && !belt::scrolls(rpm) {
@@ -1371,8 +1441,15 @@ pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, part: Part
 }
 
 /// `BeltRenderer.renderItems`: the controller draws every item where the server will have
-/// moved it by now.
-fn draw_items(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, rpm: f32, entity: &ModBlockEntity) -> bool {
+/// moved it by now, up the slope and tilted on it.
+fn draw_items(
+    host: &dyn Host,
+    draw: &mut BlockEntityDraw,
+    facing: Dir,
+    slope: Slope,
+    rpm: f32,
+    entity: &ModBlockEntity,
+) -> bool {
     let inventory = read_inventory(&entity.nbt);
     if inventory.items.is_empty() {
         return false;
@@ -1387,12 +1464,17 @@ fn draw_items(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, rpm: f32
     let n = facing.normal().map(|v| v as f32);
     let along_x = clockwise(facing).axis() == Axis::X;
     for (item, pos) in inventory.items.iter().zip(drawn) {
+        let pose = belt_slope::item_pose(facing, slope, length, pos);
         draw.push();
         draw.translate([0.5 - n[0] * 0.5, 15.0 / 16.0, 0.5 - n[2] * 0.5]);
         draw.translate(nudge(item.angle));
-        draw.translate([n[0] * pos, 0.0, n[2] * pos]);
+        draw.translate([n[0] * pos, pose.vertical, n[2] * pos]);
         let side = if along_x { item.side } else { -item.side };
         draw.translate(if along_x { [side, 0.0, 0.0] } else { [0.0, 0.0, side] });
+        if pose.on_slope {
+            draw.rotate_about(pose.tilt_axis.unit(), pose.tilt, ORIGIN);
+            draw.translate([0.0, pose.lift, 0.0]);
+        }
         draw_stack(host, draw, &item.stack, item.angle);
         draw.pop();
     }
@@ -1458,7 +1540,7 @@ fn nudge(seed: i32) -> [f32; 3] {
 
 /// An empty main hand takes what lies on the clicked block of the belt (`BeltBlock.useItemOn`).
 pub fn right_click(host: &mut dyn Host, pos: Pos) -> Flow {
-    let Some((facing, _)) = segment(host, pos) else {
+    let Some(s) = seg(host, pos) else {
         return Flow::Continue;
     };
     let Some(player) = host.acting_player() else {
@@ -1475,7 +1557,7 @@ pub fn right_click(host: &mut dyn Host, pos: Pos) -> Flow {
     let Some(index) = host.mod_block_entity(pos).map(|e| int(&e.nbt, INDEX)) else {
         return Flow::Continue;
     };
-    let controller = segment_position(pos, facing, -index);
+    let controller = Chain::controller_of(pos, s.facing, s.slope, index);
     let mut taken = Vec::new();
     host.change_mod_block_entity(controller, &mut |entity| {
         let mut inventory = read_inventory(&entity.nbt);
@@ -1502,13 +1584,14 @@ pub fn right_click(host: &mut dyn Host, pos: Pos) -> Flow {
 /// Breaking a belt by hand drops what it carried (`BeltBlock.spawnAfterBreak`). The rest of
 /// the belt follows in the blocks' own ticks.
 pub fn destroyed(host: &mut dyn Host, pos: Pos) {
-    let Some((facing, part)) = segment(host, pos) else {
+    let Some(s) = seg(host, pos) else {
         return;
     };
-    let Some((index, _)) = locate(host, pos, facing, part) else {
+    let Some((index, length)) = locate(host, pos, s) else {
         return;
     };
-    let controller = segment_position(pos, facing, -index);
+    let controller = Chain::controller_of(pos, s.facing, s.slope, index);
+    let chain = Chain { controller, facing: s.facing, slope: s.slope, length };
     let Some(entity) = host.mod_block_entity(controller) else {
         return;
     };
@@ -1517,7 +1600,7 @@ pub fn destroyed(host: &mut dyn Host, pos: Pos) {
         return;
     }
     let rpm = float(&entity.nbt, SPEED).unwrap_or(0.0);
-    eject_all(host, controller, facing, rpm, &inventory);
+    eject_all(host, chain, rpm, &inventory);
     host.change_mod_block_entity(controller, &mut |entity| {
         entity
             .nbt
@@ -1556,10 +1639,10 @@ pub fn use_connector(host: &mut dyn Host, pos: Pos) -> Flow {
     };
     // The game runs hooks again inside `set_block`: never hold the lock across it.
     drop(firsts);
-    let Some((facing, chain)) = can_connect(host, first, pos) else {
+    let Some(connection) = can_connect(host, first, pos) else {
         return Flow::Cancel;
     };
-    create_belt(host, facing, &chain);
+    create_belt(host, &connection);
     if player.game_mode != CREATIVE {
         host.take_items(CONNECTOR, 1);
     }
@@ -1567,11 +1650,12 @@ pub fn use_connector(host: &mut dyn Host, pos: Pos) -> Flow {
     Flow::Cancel
 }
 
-/// `BeltConnectorItem.canConnect`: the geometry, the speeds, and the blocks between.
-fn can_connect(host: &dyn Host, first: Pos, second: Pos) -> Option<(Dir, Vec<Pos>)> {
+/// `BeltConnectorItem.canConnect`: the geometry (a flat, diagonal, vertical or sideways belt,
+/// `belt_slope::connect`), the speeds, and the blocks between.
+fn can_connect(host: &dyn Host, first: Pos, second: Pos) -> Option<Connection> {
     let axis = |pos| host.block_property(pos, "axis").as_deref().and_then(Axis::from_name);
     let shaft_axis = axis(first)?;
-    let (facing, chain) = connect(first, second, shaft_axis, axis(second)?).ok()?;
+    let connection = connect(first, second, shaft_axis, axis(second)?).ok()?;
     let speed = |pos| {
         host.mod_block_entity(pos)
             .and_then(|e| float(&e.nbt, SPEED))
@@ -1581,19 +1665,21 @@ fn can_connect(host: &dyn Host, first: Pos, second: Pos) -> Option<(Dir, Vec<Pos
     if a != 0.0 && b != 0.0 && a.signum() != b.signum() {
         return None;
     }
+    let chain = &connection.chain;
     let between = &chain[1..chain.len() - 1];
     let clear = between.iter().all(|&at| {
         let block = host.block(at);
         (block == SHAFT && axis(at) == Some(shaft_axis)) || replaceable(host, &block)
     });
-    clear.then_some((facing, chain))
+    clear.then_some(connection)
 }
 
-/// `BeltConnectorItem.createBelts` for a horizontal belt.
-fn create_belt(host: &mut dyn Host, facing: Dir, chain: &[Pos]) {
+/// `BeltConnectorItem.createBelts`.
+fn create_belt(host: &mut dyn Host, connection: &Connection) {
     let Some(state) = host.default_state(ID) else {
         return;
     };
+    let chain = &connection.chain;
     let mid = {
         let (a, b) = (centre(chain[0]), centre(chain[chain.len() - 1]));
         [0, 1, 2].map(|i| (a[i] + b[i]) / 2.0)
@@ -1607,9 +1693,19 @@ fn create_belt(host: &mut dyn Host, facing: Dir, chain: &[Pos]) {
         .collect();
     for &at in chain {
         host.set_block(dimension, at, state, UPDATE_ALL);
-        host.set_block_property(at, "facing", facing.name());
+        host.set_block_property(at, "facing", connection.facing.name());
+        host.set_block_property(at, "slope", connection.slope.name());
         host.set_block_property(at, "part", parts[&at].name());
     }
+}
+
+/// The belt block at `pos` as something that stands on it sees it (`BeltMovementHandler`): where it
+/// is, how it faces and slopes, and how fast it turns. None for another block, or a belt that only
+/// turns. The belt's speed is its block entity's.
+pub(crate) fn surface(host: &dyn Host, pos: Pos) -> Option<belt_carry::Belt> {
+    let s = seg(host, pos).filter(|s| s.slope.transports())?;
+    let rpm = float(&host.mod_block_entity(pos)?.nbt, SPEED)?;
+    Some(belt_carry::Belt { pos, facing: s.facing, slope: s.slope, part: s.part, rpm })
 }
 
 #[cfg(test)]
@@ -1657,10 +1753,7 @@ mod tests {
     }
 
     #[test]
-    fn angles_follow_create() {
-        // The start model's closed end is north at rest: it goes to the back of the belt.
-        assert_eq!(horizontal_angle(Dir::South), 0.0);
-        assert_eq!(horizontal_angle(Dir::East), 90.0);
+    fn directions_are_saved_by_their_data_value() {
         assert_eq!(dir_id(Dir::Up), 1);
         assert_eq!(dir_id(Dir::East), 5);
     }

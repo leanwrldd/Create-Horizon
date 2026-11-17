@@ -104,7 +104,6 @@ AXIS_STATE = {"axis": {"type": "enum", "values": AXES}}
 FACING_STATE = {"facing": {"type": "enum", "values": FACINGS}}
 HORIZONTAL_FACING_STATE = {"facing": {"type": "enum", "values": ["north", "south", "west", "east"]}}
 # `BeltBlock`: HORIZONTAL_FACING, SLOPE, PART and CASING (waterlogging left out, as elsewhere).
-# Only horizontal belts are placed so far; the other slopes are declared so ids line up.
 BELT_STATES = {
     **HORIZONTAL_FACING_STATE,
     "slope": {"type": "enum",
@@ -116,12 +115,17 @@ BELT_DEFAULT = {"facing": "north", "slope": "horizontal", "part": "start", "casi
 # `AllBlocks.BELT`: `strength(0.8f)`, `SoundType.WOOL`, no tool needed.
 BELT = {"hardness": 0.8, "explosion_resistance": 0.8, "requires_tool": False,
         "sounds": "minecraft:white_wool"}
-# `BeltShapes.FLAT_FULL`, box(1, 3, 0, 15, 13, 16) along the facing. Create rounds the two ends
-# off by a texel; here every part is the full box.
-BELT_SHAPES = {"property": "facing", "values": {
-    f: [[1 / 16, 3 / 16, 0, 15 / 16, 13 / 16, 1] if f in ("north", "south")
-        else [0, 3 / 16, 1 / 16, 1, 13 / 16, 15 / 16]]
-    for f in ("north", "south", "west", "east")}}
+# `BeltShapes` for every state: the outline and the collision (the shape under
+# `AllShapes.BELT_COLLISION_MASK`), in pixels, made by the rules (`rules/belt_shapes.rs`, which
+# writes `tools/content/_belt_shapes_gen.json`) and turned to blocks here.
+def belt_shapes(which):
+    table = json.loads((Path(__file__).resolve().parent / "content" / "_belt_shapes_gen.json")
+                       .read_text(encoding="utf-8"))
+    return {"properties": ["facing", "slope", "part", "casing"], "values": {
+        key: [[v / 16 for v in box] for box in value[which]] for key, value in table.items()}}
+
+
+BELT_SHAPES = belt_shapes("outline")
 BLOCKS = {
     "shaft": block(AXIS_STATE, {"axis": "y"}, ANDESITE, METAL, axis_shapes(SHAPES["shaft"])),
     "cogwheel": block(AXIS_STATE, {"axis": "y"}, ANDESITE, DIRT,
@@ -147,6 +151,7 @@ BLOCKS = {
                               {"default": [[0, 2 / 16, 0, 1, 1, 1]]}, render_shape="MODEL"),
     "belt": block(BELT_STATES, BELT_DEFAULT, BELT, GRAY, BELT_SHAPES),
 }
+BLOCKS["belt"]["collision_shapes"] = belt_shapes("collision")
 # The belt has no item of its own: the Belt Connector places it (`BeltConnectorItem`).
 BLOCKS["belt"]["item"] = False
 # `pickaxeOnly()` in Create; every other block here is `axeOrPickaxe()`.

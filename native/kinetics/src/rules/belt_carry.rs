@@ -71,8 +71,9 @@ pub struct Carry {
 /// is moved by this tick, or none where Create leaves it alone (too slow, not on top, too far
 /// to the side, a belt that only turns).
 ///
-/// `centered` leaves out the pull towards the belt's line, which Create adds only for an entity that
-/// isn't walking (`livingEntity.zza == 0 && livingEntity.xxa == 0`), something a mod can't read.
+/// `centered` adds the pull towards the belt's line, which Create adds only for an entity that isn't
+/// walking (`livingEntity.zza == 0 && livingEntity.xxa == 0`), something a mod can't read: the glue
+/// passes false.
 pub fn carry(belt: &Belt, feet: [f64; 3], centered: bool) -> Option<Carry> {
     if !belt.slope.transports() || belt.rpm.abs() < MIN_RPM {
         return None;
