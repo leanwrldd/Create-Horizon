@@ -1,0 +1,22 @@
+{
+  "type": "create:crushing",
+  "processing_time": 400,
+  "ingredients": [
+    {
+      "tag": "c:ores/uranium"
+    }
+  ],
+  "results": [
+    {
+      "id": "create:crushed_raw_uranium"
+    },
+    {
+      "chance": 0.75,
+      "id": "create:crushed_raw_uranium"
+    },
+    {
+      "chance": 0.75,
+      "id": "create:experience_nugget"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "type": "create:crushing",
+  "processing_time": 400,
+  "ingredients": [
+    {
+      "tag": "c:ores/quicksilver"
+    }
+  ],
+  "results": [
+    {
+      "id": "create:crushed_raw_quicksilver"
+    },
+    {
+      "chance": 0.75,
+      "id": "create:crushed_raw_quicksilver"
+    },
+    {
+      "chance": 0.75,
+      "id": "create:experience_nugget"
+    }
+  ]
+}

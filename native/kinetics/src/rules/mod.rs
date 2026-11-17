@@ -77,5 +77,6 @@ pub mod super_glue;
 pub mod tunnel;
 pub mod tunnel_brass;
 pub mod turntable;
+pub mod vertical_gearbox;
 pub mod weighted_ejector;
 pub mod windmill;

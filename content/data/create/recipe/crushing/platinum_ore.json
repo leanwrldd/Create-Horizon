@@ -1,0 +1,22 @@
+{
+  "type": "create:crushing",
+  "processing_time": 400,
+  "ingredients": [
+    {
+      "tag": "c:ores/platinum"
+    }
+  ],
+  "results": [
+    {
+      "id": "create:crushed_raw_platinum"
+    },
+    {
+      "chance": 0.75,
+      "id": "create:crushed_raw_platinum"
+    },
+    {
+      "chance": 0.75,
+      "id": "create:experience_nugget"
+    }
+  ]
+}
