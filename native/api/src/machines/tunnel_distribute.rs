@@ -59,7 +59,7 @@ impl Brass<'_> {
         if stack.count == 0 {
             return Some(stack);
         }
-        if !world::filter_allows(&self.nbt_at(tunnel)?, side, &stack) {
+        if !world::filter_allows_in(&*self.host, &self.nbt_at(tunnel)?, side, &stack) {
             return None;
         }
         let under = world::below(tunnel);

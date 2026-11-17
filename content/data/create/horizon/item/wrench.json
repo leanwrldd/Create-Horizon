@@ -437,6 +437,7 @@
             "create:veridium_pillar",
             "create:mechanical_piston",
             "create:sticky_mechanical_piston",
+            "create:placard",
             "create:portable_storage_interface",
             "create:portable_fluid_interface",
             "create:rope_pulley",

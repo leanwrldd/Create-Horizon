@@ -4,6 +4,7 @@
     "create:pulse_repeater",
     "create:pulse_extender",
     "create:pulse_timer",
+    "create:placard",
     "create:redstone_link"
   ]
 }

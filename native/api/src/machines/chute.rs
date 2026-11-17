@@ -182,7 +182,7 @@ fn accepts(host: &dyn Host, pos: Pos, entity: &ModBlockEntity, stack: &ItemStack
         return false;
     }
     if host.block(pos) == SMART_CHUTE {
-        return can_activate(host, pos) && inv::filter_of(&entity.nbt).test(stack);
+        return can_activate(host, pos) && inv::filter_of(&entity.nbt).test(host, stack);
     }
     true
 }
@@ -692,8 +692,8 @@ fn handle_input(
     } else {
         (16, rules::Mode::UpTo)
     };
-    let stack = inv::extract(host, source, face, mode, amount, &mut |_, candidate| {
-        filter.test(candidate)
+    let stack = inv::extract(host, source, face, mode, amount, &mut |host, candidate| {
+        filter.test(host, candidate)
     });
     let Some(stack) = stack else {
         return false;
@@ -906,7 +906,7 @@ fn extract_from_belt(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity,
     let at = [pos[0], pos[1] - below, pos[2]];
     let filter = filter_of(host, pos, &entity.nbt);
     let smart = host.block(pos) == SMART_CHUTE;
-    let mut accept = |stack: &ItemStack| !smart || filter.test(stack);
+    let mut accept = |stack: &ItemStack| !smart || filter.test_static(stack);
     let taken = match host.block(at).as_str() {
         crate::belt::ID => crate::belt::take_centered(host, at, &mut accept),
         crate::depot::ID => take_from_depot(host, at, &mut accept),
@@ -1060,7 +1060,7 @@ impl Hooks for Chutes {
             return Flow::Cancel;
         }
         if event.entity.id == SMART_CHUTE
-            && !(inv::filter_of(&event.entity.nbt).test(event.stack) && can_activate(host, event.pos))
+            && !(inv::filter_of(&event.entity.nbt).test(host, event.stack) && can_activate(host, event.pos))
         {
             return Flow::Cancel;
         }

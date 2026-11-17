@@ -539,4 +539,10 @@ impl Hooks for Create {
         }
         Flow::Continue
     }
+
+    fn world_primitives(&self, host: &dyn Host, event: &mut WorldPrimitivesEvent<'_>) {
+        for module in &self.modules {
+            module.world_primitives(host, event);
+        }
+    }
 }

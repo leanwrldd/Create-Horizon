@@ -37,6 +37,11 @@ pub const ITEM_DRAIN: &str = "create:item_drain";
 /// item that holds none; absent without a filter.
 pub const FILTER_FLUID: &str = "FilterFluid";
 
+/// The key of the filter item (`FilteringBehaviour.write`), as `chute_inv::FILTER`.
+fn inv_filter() -> &'static str {
+    super::chute_inv::FILTER
+}
+
 struct Fluids;
 
 /// The module has no behaviour of its own to hook in; the family's blocks do.
@@ -123,8 +128,15 @@ pub fn classify_for(host: &dyn Host, pos: Pos, fluid: Option<&str>) -> Cell {
                 && let Some(entity) = host.mod_block_entity(pos)
                 && let Some(filter) = crate::util::get(&entity.nbt, FILTER_FLUID)
             {
-                let passes = matches!(filter, horizon_client::mod_api::Tag::String(held)
-                    if held.to_string_lossy() == fluid);
+                // A Filter item in the filter slot asks its own rules (`filter.rs`).
+                let filter_item = crate::util::get(&entity.nbt, inv_filter())
+                    .and_then(crate::util::stack_of)
+                    .filter(|item| super::filter::is_filter_item(&item.item));
+                let passes = match filter_item {
+                    Some(item) => super::filter::matches_fluid(&item, fluid),
+                    None => matches!(filter, horizon_client::mod_api::Tag::String(held)
+                        if held.to_string_lossy() == fluid),
+                };
                 if !passes {
                     return Cell::Nothing;
                 }

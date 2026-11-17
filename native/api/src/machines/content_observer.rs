@@ -86,7 +86,7 @@ fn detect(host: &mut dyn Host, pos: Pos, now: i64, turn_off: i32, filter: &Filte
         belt::edit_items(host, at, &mut |_, lane, items| {
             found = items
                 .iter()
-                .any(|item| rules::on_block(lane.index, item.pos) && filter.test(&item.stack));
+                .any(|item| rules::on_block(lane.index, item.pos) && filter.test_static(&item.stack));
             false
         });
         // `turnOffTicks == 6`: an item seen the tick the block lit does not light it again.
@@ -101,7 +101,7 @@ fn detect(host: &mut dyn Host, pos: Pos, now: i64, turn_off: i32, filter: &Filte
                 Some(Tag::Compound(held)) => float(held, POS).unwrap_or(0.5),
                 _ => 0.5,
             };
-            rules::depot_in_reach(along) && filter.test(&stack)
+            rules::depot_in_reach(along) && filter.test(host, &stack)
         });
         return (seen && turn_off != DEFAULT_DELAY).then_some(DEFAULT_DELAY);
     }

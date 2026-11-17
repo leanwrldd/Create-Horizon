@@ -208,6 +208,9 @@ pub fn wrench_turn(host: &mut dyn Host, pos: Pos, clicked: Dir) {
 pub fn passes_fluid(filter: &Filter, fluid: &str) -> bool {
     match &filter.item {
         None => true,
+        Some(item) if super::filter::is_filter_item(&item.item) => {
+            super::filter::matches_fluid(item, fluid)
+        }
         Some(item) => fluid_rules::emptied(&item.item).is_some_and(|c| c.fluid == fluid),
     }
 }
@@ -295,7 +298,7 @@ pub fn inventory_has(host: &mut dyn Host, pos: Pos, filter: &Filter) -> Option<b
         return None;
     }
     let items = inv::items_of(host, pos).unwrap_or_default();
-    Some(items.iter().any(|(_, stack)| stack.count > 0 && filter.test(stack)))
+    Some(items.iter().any(|(_, stack)| stack.count > 0 && filter.test(host, stack)))
 }
 
 /// A tank as the side reaches it.

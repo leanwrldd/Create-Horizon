@@ -1,0 +1,20 @@
+{
+  "type": "create:crushing",
+  "processing_time": 400,
+  "ingredients": [
+    {
+      "tag": "c:storage_blocks/raw_quicksilver"
+    }
+  ],
+  "results": [
+    {
+      "count": 9,
+      "id": "create:crushed_raw_quicksilver"
+    },
+    {
+      "chance": 0.75,
+      "id": "create:experience_nugget",
+      "count": 9
+    }
+  ]
+}

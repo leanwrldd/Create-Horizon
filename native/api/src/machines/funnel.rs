@@ -369,7 +369,7 @@ fn extract(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, v: &View,
     {
         return;
     }
-    let Some(plan) = inv::plan(host, source, mode, amount, &mut |_, stack| filter.test(stack)) else {
+    let Some(plan) = inv::plan(host, source, mode, amount, &mut |host, stack| filter.test(host, stack)) else {
         return;
     };
     let Some(stack) = inv::take(host, source, v.facing, &plan) else {
@@ -403,7 +403,7 @@ fn push_to_belt(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, v: &
     let Some(plan) = inv::plan(host, source, mode, amount, &mut |host, stack| {
         // The belt or depot must take it all.
         let probe = Item::dropped(stack.clone(), 0, 180, true);
-        filter.test(stack)
+        filter.test(host, stack)
             && belt::handle_insertion(host, below, side, &probe, false, true)
                 .is_some_and(|rest| rest.count == 0)
     }) else {
@@ -463,7 +463,7 @@ fn try_insert(
     stack: &ItemStack,
     now: i64,
 ) -> ItemStack {
-    if !filter_of(v, &entity.nbt).test(stack) {
+    if !filter_of(v, &entity.nbt).test(host, stack) {
         return stack.clone();
     }
     let source = behind(pos, v);
@@ -520,7 +520,7 @@ fn pull_from_belt(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, v:
                 item.pos = entry;
                 changed = true;
             }
-            if powered || !filter.test(&item.stack) {
+            if powered || !filter.test(host, &item.stack) {
                 continue;
             }
             let offer = rules::belt_offer(amount, mode, item.stack.count);
@@ -590,7 +590,7 @@ fn direct_belt_input(host: &mut dyn Host, pos: Pos, stack: &ItemStack, simulate:
     let (Some(v), Some(entity)) = (view(host, pos), host.mod_block_entity(pos)) else {
         return stack.clone();
     };
-    if !filter_of(&v, &entity.nbt).test(stack) || v.powered {
+    if !filter_of(&v, &entity.nbt).test(host, stack) || v.powered {
         return stack.clone();
     }
     if simulate {

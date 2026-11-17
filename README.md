@@ -14,15 +14,15 @@ is not pinned to one Horizon commit.
 <!-- progress:start -->
 | Area | Done | Total | |
 |---|---:|---:|---:|
-| Kinetics | 48 | 57 | 84% |
+| Kinetics | 51 | 57 | 89% |
 | Materials | 18 | 20 | 90% |
-| Logistics | 23 | 52 | 44% |
+| Logistics | 26 | 52 | 50% |
 | Fluids | 18 | 18 | 100% |
 | Contraptions | 33 | 42 | 79% |
 | Schematics | 0 | 5 | 0% |
-| Curiosities | 8 | 13 | 62% |
+| Curiosities | 11 | 13 | 85% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **187** | **246** | **76.0%** |
+| **All** | **196** | **246** | **79.7%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -289,6 +289,29 @@ Each module's header (`native/api/src/machines/<name>.rs`) lists its differences
 | Potato Cannon | A right click fires one item of ammunition from the inventory (24 types in Create's table: damage, knockback, reload ticks, velocity, spray of 2 or 3, burning, potion effects, a bowl back from the stew) with the `create:potato_cannon` damage type; 100 durability, or 4 air from a worn Backtank. **Stand-in for Create's projectile entity:** a vanilla snowball carrying the ammunition as its item, whose impact the mod takes over. No spin, sticking, crop planting or block placing on a block hit, chorus teleport, zombie-villager cure, Power, Punch or Potato Recovery. Unplayed |
 | Peculiar Bell, Haunted Bell | Bells on vanilla's bell block (rings when hit or powered) with Create's models; a peculiar bell placed over soul fire or a soul campfire becomes a haunted one (a Fan's haunting also makes one), and a player holding a haunted bell sees cyan dust at the spots within 3 blocks where a mob could spawn (free, solid floor, no block light). Not done: Create's own ring and sounds, the pulse's soul particles and outline, haunting by lighting soul fire under a placed bell. Unplayed: it isn't known whether the template's bell body draws over Create's model |
 
+### Small leftovers
+
+Ten small blocks and items; each module's header lists its known differences. Type-checked and unit-tested
+only: none has been played yet.
+
+| Item | What it does here | Differences from Create |
+|---|---|---|
+| Vertical Gearbox | Places a Gearbox on its side, lined up with a shaft beside it or across the player's view. Create's three recipes. | The block is lined up right after placing (a placement hook can't read neighbours). |
+| Crushed Raw Osmium and the eight other compat crushed ores | Declared, tagged `create:crushed_raw_materials`, left out of the creative tab as Create hides them without the metal. Their crushing recipes read their own `c:` tags, so they work once something fills a tag. | `neoforge:conditions` is not evaluated: the `tag_empty` recipes are kept (an empty tag never matches) and the `mod_loaded` smelting, blasting and splashing ones are left out. |
+| Placard | Wall, floor or ceiling plate. A click with an item sets what it shows; a click with a matching item (or one a Filter item held in it accepts) gives a 19 tick pulse with Create's sounds and dust; left-click takes the item back. | Stacks with components can be set in Creative only; no waterlogging; the signal is mirrored in a table the block entity fills. Create's display link doesn't target it either. |
+| Desk Bell | A click rings it (`create:desk_bell`), powers it for 20 ticks and animates its plunger and bell. The Wrench turns it. | No elevator ring on contraptions (`BellMovementBehaviour`). |
+| List Filter, Attribute Filter | Filter items, accepted by every place the port takes a filter item (below). | No screen: see **Settings**. Attributes `in_item_group` and the Package Filter are left out; the processing attributes read this port's recipes; `fluid_container` knows vanilla's buckets. |
+| Tree Fertilizer | Right-click a sapling: it grows at once (a square of four for the dark oak, pale oak and the mega spruce and jungle). | Placed with `/place feature`, so room checks apply (the sapling is put back and the item dropped if the tree doesn't fit); no bees. Create's recipe needs another mod. |
+| Crafting Blueprint | A thin plate block. Sneak-click with an item to set the recipe that makes it (again for the next recipe); a click crafts it from your inventory, sneaking with an empty hand until the ingredients run out (64 at most). Wrench clears it. | A block stands in for the entity (size 1 only), no menu, no overlay, recipes from the baked crafting tables (to drop for `recipe_for`), plain stacks only. |
+| Minecart Coupling | Click one minecart and then another: they keep their distance and pull each other along; the Wrench removes the couplings. Drawn as a line. | Only the soft velocity step runs, no hard step or rail shape; couplings are a list saved with the level by entity id, so they don't survive a restart; no chain model. |
+| Creative Worldshaper | Cuboid, sphere, cylinder, surface and cluster brushes; fill, place, replace, clear and overlay tools; placement merged, attached or inserted. | No screen, one size for every dimension, no Flatten tool, no patterns, the block to use is its default state. |
+
+**Filter items** are accepted by: the Smart Chute, Brass Funnel and Brass Belt Funnel, Brass Tunnel (per side),
+Deployer, Smart Observer, Threshold Switch, Mechanical Arm's funnel check, the Display Link's item count, the
+Smart Fluid Pipe (a List Filter passes the fluids its buckets hold; an Attribute Filter passes none, as in Create)
+and the Placard. Where a belt or depot calls the test while holding the world (a Smart Chute over a belt, a Smart
+Observer over a belt), the attributes that ask the game (tags, recipes, placeable) don't match.
+
 ### Settings
 
 Create's value boxes (the scroll value, the option boxes) aren't ported yet. Where a block has one, a click
@@ -297,7 +320,16 @@ stands in for it, written the same way for each:
 - the **Wrench** on the block steps the number (the chassis' range, 1 to 16 and round) or toggles the option
   (the windmill's direction, the Creative Motor's speed), and the new value is shown on the action bar;
 - sneaking with the Wrench picks the block up, as everywhere else;
-- an **item** in hand sets what it names (a filter), and an empty hand clears it.
+- an **item** in hand sets what it names (a filter), and an empty hand clears it;
+- **Filter items** (`create:filter`, `create:attribute_filter`) have no screen. With the filter in the main hand,
+  on a block that takes no filter or in the air: with a reference item in the other hand, a List Filter adds that
+  item (or removes it if it is in the list; 18 at most) and an Attribute Filter adds the first attribute of that
+  item it doesn't have yet (sneaking adds the opposite, "is not ..."); with the other hand empty, a click cycles
+  the mode (List: allow, allow with data, deny, deny with data; Attribute: any, all, deny) and sneaking clears it.
+  The filter is shown on the action bar and its lines under its name;
+- the **Crafting Blueprint** is set by a sneaking click with the item to craft, and the **Creative Worldshaper**
+  by sneaking right-clicks (empty off hand: brush, Wrench: tool, stick: size, paper: placement) and a left-click
+  on the block to use.
 
 Where Create's screen or value box had more to set than one click can:
 

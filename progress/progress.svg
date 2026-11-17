@@ -1,21 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="316" viewBox="0 0 640 316" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
 <style>.t{fill:#24292f}.m{fill:#57606a}.track{fill:#d0d7de}.fill{fill:#c98a2b}@media (prefers-color-scheme:dark){.t{fill:#e6edf3}.m{fill:#8d96a0}.track{fill:#30363d}.fill{fill:#e3a64a}}</style>
-<text class="t" x="16" y="30" font-size="18" font-weight="600">Create ported to Horizon: 76.0%</text>
-<text class="m" x="16" y="50" font-size="12">187 of 246 Create blocks and items declared</text>
+<text class="t" x="16" y="30" font-size="18" font-weight="600">Create ported to Horizon: 79.7%</text>
+<text class="m" x="16" y="50" font-size="12">196 of 246 Create blocks and items declared</text>
 <rect class="track" x="16" y="60" width="608" height="12" rx="6"/>
-<rect class="fill" x="16" y="60" width="462.2" height="12" rx="6"/>
+<rect class="fill" x="16" y="60" width="484.4" height="12" rx="6"/>
 <text class="t" x="16" y="105" font-size="13">Kinetics</text>
 <rect class="track" x="120" y="95" width="400" height="12" rx="3"/>
-<rect class="fill" x="120" y="95" width="336.8" height="12" rx="3"/>
-<text class="m" x="530" y="105" font-size="12">48 / 57  (84%)</text>
+<rect class="fill" x="120" y="95" width="357.9" height="12" rx="3"/>
+<text class="m" x="530" y="105" font-size="12">51 / 57  (89%)</text>
 <text class="t" x="16" y="131" font-size="13">Materials</text>
 <rect class="track" x="120" y="121" width="400" height="12" rx="3"/>
 <rect class="fill" x="120" y="121" width="360.0" height="12" rx="3"/>
 <text class="m" x="530" y="131" font-size="12">18 / 20  (90%)</text>
 <text class="t" x="16" y="157" font-size="13">Logistics</text>
 <rect class="track" x="120" y="147" width="400" height="12" rx="3"/>
-<rect class="fill" x="120" y="147" width="176.9" height="12" rx="3"/>
-<text class="m" x="530" y="157" font-size="12">23 / 52  (44%)</text>
+<rect class="fill" x="120" y="147" width="200.0" height="12" rx="3"/>
+<text class="m" x="530" y="157" font-size="12">26 / 52  (50%)</text>
 <text class="t" x="16" y="183" font-size="13">Fluids</text>
 <rect class="track" x="120" y="173" width="400" height="12" rx="3"/>
 <rect class="fill" x="120" y="173" width="400.0" height="12" rx="3"/>
@@ -29,8 +29,8 @@
 <text class="m" x="530" y="235" font-size="12">0 / 5  (0%)</text>
 <text class="t" x="16" y="261" font-size="13">Curiosities</text>
 <rect class="track" x="120" y="251" width="400" height="12" rx="3"/>
-<rect class="fill" x="120" y="251" width="246.2" height="12" rx="3"/>
-<text class="m" x="530" y="261" font-size="12">8 / 13  (62%)</text>
+<rect class="fill" x="120" y="251" width="338.5" height="12" rx="3"/>
+<text class="m" x="530" y="261" font-size="12">11 / 13  (85%)</text>
 <text class="t" x="16" y="287" font-size="13">Palettes</text>
 <rect class="track" x="120" y="277" width="400" height="12" rx="3"/>
 <rect class="fill" x="120" y="277" width="400.0" height="12" rx="3"/>

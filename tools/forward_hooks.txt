@@ -75,3 +75,4 @@ living_incoming_damage_v3
 living_knockback
 hears_projectile_impacts
 projectile_impact
+world_primitives

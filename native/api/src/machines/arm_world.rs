@@ -400,7 +400,7 @@ fn insert(host: &mut dyn Host, point: &Point, stack: ItemStack, simulate: bool) 
                 return stack;
             };
             // `DeployerItemHandler.isItemValid`: the filter's, for the held slot.
-            if !inv::filter_of(&entity.nbt).test(&stack) {
+            if !inv::filter_of(&entity.nbt).test(host, &stack) {
                 return stack;
             }
             let held = vec![entity.items.first().cloned().flatten()];
@@ -515,7 +515,7 @@ fn funnel(host: &mut dyn Host, pos: Pos, stack: ItemStack, simulate: bool) -> It
     };
     let powered = host.block_property(pos, "powered").as_deref() == Some("true");
     let brass = host.block(pos).contains("brass");
-    let passes = !brass || inv::filter_of(&entity.nbt).test(&stack);
+    let passes = !brass || inv::filter_of(&entity.nbt).test(host, &stack);
     if !points::funnel_takes(powered, passes) {
         return stack;
     }
