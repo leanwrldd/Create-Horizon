@@ -33,6 +33,7 @@
     "create:smart_chute",
     "create:clutch",
     "create:content_observer",
+    "create:minecart_coupling",
     "create:mechanical_crafter",
     "create:creative_crate",
     "create:crushing_wheel",

@@ -22,6 +22,7 @@ pub mod contraption;
 pub mod contraption_facts;
 pub mod copycat;
 pub mod copycat_facts;
+pub mod coupling;
 pub mod crafter;
 pub mod crafter_grid;
 pub mod crafter_recipes;

@@ -455,4 +455,10 @@ impl Hooks for Create {
             module.living_entity_use_item_finish(host, event);
         }
     }
+
+    fn world_primitives(&self, host: &dyn Host, event: &mut WorldPrimitivesEvent<'_>) {
+        for module in &self.modules {
+            module.world_primitives(host, event);
+        }
+    }
 }

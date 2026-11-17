@@ -63,3 +63,4 @@ use_duration
 use_animation
 living_entity_use_item_tick
 living_entity_use_item_finish
+world_primitives
