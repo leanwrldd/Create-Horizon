@@ -1,0 +1,25 @@
+{
+  "ingredients": [
+    [
+      "minecraft:copper_pickaxe",
+      "minecraft:copper_shovel",
+      "minecraft:copper_axe",
+      "minecraft:copper_hoe",
+      "minecraft:copper_sword",
+      "minecraft:copper_spear",
+      "minecraft:copper_helmet",
+      "minecraft:copper_chestplate",
+      "minecraft:copper_leggings",
+      "minecraft:copper_boots",
+      "minecraft:copper_horse_armor",
+      "minecraft:copper_nautilus_armor"
+    ]
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:copper_nugget"
+    }
+  ],
+  "type": "create:baked_blasting"
+}

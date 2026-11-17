@@ -34,6 +34,7 @@ pub enum Heat {
     Superheated,
 }
 
+#[derive(Clone)]
 pub struct Processing {
     /// `create:milling/wheat`.
     pub id: String,
@@ -71,7 +72,7 @@ fn is_fluid_ingredient(json: &Value) -> bool {
 
 /// One result as an [`Output`]. `recipe_result` reads only `id`, `count` and `components`:
 /// `chance` is Create's.
-fn output(host: &dyn Host, result: &Value) -> Option<Output> {
+pub fn output(host: &dyn Host, result: &Value) -> Option<Output> {
     let mut plain = result.as_object()?.clone();
     let chance = plain
         .remove("chance")

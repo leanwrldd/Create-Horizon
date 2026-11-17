@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:beef"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:cooked_beef"
+    }
+  ],
+  "type": "create:baked_smoking"
+}

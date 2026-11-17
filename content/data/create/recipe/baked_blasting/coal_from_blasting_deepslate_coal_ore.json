@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:deepslate_coal_ore"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:coal"
+    }
+  ],
+  "type": "create:baked_blasting"
+}

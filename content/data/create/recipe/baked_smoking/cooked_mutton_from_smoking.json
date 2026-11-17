@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:mutton"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:cooked_mutton"
+    }
+  ],
+  "type": "create:baked_smoking"
+}

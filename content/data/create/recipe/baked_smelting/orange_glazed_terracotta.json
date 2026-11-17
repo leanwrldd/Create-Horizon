@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:orange_terracotta"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:orange_glazed_terracotta"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

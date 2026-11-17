@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:polished_blackstone_bricks"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:cracked_polished_blackstone_bricks"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

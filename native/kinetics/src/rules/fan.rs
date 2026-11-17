@@ -231,7 +231,9 @@ impl Kind {
         }
     }
 
-    /// The recipe type a type reads, `None` for those that use vanilla's cooking recipes.
+    /// The recipe type a type reads for its own recipes: `create:splashing` and `create:haunting`.
+    /// Smoking and blasting read vanilla's cooking recipes instead, which a mod can't read: see
+    /// [`BAKED_SMOKING`], [`BAKED_SMELTING`] and [`BAKED_BLASTING`].
     pub const fn recipe_type(self) -> Option<&'static str> {
         match self {
             Kind::Splashing => Some("create:splashing"),
@@ -239,6 +241,56 @@ impl Kind {
             Kind::Smoking | Kind::Blasting => None,
         }
     }
+}
+
+// --- smoking and blasting: vanilla's cooking recipes (`SmokingType`, `BlastingType`) ----------------
+
+/// Vanilla's `minecraft:smoking`, `minecraft:smelting` and `minecraft:blasting` recipes, copied
+/// from the prepared game data as recipes of these types (`tools/content/_fan_cooking_gen.py`).
+/// TEMPORARY: Horizon gives a mod no way to read vanilla's recipes; drop these and the copy when
+/// the project moves to the new mod API's `recipe_for`.
+pub const BAKED_SMOKING: &str = "create:baked_smoking";
+pub const BAKED_SMELTING: &str = "create:baked_smelting";
+pub const BAKED_BLASTING: &str = "create:baked_blasting";
+/// The items that `DataComponents.FIRE_RESISTANT` was (now `minecraft:damage_resistant` against
+/// `#minecraft:is_fire`), as an item tag baked from the game's items. TEMPORARY, as above.
+pub const FIRE_RESISTANT_TAG: &str = "create:fan_fire_resistant";
+
+/// `BlastingType.canProcess`: a smelting or blasting recipe takes the item, or it is not fire
+/// resistant (and so is burnt up).
+pub fn blasting_can_process(smelting: bool, blasting: bool, fire_resistant: bool) -> bool {
+    smelting || blasting || !fire_resistant
+}
+
+/// What `BlastingType.process` does with an item: smelts it, or destroys it (an empty list).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Blast {
+    /// Apply the smelting (else blasting) recipe.
+    Smelt,
+    /// `Collections.emptyList()`: the item is discarded.
+    Destroy,
+}
+
+/// `BlastingType.process`: with a smelting or blasting recipe the item is smelted, unless a
+/// smoking recipe makes the same item (food is smoked, not burnt, so lava destroys it); with none
+/// it is destroyed. `same_result` says the smoking recipe's result is the smelting recipe's
+/// (`ItemStack.isSameItem`), asked only when there is a smoking recipe.
+pub fn blast(smelting_or_blasting: bool, smoking: bool, same_result: impl FnOnce() -> bool) -> Blast {
+    if smelting_or_blasting && (!smoking || !same_result()) { Blast::Smelt } else { Blast::Destroy }
+}
+
+/// `ItemHelper.multipliedOutput(in, out)`: the stacks `in_count` items of a recipe making
+/// `out_count` of an item that stacks to `max` come to, each full except the last.
+pub fn multiplied(in_count: u32, out_count: u32, max: u32) -> Vec<u32> {
+    let mut left = in_count * out_count;
+    let max = max.max(1);
+    let mut sizes = Vec::new();
+    while left > max {
+        sizes.push(max);
+        left -= max;
+    }
+    sizes.push(left);
+    sizes
 }
 
 /// `BlazeBurnerBlock.HeatLevel`, the `blaze` property.
@@ -722,6 +774,34 @@ mod tests {
         let lit = |flame| Cell { in_smoking: true, in_haunting: true, flame: Some(flame), ..Cell::default() };
         assert_eq!(lit(Flame::Regular).kind(), Some(Kind::Smoking));
         assert_eq!(lit(Flame::Soul).kind(), Some(Kind::Haunting));
+    }
+
+    #[test]
+    fn lava_burns_what_nothing_cooks_unless_it_is_fireproof() {
+        // A recipe takes it, or it is not fire resistant.
+        assert!(blasting_can_process(true, false, true));
+        assert!(blasting_can_process(false, true, true));
+        assert!(blasting_can_process(false, false, false));
+        assert!(!blasting_can_process(false, false, true));
+    }
+
+    #[test]
+    fn lava_smelts_what_smoking_does_not_make_and_destroys_the_rest() {
+        assert_eq!(blast(true, false, || panic!("not asked")), Blast::Smelt);
+        // Raw beef: smoking makes steak and so does smelting, so lava destroys it.
+        assert_eq!(blast(true, true, || true), Blast::Destroy);
+        assert_eq!(blast(true, true, || false), Blast::Smelt);
+        assert_eq!(blast(false, true, || true), Blast::Destroy);
+        assert_eq!(blast(false, false, || true), Blast::Destroy);
+    }
+
+    #[test]
+    fn a_cooked_stack_splits_at_the_stack_size() {
+        assert_eq!(multiplied(1, 1, 64), [1]);
+        assert_eq!(multiplied(9, 9, 64), [64, 17]);
+        assert_eq!(multiplied(16, 4, 64), [64]);
+        assert_eq!(multiplied(16, 9, 16), [16, 16, 16, 16, 16, 16, 16, 16, 16]);
+        assert_eq!(multiplied(3, 1, 16), [3]);
     }
 
     #[test]

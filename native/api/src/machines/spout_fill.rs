@@ -3,6 +3,9 @@
 //! (`FillingBySpout`, `GenericItemFilling`, `GenericItemEmptying`, `PotionFluidHandler`), shared
 //! by the `spout` and `item_drain` modules. No hooks of its own.
 //!
+//! `FillingBySpout` asks the sequenced assembly's next filling step first (`machines/sequenced.rs`:
+//! the Sturdy Sheet's lava), then the `create:filling` recipes.
+//!
 //! Known differences from Create:
 //! - Containers are the ones `rules/fluids.rs` knows (the vanilla and Create buckets, the honey
 //!   bottle, Builder's Tea) plus the glass bottle with water and the bottle of water: Horizon's
@@ -10,12 +13,14 @@
 //!   than water (`create:potion`) are not carried (see `fluids.rs`).
 //! - The three `create:filling` recipes that take a `create:potion` fluid
 //!   (`filling/glowstone`, `gunpowder`, `redstone`) are not declared, as nothing here holds that
-//!   fluid; sequenced assembly (`SequencedAssemblyRecipe`) is not ported.
+//!   fluid.
 
 use create_kinetics::rules::fluids as fluid_rules;
+use create_kinetics::rules::sequenced::Machine;
 use horizon_client::mod_api::serde_json::{Value, json};
 use horizon_client::mod_api::{Hooks, Host, ItemStack, Tag};
 
+use super::sequenced;
 use crate::recipes::{self, Processing};
 
 /// A module of shared code: no hooks of its own.
@@ -88,6 +93,9 @@ fn water_potion(host: &dyn Host) -> Option<ItemStack> {
 
 /// `FillingBySpout.canItemBeFilled`.
 pub fn can_be_filled(host: &dyn Host, stack: &ItemStack) -> bool {
+    if sequenced::find(host, stack, Machine::Filling, &|_| true).is_some() {
+        return true;
+    }
     if !matching(host, FILLING, stack).is_empty() {
         return true;
     }
@@ -101,6 +109,13 @@ pub fn can_be_filled(host: &dyn Host, stack: &ItemStack) -> bool {
 
 /// `FillingBySpout.getRequiredAmountForItem`: what filling `stack` with `fluid` takes, if it can be.
 pub fn required_amount(host: &dyn Host, stack: &ItemStack, fluid: &str) -> Option<i32> {
+    // `matchItemAndFluid`: the assembly's step if its fluid takes `fluid`.
+    let step = sequenced::find(host, stack, Machine::Filling, &|step| {
+        step.recipe.fluid_ingredients.first().is_some_and(|i| fluid_matches(i, fluid))
+    });
+    if let Some(ingredient) = step.and_then(|step| step.recipe.fluid_ingredients.first().cloned()) {
+        return Some(fluid_amount(&ingredient));
+    }
     for recipe in matching(host, FILLING, stack) {
         if let Some(ingredient) = recipe.fluid_ingredients.first()
             && fluid_matches(ingredient, fluid)
@@ -119,6 +134,16 @@ pub fn required_amount(host: &dyn Host, stack: &ItemStack, fluid: &str) -> Optio
 /// `FillingBySpout.fillItem` for one item of `stack`, with `fluid` of at least `required`: what
 /// it becomes. `None` when nothing comes of it (Create's empty stack).
 pub fn fill_item(host: &mut dyn Host, stack: &ItemStack, fluid: &str, required: i32) -> Option<ItemStack> {
+    let step = sequenced::find(&*host, stack, Machine::Filling, &|step| {
+        step.recipe
+            .fluid_ingredients
+            .first()
+            .is_some_and(|i| fluid_matches(i, fluid) && fluid_amount(i) <= required)
+    });
+    if let Some(step) = step {
+        // `rollResults(random).get(0)`: the item's next form, or the assembly's result.
+        return step.roll(host).into_iter().next();
+    }
     for recipe in matching(host, FILLING, stack) {
         let Some(ingredient) = recipe.fluid_ingredients.first() else {
             continue;

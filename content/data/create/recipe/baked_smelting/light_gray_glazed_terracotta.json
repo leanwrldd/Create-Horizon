@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:light_gray_terracotta"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:light_gray_glazed_terracotta"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

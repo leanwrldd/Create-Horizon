@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:cyan_terracotta"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:cyan_glazed_terracotta"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

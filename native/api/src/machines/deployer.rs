@@ -390,9 +390,11 @@ fn apply_on_belt(host: &mut dyn Host, pos: Pos, clicked: Pos, items: &mut Items)
         return;
     };
     let mut keep = false;
+    let mut polishing = false;
     let mut recipe = |host: &mut dyn Host, probe: &ItemStack| -> Option<Vec<ItemStack>> {
         let done = apply::apply(host, probe, &held)?;
         keep = done.keep_held;
+        polishing = done.polishing;
         Some(done.results)
     };
     let applied = if host.block(clicked) == belt::ID {
@@ -411,6 +413,10 @@ fn apply_on_belt(host: &mut dyn Host, pos: Pos, clicked: Pos, items: &mut Items)
     }
     let (sound, volume, pitch) = rules::PICKUP_SOUND;
     host.play_sound(sound, at, BLOCKS, volume, pitch);
+    if polishing {
+        // `AllSoundEvents.SANDING_SHORT.playOnServer(world, pos, .35f, 1f)`.
+        host.play_sound("create:sanding_short", at, BLOCKS, 0.35, 1.0);
+    }
 }
 
 // --- the belt's callbacks (`BeltDeployerCallbacks`) ------------------------------------------------

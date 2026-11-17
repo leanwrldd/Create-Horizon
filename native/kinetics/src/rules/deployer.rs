@@ -20,6 +20,7 @@
 //! - Attacks deal `1 + the item's mainhand attack_damage` and wear a weapon by its
 //!   `item_damage_per_attack`: no enchantment damage, sweep, critical hit or knockback.
 
+use super::sandpaper;
 use crate::belt::Processing;
 use crate::{Axis, Dir};
 
@@ -572,6 +573,10 @@ pub fn wear_per_block(held: &str, hardness: f32) -> u32 {
 
 /// `ItemStack.getMaxDamage`: 0 for an item that doesn't wear.
 pub fn max_damage(held: &str) -> u32 {
+    // The paper's `durability(8)`: a mod's item isn't in the baked table of the game's own.
+    if sandpaper::is_sand_paper(held) {
+        return sandpaper::DURABILITY;
+    }
     item(held).map_or(0, |item| item.max_damage)
 }
 
@@ -943,6 +948,9 @@ mod tests {
         assert!(item("minecraft:stick").is_none());
         assert_eq!(max_damage("minecraft:iron_axe"), 250);
         assert_eq!(max_damage("minecraft:stick"), 0);
+        // The Sand Paper is a mod's item with a durability of 8.
+        assert_eq!(max_damage("create:sand_paper"), 8);
+        assert_eq!(max_damage("create:red_sand_paper"), 8);
     }
 
     #[test]

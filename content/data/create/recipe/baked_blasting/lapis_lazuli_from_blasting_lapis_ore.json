@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:lapis_ore"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:lapis_lazuli"
+    }
+  ],
+  "type": "create:baked_blasting"
+}

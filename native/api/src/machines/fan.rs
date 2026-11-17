@@ -6,8 +6,13 @@
 //! Known differences from Create, for the README:
 //! - The current is rebuilt every 30 ticks and when the speed or facing changes, not also when a
 //!   neighbour changes. Placing a block in front takes up to 1.5 seconds to cut the air.
-//! - Smoking and blasting do not process items: Horizon's `Host` has no way to look up vanilla's
-//!   smoking, smelting or blasting recipes. Lava and fire still burn entities as in Create.
+//! - Smoking and blasting read copies of vanilla's smoking, smelting and blasting recipes
+//!   (`create:baked_smoking`, `create:baked_smelting` and `create:baked_blasting`, made from the
+//!   prepared game data by `tools/content/_fan_cooking_gen.py`), because Horizon's `Host` can't
+//!   read vanilla's recipes; a data pack's changes to them are not seen. Items that are fire
+//!   resistant are the baked item tag `create:fan_fire_resistant` (the `minecraft:damage_resistant`
+//!   of the game's items; `FIRE_RESISTANT` in Create 1.21.1). DROP THESE COPIES when the project
+//!   moves to the new mod API's `recipe_for`.
 //! - Items on depots and belts under the current are not processed (only item entities are).
 //! - Players are pushed by a message to their client (`push_player`), which a dedicated server's
 //!   movement check may not like; their fall distance and the anti-fly timer are not reset.
@@ -528,30 +533,78 @@ fn affect_entities(
 
 // --- processing items (`FanProcessing`) ------------------------------------------------------------
 
-/// `type.canProcess(stack, level)`: smoking and blasting would read vanilla's cooking recipes,
-/// which the `Host` can't look up.
+/// `type.canProcess(stack, level)`. Smoking and blasting read vanilla's cooking recipes, which a
+/// mod can't: the copies `create:baked_*` stand in (`rules::fan::BAKED_*`).
 fn type_can_process(host: &dyn Host, kind: Kind, stack: &ItemStack) -> bool {
-    kind.recipe_type()
-        .is_some_and(|recipe_type| crate::recipes::for_stack(host, recipe_type, stack).is_some())
+    let baked = |recipe_type: &str| crate::recipes::for_stack(host, recipe_type, stack).is_some();
+    match kind {
+        Kind::Smoking => baked(fan::BAKED_SMOKING),
+        Kind::Blasting => {
+            let (smelting, blasting) = (baked(fan::BAKED_SMELTING), baked(fan::BAKED_BLASTING));
+            // `stack.has(DataComponents.FIRE_RESISTANT)`, asked only when no recipe takes it.
+            let resistant = || host.server_item_in_tag(stack, fan::FIRE_RESISTANT_TAG).unwrap_or(false);
+            fan::blasting_can_process(smelting, blasting, !(smelting || blasting) && resistant())
+        }
+        Kind::Splashing | Kind::Haunting => kind
+            .recipe_type()
+            .is_some_and(|recipe_type| crate::recipes::for_stack(host, recipe_type, stack).is_some()),
+    }
 }
 
-/// `type.process(stack, level)` for splashing and haunting: `RecipeApplier.applyRecipeOn` (a roll
-/// of the results per item, equal stacks merged).
+/// `RecipeApplier.applyRecipeOn` for a recipe that isn't Create's (a vanilla cooking recipe):
+/// `ItemHelper.multipliedOutput(stack, result)`, the result times the count, split by stack size.
+fn cooked(host: &dyn Host, stack: &ItemStack, recipe: &crate::recipes::Processing) -> Vec<ItemStack> {
+    let Some(out) = recipe.results.first() else {
+        return Vec::new();
+    };
+    let max = host.max_stack_size(&out.stack.item).unwrap_or(64);
+    fan::multiplied(stack.count, out.stack.count, max)
+        .into_iter()
+        .map(|count| ItemStack { count, ..out.stack.clone() })
+        .collect()
+}
+
+/// `type.process(stack, level)`: `None` where the type does nothing (Create's `null`), an empty
+/// list where the item is destroyed.
 fn type_process(
     host: &mut dyn Host,
     dimension: &str,
     kind: Kind,
     stack: &ItemStack,
 ) -> Option<Vec<ItemStack>> {
-    let recipe_type = kind.recipe_type()?;
-    let recipe = crate::recipes::for_stack(host, recipe_type, stack)?;
-    let mut stacks = Vec::new();
-    for _ in 0..stack.count {
-        for piece in crate::recipes::roll(host, dimension, &recipe.results) {
-            util::merge(host, &mut stacks, piece);
+    match kind {
+        // `SmokingType.process`.
+        Kind::Smoking => {
+            let recipe = crate::recipes::for_stack(host, fan::BAKED_SMOKING, stack)?;
+            Some(cooked(host, stack, &recipe))
+        }
+        // `BlastingType.process`: smelting, else blasting, unless smoking makes the same item.
+        Kind::Blasting => {
+            let smoking = crate::recipes::for_stack(host, fan::BAKED_SMOKING, stack);
+            let smelting = crate::recipes::for_stack(host, fan::BAKED_SMELTING, stack)
+                .or_else(|| crate::recipes::for_stack(host, fan::BAKED_BLASTING, stack));
+            let first = |recipe: &Option<crate::recipes::Processing>| {
+                recipe.as_ref().and_then(|r| r.results.first()).map(|out| out.stack.item.clone())
+            };
+            let same = || first(&smoking) == first(&smelting);
+            match fan::blast(smelting.is_some(), smoking.is_some(), same) {
+                fan::Blast::Smelt => smelting.map(|recipe| cooked(host, stack, &recipe)),
+                fan::Blast::Destroy => Some(Vec::new()),
+            }
+        }
+        Kind::Splashing | Kind::Haunting => {
+            let recipe_type = kind.recipe_type()?;
+            let recipe = crate::recipes::for_stack(host, recipe_type, stack)?;
+            // `RecipeApplier.applyRecipeOn` (a roll of the results per item, equal stacks merged).
+            let mut stacks = Vec::new();
+            for _ in 0..stack.count {
+                for piece in crate::recipes::roll(host, dimension, &recipe.results) {
+                    util::merge(host, &mut stacks, piece);
+                }
+            }
+            Some(stacks)
         }
     }
-    Some(stacks)
 }
 
 /// `FanProcessing.canProcess` and `applyProcessing` for an item entity, one tick.

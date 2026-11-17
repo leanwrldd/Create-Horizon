@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:raw_gold"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:gold_ingot"
+    }
+  ],
+  "type": "create:baked_blasting"
+}

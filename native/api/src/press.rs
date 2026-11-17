@@ -3,6 +3,10 @@
 //! (compacting), and drawing its head. The cycle's rules are `create_kinetics::press`; this is
 //! the glue.
 //!
+//! `MechanicalPressBlockEntity.getRecipe` asks the sequenced assembly's next pressing step first
+//! (`machines/sequenced.rs`, so a Precision Mechanism's or Sturdy Sheet's press step works
+//! wherever the press works), then the `create:pressing` files below.
+//!
 //! Recipes are Create's own `create:pressing` files (`data/create/recipe/pressing/*.json`),
 //! read through `Host::recipes_of_type`, so a data pack can add more; the basin side runs the
 //! `create:compacting` recipes through `machines/basin.rs`.
@@ -31,6 +35,7 @@ use create_kinetics::press::{
     self, BASIN_POLL, ENTITY_SCAN, IMPACT, InWorld, Mode, Next, PICKUP_DELAY, Press, Step, TOSS,
 };
 use create_kinetics::rules::basin::BACKUP_CHECK_TICKS;
+use create_kinetics::rules::sequenced::Machine;
 use create_kinetics::{Axis, Dir, Kind, Node, Pos};
 use horizon_client::mod_api::serde_json::{Value, json};
 use horizon_client::mod_api::{
@@ -40,6 +45,7 @@ use horizon_client::mod_api::{
 use std::collections::BTreeMap;
 
 use crate::machines::basin::{self, Kind as RecipeKind};
+use crate::machines::sequenced;
 use crate::{belt, depot, float, int, util};
 
 pub const ID: &str = "create:mechanical_press";
@@ -402,14 +408,14 @@ fn press_items(host: &mut dyn Host, pos: Pos) -> bool {
             continue;
         }
         found = true;
-        if let Some(results) = recipe_for(host, &item.stack) {
+        if let Some(recipe) = recipe_for(host, &item.stack) {
             press_one(
                 host,
                 dimension,
                 item.id,
                 item.position,
                 item.stack,
-                &results,
+                &recipe,
             );
         }
         if !press::BULK {
@@ -426,12 +432,12 @@ fn press_one(
     id: u32,
     at: [f64; 3],
     mut stack: ItemStack,
-    results: &[Output],
+    recipe: &Recipe,
 ) {
     match press::in_world(stack.count) {
         InWorld::Convert => {
             // The whole stack, one roll per item (`RecipeApplier.applyRecipeOn`).
-            let made = made_from(host, dimension, stack.count, results);
+            let made = made_from(host, dimension, stack.count, recipe);
             let motion = host
                 .entity(id)
                 .and_then(|entity| host.entity_velocity(entity))
@@ -446,7 +452,7 @@ fn press_one(
             }
         }
         InWorld::TakeOne => {
-            for made in roll(host, dimension, results) {
+            for made in roll_once(host, dimension, recipe) {
                 let motion = toss(host, dimension);
                 spawn(host, dimension, at, made, motion, PICKUP_DELAY);
             }
@@ -458,10 +464,10 @@ fn press_one(
 
 /// `RecipeApplier.applyRecipeOn(level, stack, recipe, ...)`: what `count` items of the recipe's
 /// input turn into, one roll of the results each, equal stacks topped up as they come.
-fn made_from(host: &mut dyn Host, dimension: &str, count: u32, results: &[Output]) -> Vec<ItemStack> {
+fn made_from(host: &mut dyn Host, dimension: &str, count: u32, recipe: &Recipe) -> Vec<ItemStack> {
     let mut made: Vec<ItemStack> = Vec::new();
     for _ in 0..count {
-        for piece in roll(host, dimension, results) {
+        for piece in roll_once(host, dimension, recipe) {
             merge(host, &mut made, piece);
         }
     }
@@ -530,6 +536,22 @@ struct Output {
     chance: f32,
 }
 
+/// The recipe `getRecipe` found for an item: a sequenced assembly's step, or a pressing recipe's
+/// results.
+enum Recipe {
+    Plain(Vec<Output>),
+    Step(sequenced::Step),
+}
+
+/// One roll of the recipe's results for one item (`ProcessingRecipe.rollResults`); a sequenced
+/// step's first result is the item's next form.
+fn roll_once(host: &mut dyn Host, dimension: &str, recipe: &Recipe) -> Vec<ItemStack> {
+    match recipe {
+        Recipe::Plain(results) => roll(host, dimension, results),
+        Recipe::Step(step) => step.roll(host),
+    }
+}
+
 fn roll(host: &mut dyn Host, dimension: &str, results: &[Output]) -> Vec<ItemStack> {
     results
         .iter()
@@ -560,7 +582,11 @@ fn modern_ingredient(json: &Value) -> Value {
 
 /// The first `create:pressing` recipe that takes `stack`, as its results for one item
 /// (`AllRecipeTypes.PRESSING.find`). Create's pressing recipes have one ingredient.
-fn recipe_for(host: &dyn Host, stack: &ItemStack) -> Option<Vec<Output>> {
+fn recipe_for(host: &dyn Host, stack: &ItemStack) -> Option<Recipe> {
+    // `SequencedAssemblyRecipe.getRecipe(level, item, PRESSING, PressingRecipe.class)` first.
+    if let Some(step) = sequenced::find(host, stack, Machine::Pressing, &|_| true) {
+        return Some(Recipe::Step(step));
+    }
     host.recipes_of_type(RECIPE_TYPE).iter().find_map(|recipe| {
         let json = &recipe.json;
         let ingredient =
@@ -583,7 +609,7 @@ fn recipe_for(host: &dyn Host, stack: &ItemStack) -> Option<Vec<Output>> {
                 Some(Output { stack, chance })
             })
             .collect();
-        (!results.is_empty()).then_some(results)
+        (!results.is_empty()).then_some(Recipe::Plain(results))
     })
 }
 

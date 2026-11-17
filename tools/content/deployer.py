@@ -10,8 +10,12 @@ Create `mc1.21.1/dev` at 4148fd8: `AllBlocks.DEPLOYER` (`SharedProperties.stone`
 `recipe/crafting/kinetics/deployer`, and the datagen's `recipe/deploying/*` and
 `recipe/item_application/*` (tables made by `_deployer_recipes_gen.py`).
 
-Left out: `item_application/railway_casing` (no Railway Casing yet), `sandpaper_polishing/rose_quartz`
-(no Sand Paper yet) and the `sequenced_assembly` recipes (no assembly line yet). The tags
+Also here, because the held item selects them (`DeployerBlockEntity.getRecipe`): the
+`recipe/sandpaper_polishing/*` recipes (the Rose Quartz) and the `recipe/sequenced_assembly/*` ones
+(the Precision Mechanism and the Sturdy Sheet), which the Press, Saw and Spout read too.
+
+Left out: `item_application/railway_casing` (no Railway Casing yet) and `sequenced_assembly/track`
+(no Track or Sleepers yet). The tags
 `c:stripped_logs` and `c:stripped_woods` are NeoForge's, which the casing recipes name: they hold
 the stripped logs, stems and woods of the game's own registry.
 """
@@ -79,6 +83,8 @@ RECIPES = {
     },
     **_data("_deployer_recipes.py", "DEPLOYING"),
     **_data("_deployer_recipes.py", "ITEM_APPLICATION"),
+    **_data("_deployer_recipes.py", "SANDPAPER_POLISHING"),
+    **_data("_deployer_recipes.py", "SEQUENCED_ASSEMBLY"),
 }
 
 # NeoForge's `c:stripped_logs` and `c:stripped_woods`, which the casing recipes name, as the game's
