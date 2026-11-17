@@ -55,6 +55,7 @@ pub mod drill_hardness;
 pub mod elevator;
 pub mod encased;
 pub mod extendo_grip;
+pub mod factory_gauge;
 pub mod fan;
 pub mod fan_nozzle;
 pub mod filter;
