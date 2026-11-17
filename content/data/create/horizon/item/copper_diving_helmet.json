@@ -1,0 +1,21 @@
+{
+  "template": "minecraft:iron_helmet",
+  "components": {
+    "minecraft:enchantable": {
+      "value": 7
+    },
+    "minecraft:max_damage": 77,
+    "minecraft:repairable": {
+      "items": "minecraft:copper_ingot"
+    },
+    "minecraft:attribute_modifiers": [
+      {
+        "type": "minecraft:armor",
+        "id": "minecraft:armor.head",
+        "amount": 2.0,
+        "operation": "add_value",
+        "slot": "head"
+      }
+    ]
+  }
+}

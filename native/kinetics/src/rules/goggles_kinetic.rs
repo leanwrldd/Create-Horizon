@@ -36,8 +36,8 @@ pub fn impact(block: &str) -> f32 {
         "turntable" | "millstone" | "mechanical_mixer" | "mechanical_pump" | "mechanical_bearing"
         | "mechanical_drill" | "mechanical_saw" | "deployer" | "mechanical_piston"
         | "sticky_mechanical_piston" => 4.0,
-        // `ROPE_PULLEY` and `ELEVATOR_PULLEY` (the gantry sets none).
-        "rope_pulley" | "elevator_pulley" => 4.0,
+        // `ROPE_PULLEY`, `ELEVATOR_PULLEY` (the gantry sets none) and `HOSE_PULLEY`.
+        "rope_pulley" | "elevator_pulley" | "hose_pulley" => 4.0,
         // `CRUSHING_WHEEL` and `MECHANICAL_PRESS`.
         "crushing_wheel" | "mechanical_press" => 8.0,
         _ => 0.0,

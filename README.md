@@ -17,12 +17,12 @@ is not pinned to one Horizon commit.
 | Kinetics | 48 | 57 | 84% |
 | Materials | 18 | 20 | 90% |
 | Logistics | 23 | 52 | 44% |
-| Fluids | 16 | 18 | 89% |
-| Contraptions | 32 | 42 | 76% |
+| Fluids | 18 | 18 | 100% |
+| Contraptions | 33 | 42 | 79% |
 | Schematics | 0 | 5 | 0% |
-| Curiosities | 0 | 13 | 0% |
+| Curiosities | 8 | 13 | 62% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **176** | **246** | **71.5%** |
+| **All** | **187** | **246** | **76.0%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -136,6 +136,7 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Chutes, Funnels | Chute and Smart Chute (items fall, fans push them up, hoppers and belts feed them); Andesite and Brass Funnels taking from and putting into the block behind, and on belts and depots as belt funnels; filters set by sneak-clicking with an item |
 | Andesite and Brass Tunnels | A casing over a belt block (it puts a casing on the belt if there is none) that takes the shape of what is beside the belt: straight, T, cross, or a window between tunnels and funnels (the Wrench closes and opens a window). Flaps swing as items pass. The Andesite Tunnel splits one item off a stack to each side output (belts, depots, funnels). The Brass Tunnel takes whole stacks and gives them out by its mode (split, forced split, round robin, forced round robin, prefer nearest, randomize, synchronize inputs) across the group of tunnels side by side, with a filter on each side; an empty hand takes back what the group holds. Sneak-click the top steps the mode, sneak-click a side with an item sets that side's filter. Unplayed: type-checked and unit-tested only |
 | Steam | The boiler on a Fluid Tank, heated by Blaze Burners and fed water by pipes, with its gauge; the Steam Engine turning a Powered Shaft; the Steam Whistle and its extensions, pitched by size |
+| Hose Pulley | Lowers a hose by RPM / 512 blocks a tick (4 su per RPM) until it meets a solid block, and drains the body of fluid at its end (breadth first through connected sources, a bucket at a time, from the top, the farthest first, up to 128 blocks away) or fills the space there with a bucket of what a pipe pushes in (lowest and nearest cell first). A body of 10,000 or more blocks of water or lava is infinite: never drained, and it swallows fills. Pipes and pumps reach it on its pipe side like a tank (1,500 mB inside). Honey and chocolate are placed and drained as their liquid blocks. The goggles show the infinite-supply hint. Known differences: the searches aren't saved over a reload, no fluid ticks are scheduled after a drain or fill, it doesn't turn to a shaft or pipe beside it when placed, the coil doesn't scroll. Unplayed |
 | Spout, Item Drain | The Spout fills items on a belt or depot below it from its tank (`create:filling` recipes, buckets, bottles); the Item Drain empties items brought by belt, funnel or hand into its tank |
 | Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter (sneak-click with an item); a fluid pipe encased with a copper casing |
 | Small kinetics | Weighted Ejector (throws items and entities along Create's arc to a target picked with the item), Turntable, Cuckoo Clock and Mysterious Cuckoo Clock, Large Water Wheel, Wooden and Metal Brackets on shafts, cogwheels and pipes |
@@ -241,6 +242,7 @@ The engine that lifts a group of blocks out of the world, moves or turns it and 
 | Windmill Bearing, Windmill Sail Frame, Windmill Sails (white and 15 dyes) | The Windmill Bearing is the Mechanical Bearing that makes the rotation: 1 RPM for each 8 sail blocks (wool and sails) in its structure, up to 16, 512 su per RPM, clockwise or the other way (the Wrench on a side of the bearing toggles it); it assembles by hand with nothing turning it and refuses fewer than 8 sails. A sail faces the way you look; a dye recolours it (again: the sail beside the click, then the whole plane), shears take the canvas off, a sail or frame used on a sail lays the next of a row. Unplayed |
 | Gantry Shaft, Gantry Carriage | A carriage on a turning, unpowered gantry shaft takes what it holds and runs along the rail at RPM / 512 blocks a tick (0.49 at most) until the shaft's end, something in the way, the shaft gone or powered; redstone powers the whole line of shafts, and a powered shaft turns with the carriage instead. The shafts join into start, middle, end and single parts. An empty hand on the carriage asks it to start. Unplayed |
 | Rope Pulley, Rope, Pulley Magnet | Takes what hangs from the magnet (or lowers the rope alone and picks up what it meets) and pays the rope out or in at RPM / 512 blocks a tick, drawn as it goes; sets the structure down and the rope back as blocks where it stops, reaches its length (384, or the world's floor) or meets something. Breaking a rope takes the rest of it. Unplayed |
+| Portable Storage Interface, Portable Fluid Interface | A stationary interface links with one on a structure that stops facing it (in its cell or the next, not powered) and stands for all the structure's chests, barrels, shulker boxes and Item Vaults (items) or Fluid Tanks (fluids) while linked: funnels and chutes insert into and take from it, pumps and pipes fill and drain it. The structure is held still beside it (a stall the piston and the bearing, so the windmill, follow) and goes on once nothing has moved for 60 ticks (`psiTimeout`). Redstone keeps one from linking and lets go of one that has. The middle and the top come out as the link forms. Unplayed |
 | Elevator Pulley, Elevator Contact | An empty hand on a turning pulley takes the cabin under it (exactly one horizontal contact in it) and makes the contacts in a line in front of that contact its floors; redstone on a floor's contact calls the cabin, which speeds up and brakes onto the floor, and the contact there powers while it stands. An empty hand again sets the cabin down. Unplayed |
 
 A structure is saved in the controller's block entity in Create's layout (`Anchor`, `Blocks.Palette`,
@@ -248,7 +250,7 @@ A structure is saved in the controller's block entity in Create's layout (`Ancho
 a reload resumes it. Known differences from Create: nothing collides with a moving structure (no one rides,
 stands on or is pushed by it), blocks in it are drawn as their block model only, no actors, seats or
 movement interactions, only the "move and place" mode, the Clockwork Bearing and the Cart Assembler are not
-here, belts and tanks can't be moved, and a controller destroyed by an explosion loses its structure. Tested in
+here, belts and the Creative Fluid Tank can't be moved (a Fluid Tank can, with its content, if the whole tank is in the structure; its multi-block `Controller` is kept relative to the structure), and a controller destroyed by an explosion loses its structure. A structure can be held still (the `Stalled` flag of the controller, only the piston and bearing honour it; the Portable Interfaces use it). Tested in
 game (build `8d883ba`): extend and retract, sticky pistons and the slime ball, stopping at an obstacle, slime
 structures, the bearing turning and setting down every way, save and reload mid-stroke, and breaking a
 controller while it runs. The chassis, Super Glue, windmill and sails, gantry, Rope Pulley and Elevator Pulley
@@ -268,9 +270,24 @@ differences. The ones worth knowing:
   placement assist; powering and a carriage losing its shaft are polled.
 - **Rope Pulley**: no mirrored pulleys (several on one structure), no waterlogged rope, the world's floor is
   taken as -64 in the Overworld and 0 elsewhere, the coil doesn't scroll.
+- **Portable Interfaces**: the structure's storage is chests, trapped chests, barrels, shulker boxes, Item Vaults and Fluid Tanks (no Creative Crate, Depot, Dispenser, Toolbox or another mod's container; a double chest is two storages); it is read and changed in the controller's saved structure, in position order; only pistons and bearings hold a structure still, so an interface on a gantry, rope pulley or elevator never links; the comparator reads nothing; a hopper beside the stationary interface can't reach the structure's items (Horizon's hoppers see only a block's own container), nor can the Mechanical Arm; the moving interface is drawn at rest, not reaching out; the top's yaw about its axis may differ from Create's.
 - **Elevator**: no Redstone Contact in this port, so the cabin's contact is an Elevator Contact (creative only,
   and it drops itself); no floor screen, door controls, Contraption Controls or Display Link source; a contact
   doesn't light while it powers; the draw's orientation is unchecked.
+
+### Curiosities (equipment)
+
+Each module's header (`native/api/src/machines/<name>.rs`) lists its differences from Create in full.
+
+| Item | What it does here |
+|---|---|
+| Toolbox (16 colours) | 8 compartments of 4 stacks, one kind of item each; a left click picks it up with its contents (`create:toolbox_inventory`), a dye recolours it (also a crafting recipe that keeps the contents), the Wrench picks it up too. **Stand-ins for the radial menu and screen:** a right click opens a 9 x 4 chest view (a column per compartment; items that don't belong are handed back on close); a sneak right click links the selected hotbar slot to a compartment (with a matching item in hand, again to unlink; with an empty hand it steps through the compartments), and the box keeps that slot at half a stack within 10 blocks. Links are not saved across a reload; no hopper or comparator access, no lid animation. Unplayed: type-checked and unit-tested only |
+| Clipboard | Pages of checklist entries that the item carries and a block keeps, placed on a floor, wall or ceiling (sneak-click to place, left click or sneak-click to take it back with its pages), Create's recipe and clearing recipe. **Stand-in for the screen:** a right click writes the open page into the chat, and `/clipboard add\|check\|uncheck\|toggle\|remove\|edit\|page\|newpage\|removepage\|clear\|show` edits the clipboard in the main hand (else the placed one right-clicked last). No settings copying between blocks. Unplayed |
+| Linked Controller | Right-click to take over the movement keys (W, S, A, D, Space, Shift: the default bindings only), right-click again to put it away; each held key transmits 15 on the frequency pair bound to it, as the player's block position, kept alive by a message every 5 ticks and dropped 30 ticks after the last. Right-click a Redstone Link with it, then press a key, to bind the link's two frequency items to that key (the bind shows as a HUD line). Create's recipe. **Not done:** the lectern placement, the manual frequency screen (sneak-click), the click sound and the moving buttons. Unplayed |
+| Copper and Netherite Backtank, Diving Helmets and Boots | The backtank is a chestplate holding up to 900 air (the item bar; `create:backtank_air`) and a block that fills from rotation (1 to 5 air every 0 to 20 ticks by speed, 4 su per RPM, shaft from the top, the cogs turn), placed by using the item on a block and dropping with its air. A worn diving helmet lets the player breathe under water on the tank's air, one a second, with low and depleted warnings; netherite also drains a netherite tank in lava, and the full netherite set (helmet, netherite backtank with air, leggings, boots) cancels fire and lava damage. Diving boots pull the player down in water. Armour values and durability are Create's; the worn pieces look like iron and netherite armour (no Create armour layers or backpack model). No Capacity enchantment, no air overlay, no comparator, no boots jump or lava walking. Unplayed |
+| Extendo Grip | Held in a hand it adds 3 blocks to the player's block interaction range (5 with one in each hand; the range base is set in the player's tick and put back), attacks with it knock back 2 more, and each block broken or placed wears it (200 uses; a worn Backtank pays 1 air instead, creative players pay nothing). Create's mechanical crafting recipe. Wear is written to a grip in the main hand only; hits don't wear it; no entity-reach fix, no arm animation. Unplayed |
+| Potato Cannon | A right click fires one item of ammunition from the inventory (24 types in Create's table: damage, knockback, reload ticks, velocity, spray of 2 or 3, burning, potion effects, a bowl back from the stew) with the `create:potato_cannon` damage type; 100 durability, or 4 air from a worn Backtank. **Stand-in for Create's projectile entity:** a vanilla snowball carrying the ammunition as its item, whose impact the mod takes over. No spin, sticking, crop planting or block placing on a block hit, chorus teleport, zombie-villager cure, Power, Punch or Potato Recovery. Unplayed |
+| Peculiar Bell, Haunted Bell | Bells on vanilla's bell block (rings when hit or powered) with Create's models; a peculiar bell placed over soul fire or a soul campfire becomes a haunted one (a Fan's haunting also makes one), and a player holding a haunted bell sees cyan dust at the spots within 3 blocks where a mob could spawn (free, solid floor, no block light). Not done: Create's own ring and sounds, the pulse's soul particles and outline, haunting by lighting soul fire under a placed bell. Unplayed: it isn't known whether the template's bell body draws over Create's model |
 
 ### Settings
 
@@ -338,7 +355,7 @@ item icons.
 
 ### Not done, and known differences from Create
 
-- Open pipe ends, the Clockwork Bearing, the Cart Assembler and the Hose Pulley, trains, the rest of
+- Open pipe ends, the Clockwork Bearing, the Cart Assembler, trains, the rest of
   logistics and schematics.
 - The Deployer, the storage blocks, the Mechanical Arm, the Mechanical Crafter, tunnels, the Display Link,
   Display Board and Nixie Tubes, girders, seats and copycats have not been tried in

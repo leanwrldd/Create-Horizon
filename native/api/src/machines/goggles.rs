@@ -285,6 +285,8 @@ fn subject(host: &dyn Host, mut pos: Pos, mut block: String) -> Option<Subject> 
         "create:analog_lever" => Special::AnalogLever(util::int(nbt, "State")),
         "create:steam_whistle" => Special::Whistle(util::int(nbt, "Pitch")),
         "create:mechanical_arm" => Special::Arm { has_targets: util::boolean(nbt, "HasTargets") },
+        // `HosePulleyBlockEntity`: the client's `Infinite`.
+        "create:hose_pulley" => Special::HosePulley { infinite: util::boolean(nbt, "Infinite") },
         "create:mechanical_bearing" => {
             let front = host
                 .block_property(pos, "facing")

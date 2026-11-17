@@ -1,0 +1,117 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 2.0,
+    "explosion_resistance": 2.0,
+    "requires_tool": false,
+    "sounds": "minecraft:oak_planks",
+    "map_color": 15,
+    "render_shape": "MODEL",
+    "occludes": false
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    }
+  },
+  "default_state": {
+    "facing": "north"
+  },
+  "shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0.0625,
+          0,
+          0.25,
+          0.9375,
+          0.5625,
+          0.75
+        ]
+      ],
+      "south": [
+        [
+          0.0625,
+          0,
+          0.25,
+          0.9375,
+          0.5625,
+          0.75
+        ]
+      ],
+      "east": [
+        [
+          0.25,
+          0,
+          0.0625,
+          0.75,
+          0.5625,
+          0.9375
+        ]
+      ],
+      "west": [
+        [
+          0.25,
+          0,
+          0.0625,
+          0.75,
+          0.5625,
+          0.9375
+        ]
+      ]
+    }
+  },
+  "collision_shapes": {
+    "property": "facing",
+    "values": {
+      "north": [
+        [
+          0.0625,
+          0,
+          0.25,
+          0.9375,
+          0.5625,
+          0.75
+        ]
+      ],
+      "south": [
+        [
+          0.0625,
+          0,
+          0.25,
+          0.9375,
+          0.5625,
+          0.75
+        ]
+      ],
+      "east": [
+        [
+          0.25,
+          0,
+          0.0625,
+          0.75,
+          0.5625,
+          0.9375
+        ]
+      ],
+      "west": [
+        [
+          0.25,
+          0,
+          0.0625,
+          0.75,
+          0.5625,
+          0.9375
+        ]
+      ]
+    }
+  }
+}

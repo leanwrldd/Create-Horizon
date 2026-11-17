@@ -467,4 +467,76 @@ impl Hooks for Create {
             module.entity_tick_post(host, event);
         }
     }
+
+    fn menu_input_closed(&self, host: &mut dyn Host, event: &mut MenuInputClosedEvent<'_>) {
+        for module in &self.modules {
+            module.menu_input_closed(host, event);
+        }
+    }
+
+    fn register_commands(&self, host: &mut dyn Host, event: &mut RegisterCommandsEvent<'_>) {
+        for module in &self.modules {
+            module.register_commands(host, event);
+        }
+    }
+
+    fn perform_command(&self, host: &mut dyn Host, event: &mut PerformCommandEvent<'_>) -> Flow {
+        for module in &self.modules {
+            if let Flow::Cancel = module.perform_command(host, event) {
+                return Flow::Cancel;
+            }
+        }
+        Flow::Continue
+    }
+
+    fn movement_input(&self, host: &dyn Host, event: &mut MovementInputEvent) {
+        for module in &self.modules {
+            module.movement_input(host, event);
+        }
+    }
+
+    fn net_from_client(&self, host: &mut dyn Host, event: &mut NetFromClientEvent<'_>) {
+        for module in &self.modules {
+            module.net_from_client(host, event);
+        }
+    }
+
+    fn living_breathe(&self, event: &mut LivingBreatheEvent<'_>) {
+        for module in &self.modules {
+            module.living_breathe(event);
+        }
+    }
+
+    fn living_incoming_damage_v3(&self, event: &mut LivingIncomingDamageV3Event<'_>) -> Flow {
+        for module in &self.modules {
+            if let Flow::Cancel = module.living_incoming_damage_v3(event) {
+                return Flow::Cancel;
+            }
+        }
+        Flow::Continue
+    }
+
+    fn living_knockback(&self, event: &mut LivingKnockbackEvent<'_>) -> Flow {
+        for module in &self.modules {
+            if let Flow::Cancel = module.living_knockback(event) {
+                return Flow::Cancel;
+            }
+        }
+        Flow::Continue
+    }
+
+    fn hears_projectile_impacts(&self, host: &dyn Host, event: &mut HearsProjectileImpactsEvent) {
+        for module in &self.modules {
+            module.hears_projectile_impacts(host, event);
+        }
+    }
+
+    fn projectile_impact(&self, host: &mut dyn Host, event: &mut ProjectileImpactEvent<'_>) -> Flow {
+        for module in &self.modules {
+            if let Flow::Cancel = module.projectile_impact(host, event) {
+                return Flow::Cancel;
+            }
+        }
+        Flow::Continue
+    }
 }

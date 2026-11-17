@@ -38,6 +38,7 @@ use horizon_client::mod_api::{
 use super::contraption::{
     self as engine, ASSEMBLE, CONTRAPTION, HostWorld, LAST_EXCEPTION, RUNNING, SYNC_TIME,
 };
+use super::portable_interface_motion as psi_motion;
 use crate::{kinetic, util};
 
 const NORMAL: &str = "create:mechanical_piston";
@@ -221,6 +222,7 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, facing: Dir, offset: 
 
 fn stop(entity: &mut ModBlockEntity, settled: i32, now: i64) {
     entity.nbt.insert(RUNNING.into(), flag(false));
+    entity.nbt.remove(&psi_motion::STALLED.into());
     entity.nbt.remove(&CONTRAPTION.into());
     util::set_float(&mut entity.nbt, OFFSET, settled as f32);
     entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
@@ -279,7 +281,7 @@ impl Hooks for Piston {
         // `onSpeedChanged`: the structure follows the old speed up to now, then the new one.
         if changed {
             if state.running {
-                let velocity = piston_rules::velocity(previous, facing);
+                let velocity = piston_rules::velocity(psi_motion::moving_rpm(entity, previous), facing);
                 let offset = piston_rules::offset_at(state.offset, state.time, velocity, now as f64, state.range);
                 util::set_float(&mut entity.nbt, OFFSET, offset);
                 entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
@@ -301,7 +303,7 @@ impl Hooks for Piston {
                     state.assemble = false;
                 } else if quiet >= engine::QUIET_TICKS {
                     // The rotation is gone: set the structure down where it is.
-                    let velocity = piston_rules::velocity(previous, facing);
+                    let velocity = piston_rules::velocity(psi_motion::moving_rpm(entity, previous), facing);
                     let offset = piston_rules::offset_at(state.offset, state.time, velocity, now as f64, state.range);
                     if let Some(settled) = set_down(host, pos, &entity.nbt.clone(), facing, offset, state.range) {
                         stop(entity, settled, now);
@@ -333,7 +335,29 @@ impl Hooks for Piston {
         // Where the structure is this tick, and whether it has reached an end or something in
         // its way (`LinearActuatorBlockEntity.tick`: the structure is moved by this tick's step
         // first, then looked at).
-        let velocity = piston_rules::velocity(rpm, facing);
+        // `PortableStorageInterfaceMovement`: an interface on the structure holds it still beside a
+        // stationary one (the snapshot is moved to now, then the structure follows no speed).
+        {
+            let held = psi_motion::is_stalled(&entity.nbt);
+            let speed = piston_rules::velocity(psi_motion::moving_rpm(entity, rpm), facing);
+            let anchor = live.moving.anchor;
+            let origin = |t: f64| {
+                let offset = piston_rules::offset_at(state.offset, state.time, speed, t, state.range);
+                piston_rules::position(anchor, facing, offset)
+            };
+            let pose = psi_motion::Pose::Translating { origin: &origin };
+            let want = psi_motion::tick(host, pos, &live.moving, &pose, now);
+            if want != held {
+                let offset = piston_rules::offset_at(state.offset, state.time, speed, now as f64, state.range);
+                util::set_float(&mut entity.nbt, OFFSET, offset);
+                entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
+                psi_motion::set_stalled(entity, want);
+                state.offset = offset;
+                state.time = now;
+                host.block_entity_sync(pos);
+            }
+        }
+        let velocity = piston_rules::velocity(psi_motion::moving_rpm(entity, rpm), facing);
         let offset = piston_rules::offset_at(state.offset, state.time, velocity, now as f64, state.range);
         let next = piston_rules::offset_at(state.offset, state.time, velocity, (now + 1) as f64, state.range);
         let at_end = (velocity > 0.0 && next >= state.range as f32) || (velocity < 0.0 && next <= 0.0);
@@ -380,6 +404,7 @@ impl Hooks for Piston {
         };
         tag.insert(LAST_EXCEPTION.into(), Tag::String(line.as_str().into()));
         tag.insert(CONTRAPTION.into(), engine::client_contraption(entity));
+        tag.insert(psi_motion::STALLED.into(), psi_motion::tag_value(&entity.nbt));
         Some(tag)
     }
 
@@ -406,7 +431,13 @@ impl Hooks for Piston {
         };
         let now = draw.game_time as f64 + f64::from(draw.partial);
         let offset =
-            piston_rules::offset_at(state.offset, state.time, piston_rules::velocity(rpm, facing), now, state.range);
+            piston_rules::offset_at(
+                state.offset,
+                state.time,
+                piston_rules::velocity(psi_motion::moving_rpm(event.entity, rpm), facing),
+                now,
+                state.range,
+            );
         // The anchor is the cell in front of the piston; the structure's blocks are at
         // `local + anchor + offset * facing`.
         let n = facing.normal();
@@ -563,7 +594,7 @@ impl Hooks for Piston {
         };
         let rpm = kinetic::speed(&entity);
         let now = util::game_time(host);
-        let velocity = piston_rules::velocity(rpm, facing);
+        let velocity = piston_rules::velocity(psi_motion::moving_rpm(&entity, rpm), facing);
         let offset = piston_rules::offset_at(state.offset, state.time, velocity, now as f64, state.range);
         set_down(host, pos, &entity.nbt, facing, offset, state.range);
         Flow::Continue

@@ -13,7 +13,7 @@ use super::goggles::{Lang, Line, blank};
 use super::goggles_blocks::{
     FluidTank, analog_lever_goggles, arm_hover, assembly_exception, basin_goggles,
     bearing_hover, boiler_goggles, brass_tunnel_goggles, chute_goggles, contained_fluid,
-    deployer_goggles, deployer_hover, pole_length, whistle_goggles,
+    deployer_goggles, deployer_hover, hose_pulley_goggles, pole_length, whistle_goggles,
 };
 use super::goggles_kinetic::{
     Kinetic, capacity, generating_goggles, kinetic_goggles, kinetic_hover, powered_shaft_goggles,
@@ -54,6 +54,8 @@ pub enum Special {
     BrassTunnel(Vec<(String, i32)>),
     Arm { has_targets: bool },
     Bearing { running: bool, front_replaceable: bool, windmill: bool },
+    /// A Hose Pulley, and whether the body of fluid it works on is infinite.
+    HosePulley { infinite: bool },
     /// A Piston Extension Pole: the poles in its line, if a Mechanical Piston is at either end.
     Pole(Option<usize>),
 }
@@ -83,7 +85,12 @@ fn has_hovering_information(subject: &Subject) -> bool {
 }
 
 /// `addToGoggleTooltip` of the block.
-fn goggle_tooltip(lang: &Lang, subject: &Subject, tooltip: &mut Vec<Line>) -> bool {
+fn goggle_tooltip(
+    lang: &Lang,
+    subject: &Subject,
+    width: &dyn Fn(&str) -> f32,
+    tooltip: &mut Vec<Line>,
+) -> bool {
     let kinetic = subject.kinetic.as_ref();
     match (&subject.special, kinetic) {
         (Special::Plain, Some(k)) => kinetic_goggles(lang, k, tooltip),
@@ -136,6 +143,7 @@ fn goggle_tooltip(lang: &Lang, subject: &Subject, tooltip: &mut Vec<Line>) -> bo
         (Special::BrassTunnel(stacks), _) => brass_tunnel_goggles(lang, stacks, tooltip),
         // The arm, the bearing and any other rotating block have the plain `KineticBlockEntity`.
         (Special::Arm { .. } | Special::Bearing { .. }, Some(k)) => kinetic_goggles(lang, k, tooltip),
+        (Special::HosePulley { infinite }, Some(k)) => hose_pulley_goggles(lang, k, *infinite, width, tooltip),
         _ => false,
     }
 }
@@ -188,7 +196,7 @@ pub fn overlay(
     let mut hover_added = false;
 
     if has_goggle && wearing_goggles {
-        goggle_added = goggle_tooltip(lang, subject, &mut tooltip);
+        goggle_added = goggle_tooltip(lang, subject, width, &mut tooltip);
     }
     if has_hover {
         if !tooltip.is_empty() {
