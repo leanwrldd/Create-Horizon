@@ -124,6 +124,7 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Chutes, Funnels | Chute and Smart Chute (items fall, fans push them up, hoppers and belts feed them); Andesite and Brass Funnels taking from and putting into the block behind, and on belts and depots as belt funnels; filters set by sneak-clicking with an item |
 | Andesite and Brass Tunnels | A casing over a belt block (it puts a casing on the belt if there is none) that takes the shape of what is beside the belt: straight, T, cross, or a window between tunnels and funnels (the Wrench closes and opens a window). Flaps swing as items pass. The Andesite Tunnel splits one item off a stack to each side output (belts, depots, funnels). The Brass Tunnel takes whole stacks and gives them out by its mode (split, forced split, round robin, forced round robin, prefer nearest, randomize, synchronize inputs) across the group of tunnels side by side, with a filter on each side; an empty hand takes back what the group holds. Sneak-click the top steps the mode, sneak-click a side with an item sets that side's filter. Unplayed: type-checked and unit-tested only |
 | Steam | The boiler on a Fluid Tank, heated by Blaze Burners and fed water by pipes, with its gauge; the Steam Engine turning a Powered Shaft; the Steam Whistle and its extensions, pitched by size |
+| Hose Pulley | Lowers a hose by RPM / 512 blocks a tick (4 su per RPM) until it meets a solid block, and drains the body of fluid at its end (breadth first through connected sources, a bucket at a time, from the top, the farthest first, up to 128 blocks away) or fills the space there with a bucket of what a pipe pushes in (lowest and nearest cell first). A body of 10,000 or more blocks of water or lava is infinite: never drained, and it swallows fills. Pipes and pumps reach it on its pipe side like a tank (1,500 mB inside). Honey and chocolate are placed and drained as their liquid blocks. The goggles show the infinite-supply hint. Known differences: the searches aren't saved over a reload, no fluid ticks are scheduled after a drain or fill, it doesn't turn to a shaft or pipe beside it when placed, the coil doesn't scroll. Unplayed |
 | Spout, Item Drain | The Spout fills items on a belt or depot below it from its tank (`create:filling` recipes, buckets, bottles); the Item Drain empties items brought by belt, funnel or hand into its tank |
 | Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter (sneak-click with an item); a fluid pipe encased with a copper casing |
 | Small kinetics | Weighted Ejector (throws items and entities along Create's arc to a target picked with the item), Turntable, Cuckoo Clock and Mysterious Cuckoo Clock, Large Water Wheel, Wooden and Metal Brackets on shafts, cogwheels and pipes |
@@ -279,7 +280,7 @@ item icons.
 
 ### Not done, and known differences from Create
 
-- Open pipe ends, the Clockwork Bearing, the Cart Assembler and the Hose Pulley, trains, the rest of
+- Open pipe ends, the Clockwork Bearing, the Cart Assembler, trains, the rest of
   logistics and schematics.
 - The Deployer, the storage blocks, the Mechanical Arm, the Mechanical Crafter, tunnels, the Display Link,
   Display Board and Nixie Tubes, girders, seats and copycats have not been tried in

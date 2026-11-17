@@ -323,6 +323,22 @@ pub fn add_hint(lang: &Lang, key: &str, width: &dyn Fn(&str) -> f32, tooltip: &m
     push_for_goggles(tooltip, cut_gray_and_white(&lang.tr(key, &[]), width));
 }
 
+/// `HosePulleyBlockEntity.addToGoggleTooltip`: the kinetic stats, then a hint when the body of
+/// fluid it works on is infinite. Answers what the kinetic part did.
+pub fn hose_pulley_goggles(
+    lang: &Lang,
+    kinetic: &super::goggles_kinetic::Kinetic,
+    infinite: bool,
+    width: &dyn Fn(&str) -> f32,
+    tooltip: &mut Vec<Line>,
+) -> bool {
+    let added = super::goggles_kinetic::kinetic_goggles(lang, kinetic, tooltip);
+    if infinite {
+        add_hint(lang, "hint.hose_pulley", width, tooltip);
+    }
+    added
+}
+
 /// `DeployerBlockEntity.addToTooltip` after the kinetic hint: a stopped or empty deployer says
 /// nothing; one that turns with items stuck in its overflow asks to have them taken out.
 pub fn deployer_hover(
@@ -450,6 +466,8 @@ mod tests {
             ("create.tooltip.analogStrength", "Analog Strength: %1$s/15"),
             ("create.generic.pitch", "Pitch: %1$s"),
             ("create.generic.notes", "F#;F;E;D#;D;C#;C;B;A#;A;G#;G"),
+            ("create.hint.hose_pulley", "The targeted body of fluid is considered infinite."),
+            ("create.hint.hose_pulley.title", "Bottomless Supply"),
             ("create.tooltip.brass_tunnel.contains", "Currently distributing:"),
             ("create.tooltip.brass_tunnel.contains_entry", "> %1$s x%2$s"),
             ("create.tooltip.brass_tunnel.retrieve", "Right-Click to retrieve"),
@@ -638,6 +656,20 @@ mod tests {
                 "    Right-Click to retrieve"
             ]
         );
+    }
+
+    #[test]
+    fn a_hose_pulley_adds_a_hint_only_when_its_fluid_is_infinite() {
+        use super::super::goggles_kinetic::{Kinetic, impact};
+        let kinetic = Kinetic { block: "create:hose_pulley".to_owned(), theoretical: 16.0, overstressed: false };
+        assert_eq!(impact("create:hose_pulley"), 4.0);
+        let mut finite = Vec::new();
+        assert!(hose_pulley_goggles(&lang(), &kinetic, false, &six, &mut finite));
+        let mut infinite = Vec::new();
+        assert!(hose_pulley_goggles(&lang(), &kinetic, true, &six, &mut infinite));
+        assert!(infinite.len() > finite.len());
+        assert!(infinite.iter().any(|line| plain(line).contains("Bottomless Supply")));
+        assert!(!finite.iter().any(|line| plain(line).contains("Bottomless Supply")));
     }
 
     #[test]

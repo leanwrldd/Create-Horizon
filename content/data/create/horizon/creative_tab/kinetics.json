@@ -86,6 +86,7 @@
     "create:stressometer",
     "create:gearshift",
     "create:goggles",
+    "create:hose_pulley",
     "create:item_drain",
     "create:item_vault",
     "create:large_water_wheel",

@@ -87,6 +87,7 @@
     "create:gearshift",
     "create:metal_girder",
     "create:metal_girder_encased_shaft",
+    "create:hose_pulley",
     "create:item_drain",
     "create:item_vault",
     "create:large_water_wheel",

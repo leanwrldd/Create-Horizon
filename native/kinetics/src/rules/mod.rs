@@ -52,6 +52,7 @@ pub mod goggles;
 pub mod goggles_blocks;
 pub mod goggles_kinetic;
 pub mod goggles_overlay;
+pub mod hose_pulley;
 pub mod item_drain;
 pub mod item_vault;
 pub mod large_water_wheel;
