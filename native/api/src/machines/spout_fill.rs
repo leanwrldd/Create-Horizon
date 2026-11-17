@@ -8,14 +8,14 @@
 //!
 //! Known differences from Create:
 //! - Containers are the ones `rules/fluids.rs` knows (the vanilla and Create buckets, the honey
-//!   bottle, Builder's Tea) plus the glass bottle with water and the bottle of water: Horizon's
-//!   `Host` has no item fluid handler to ask for other mods' containers, and potions other
-//!   than water (`create:potion`) are not carried (see `fluids.rs`).
-//! - The three `create:filling` recipes that take a `create:potion` fluid
-//!   (`filling/glowstone`, `gunpowder`, `redstone`) are not declared, as nothing here holds that
-//!   fluid.
+//!   bottle, Builder's Tea), the glass bottle with water and the bottle of water, and the potions
+//!   (`rules/potion_fluid.rs`: the potion and the bottle type go in the fluid's id): Horizon's
+//!   `Host` has no item fluid handler to ask for other mods' containers.
+//! - A potion with custom effects (`custom_effects`, `custom_color`, `custom_name`) can't be
+//!   emptied: the fluid carries only the potion's id.
 
 use create_kinetics::rules::fluids as fluid_rules;
+use create_kinetics::rules::potion_fluid as potion_rules;
 use create_kinetics::rules::sequenced::Machine;
 use horizon_client::mod_api::serde_json::{Value, json};
 use horizon_client::mod_api::{Hooks, Host, ItemStack, Tag};
@@ -37,11 +37,9 @@ const EMPTYING: &str = "create:emptying";
 const GLASS_BOTTLE: &str = "minecraft:glass_bottle";
 const POTION: &str = "minecraft:potion";
 const WATER: &str = fluid_rules::WATER;
-/// `PotionFluidHandler.getRequiredAmountForFilledBottle`, and a bottle of water's worth.
-const BOTTLE: i32 = fluid_rules::BOTTLE;
 
-/// `FluidIngredient.test`: whether the recipe's fluid ingredient takes `fluid`. A
-/// `neoforge:components` ingredient names a `create:potion` and matches nothing here.
+/// `FluidIngredient.test`: whether the recipe's fluid ingredient takes `fluid`. A `neoforge:components`
+/// ingredient names `create:potion` and the bottle type and potion it must carry (`rules/potion_fluid.rs`).
 fn fluid_matches(ingredient: &Value, fluid: &str) -> bool {
     match ingredient.get("type").and_then(Value::as_str) {
         Some("neoforge:single") => ingredient.get("fluid").and_then(Value::as_str) == Some(fluid),
@@ -49,6 +47,20 @@ fn fluid_matches(ingredient: &Value, fluid: &str) -> bool {
             .get("tag")
             .and_then(Value::as_str)
             .is_some_and(|tag| fluid_rules::tag_holds(tag, fluid)),
+        Some("neoforge:components") => {
+            let components = ingredient.get("components");
+            let bottle = components
+                .and_then(|c| c.get(potion_rules::BOTTLE_TYPE_COMPONENT))
+                .and_then(Value::as_str);
+            // `minecraft:potion_contents` is `{"potion": id}` (or the bare id).
+            let potion = components.and_then(|c| c.get(potion_rules::POTION_CONTENTS)).and_then(|contents| {
+                contents.as_str().or_else(|| contents.get("potion").and_then(Value::as_str))
+            });
+            ingredient
+                .get("fluids")
+                .and_then(Value::as_str)
+                .is_some_and(|fluids| potion_rules::ingredient_matches(fluid, fluids, bottle, potion))
+        }
         _ => false,
     }
 }
@@ -65,20 +77,46 @@ fn matching(host: &dyn Host, kind: &str, stack: &ItemStack) -> Vec<Processing> {
         .collect()
 }
 
-/// `PotionFluidHandler.isPotionItem` for a water potion: a `minecraft:potion` whose contents are
-/// plain water (`PotionContents.createItemStack(Items.POTION, Potions.WATER)`).
-fn is_water_potion(stack: &ItemStack) -> bool {
-    if &*stack.item != POTION {
-        return false;
+/// What a potion item holds: its bottle type and its `minecraft:potion_contents` potion (`None` for empty contents).
+/// `None` for an item that isn't a potion, and for contents Horizon's fluid can't carry (custom effects, colour or
+/// name).
+fn potion_of(stack: &ItemStack) -> Option<(potion_rules::Bottle, Option<String>)> {
+    let bottle = potion_rules::Bottle::of_item(&stack.item)?;
+    let potion = match stack.data().and_then(|data| data.other(potion_rules::POTION_CONTENTS)) {
+        None => None,
+        Some(Tag::String(potion)) => Some(potion.to_string_lossy()),
+        Some(Tag::Compound(contents)) => {
+            if ["custom_effects", "custom_color", "custom_name"]
+                .iter()
+                .any(|key| contents.contains_key(&(*key).into()))
+            {
+                return None;
+            }
+            match contents.get(&"potion".into()) {
+                Some(Tag::String(potion)) => Some(potion.to_string_lossy()),
+                _ => None,
+            }
+        }
+        _ => return None,
+    };
+    Some((bottle, potion))
+}
+
+/// `PotionFluidHandler.isPotionItem` and `getFluidFromPotionItem`: the fluid a potion bottle holds and its amount.
+fn potion_fluid(stack: &ItemStack) -> Option<(String, i32)> {
+    let (bottle, potion) = potion_of(stack)?;
+    potion_rules::from_item(bottle.item(), potion.as_deref())
+}
+
+/// A bottle of a potion: `PotionFluidHandler.fillBottle`, built through the recipe reader (the 26.x form of the
+/// component, as `water_potion`'s).
+fn potion_bottle(host: &dyn Host, fluid: &str) -> Option<ItemStack> {
+    let (item, potion) = potion_rules::filled_bottle(fluid)?;
+    let mut result = json!({ "id": item, "count": 1 });
+    if let Some(potion) = potion {
+        result["components"] = json!({ potion_rules::POTION_CONTENTS: potion });
     }
-    match stack.data().and_then(|data| data.other("minecraft:potion_contents")) {
-        Some(Tag::String(potion)) => potion.to_string_lossy() == "minecraft:water",
-        Some(tag @ Tag::Compound(_)) => matches!(
-            tag.get("potion"),
-            Some(Tag::String(potion)) if potion.to_string_lossy() == "minecraft:water"
-        ),
-        _ => false,
-    }
+    host.recipe_result(&result)
 }
 
 /// A bottle of water: `PotionContents.createItemStack(Items.POTION, Potions.WATER)`. `None` when
@@ -123,10 +161,11 @@ pub fn required_amount(host: &dyn Host, stack: &ItemStack, fluid: &str) -> Optio
             return Some(fluid_amount(ingredient));
         }
     }
-    // `GenericItemFilling.getRequiredAmountForItem`.
+    // `GenericItemFilling.getRequiredAmountForItem`: a glass bottle takes water and potions
+    // (`canFillGlassBottleInternally`).
     let item: &str = &stack.item;
-    if item == GLASS_BOTTLE && fluid == WATER {
-        return Some(BOTTLE);
+    if item == GLASS_BOTTLE && (fluid == WATER || potion_rules::is_potion_fluid(fluid)) {
+        return Some(potion_rules::BOTTLE_AMOUNT);
     }
     fluid_rules::filled(item, fluid).map(|c| c.amount)
 }
@@ -158,6 +197,9 @@ pub fn fill_item(host: &mut dyn Host, stack: &ItemStack, fluid: &str, required: 
     if item == GLASS_BOTTLE && fluid == WATER {
         return water_potion(host);
     }
+    if item == GLASS_BOTTLE && potion_rules::is_potion_fluid(fluid) {
+        return potion_bottle(host, fluid);
+    }
     fluid_rules::filled(item, fluid).map(|c| ItemStack::new(c.full, 1))
 }
 
@@ -172,7 +214,7 @@ pub struct Emptied {
 
 /// `GenericItemEmptying.canItemBeEmptied`.
 pub fn can_be_emptied(host: &dyn Host, stack: &ItemStack) -> bool {
-    is_water_potion(stack)
+    potion_fluid(stack).is_some()
         || !matching(host, EMPTYING, stack).is_empty()
         || fluid_rules::emptied(&stack.item).is_some()
 }
@@ -180,13 +222,10 @@ pub fn can_be_emptied(host: &dyn Host, stack: &ItemStack) -> bool {
 /// `GenericItemEmptying.emptyItem` for one item of `stack`, simulated: the fluid it holds and what
 /// is left of it.
 pub fn empty_item(host: &dyn Host, stack: &ItemStack) -> Option<Emptied> {
-    if is_water_potion(stack) {
-        // `PotionFluidHandler.emptyPotion`: a bottle of water is 250 mB of water in a glass bottle.
-        return Some(Emptied {
-            fluid: WATER.to_owned(),
-            amount: BOTTLE,
-            item: Some(ItemStack::new(GLASS_BOTTLE, 1)),
-        });
+    if let Some((fluid, amount)) = potion_fluid(stack) {
+        // `PotionFluidHandler.emptyPotion`: a potion is 250 mB of its fluid (water for a bottle of water) in a
+        // glass bottle.
+        return Some(Emptied { fluid, amount, item: Some(ItemStack::new(GLASS_BOTTLE, 1)) });
     }
     if let Some(recipe) = matching(host, EMPTYING, stack).into_iter().next() {
         let fluid = recipe.fluid_results.first()?;
@@ -271,8 +310,18 @@ mod tests {
         let tag = json!({"type": "neoforge:tag", "amount": 250, "tag": "c:honey"});
         assert!(fluid_matches(&tag, "create:honey"));
         assert!(!fluid_matches(&tag, "create:chocolate"));
-        // A potion's data components are not carried here.
-        let potion = json!({"type": "neoforge:components", "amount": 25, "fluids": "create:potion"});
-        assert!(!fluid_matches(&potion, "create:potion"));
+        // The datagen's `filling/glowstone`: a regular potion of night vision.
+        let potion = json!({
+            "type": "neoforge:components", "amount": 25, "fluids": "create:potion",
+            "components": {
+                "create:potion_fluid_bottle_type": "regular",
+                "minecraft:potion_contents": {"potion": "minecraft:night_vision"},
+            },
+        });
+        assert!(fluid_matches(&potion, "create:potion[bottle=regular,potion=minecraft:night_vision]"));
+        assert!(!fluid_matches(&potion, "create:potion[bottle=regular,potion=minecraft:strength]"));
+        assert!(!fluid_matches(&potion, "create:potion[bottle=splash,potion=minecraft:night_vision]"));
+        assert!(!fluid_matches(&potion, "minecraft:water"));
+        assert_eq!(fluid_amount(&potion), 25);
     }
 }

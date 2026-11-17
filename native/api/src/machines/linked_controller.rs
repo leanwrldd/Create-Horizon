@@ -6,7 +6,8 @@
 //! `create_kinetics::rules::linked_controller`; this is the glue.
 //!
 //! Known differences from Create, for the README:
-//! - **No Lectern Controller** (`LecternControllerBlock`: a controller placed on a lectern): not done.
+//! - The Lectern Controller (`lectern_controller.rs`) uses this module's client and server halves: its messages carry
+//!   the lectern's position, and the keys then belong to the controller on that lectern, not the one in the hand.
 //! - **No manual frequency screen** (`LinkedControllerMenu`, a sneaking right click): frequencies are
 //!   set only by binding. Nothing happens on a sneaking right click.
 //! - The keys are the default bindings (W, S, A, D, Space, Shift): Horizon gives a mod no way to read
@@ -34,10 +35,14 @@ use horizon_client::mod_api::{
 };
 
 use super::diodes_signal as signal;
+use super::lectern_controller;
 use super::redstone_link as link;
 use crate::util;
 
 const LINK: &str = "create:redstone_link";
+/// The lectern blocks a click with the controller in hand is not a toggle on.
+const LECTERN: &str = "minecraft:lectern";
+const LECTERN_CONTROLLER: &str = "create:lectern_controller";
 /// How far a player reaches for a link (the block interaction range).
 const REACH: f32 = 4.5;
 
@@ -54,15 +59,22 @@ fn is_controller(stack: &ItemStack) -> bool {
 }
 
 fn items_of(stack: &ItemStack) -> Vec<Option<ItemStack>> {
+    match stack.data().and_then(|d| d.other(rules::COMPONENT)) {
+        Some(Tag::Compound(tag)) => items_of_tag(tag),
+        _ => vec![None; rules::FREQUENCY_SLOTS],
+    }
+}
+
+/// The frequency items in the layout the component saves (`Items`, each with a `Slot`), as a Lectern Controller
+/// keeps them under `ControllerData`.
+pub(super) fn items_of_tag(tag: &Compound) -> Vec<Option<ItemStack>> {
     let mut slots: Vec<Option<ItemStack>> = vec![None; rules::FREQUENCY_SLOTS];
-    if let Some(Tag::Compound(tag)) = stack.data().and_then(|d| d.other(rules::COMPONENT)) {
-        if let Some(Tag::List(items)) = util::get(tag, "Items") {
-            for item in items {
-                if let Some(Tag::Byte(slot)) = item.get("Slot")
-                    && let Some(entry) = slots.get_mut(*slot as usize)
-                {
-                    *entry = util::stack_of(item);
-                }
+    if let Some(Tag::List(items)) = util::get(tag, "Items") {
+        for item in items {
+            if let Some(Tag::Byte(slot)) = item.get("Slot")
+                && let Some(entry) = slots.get_mut(*slot as usize)
+            {
+                *entry = util::stack_of(item);
             }
         }
     }
@@ -113,10 +125,30 @@ fn lock<T>(m: &'static Mutex<T>) -> std::sync::MutexGuard<'static, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// `LinkedControllerServerHandler.receivePressed` for a player's keys, by the controller's frequency items.
+fn receive(uuid: u128, level: u8, pos: [i32; 3], items: &[Option<ItemStack>], keys: &[usize], pressed: bool) -> Vec<Effect<Key>> {
+    let keyed: Vec<(usize, Key)> = keys.iter().map(|k| (*k, key_of(items, *k))).collect();
+    let mut servers = lock(&SERVERS);
+    let entry = servers.entry(uuid).or_insert_with(|| (Server::default(), level));
+    entry.1 = level;
+    entry.0.receive(pos, &keyed, pressed)
+}
+
 fn send(host: &mut dyn Host, messages: Vec<Message>) {
     for message in messages {
         let _ = host.net_send_to_server(rules::CHANNEL, &rules::encode(&message));
     }
+}
+
+/// The server says this player now uses the lectern at `pos` (`LinkedControllerClientHandler.activateInLectern`).
+pub(super) fn lectern_on(pos: [i32; 3]) {
+    lock(&CLIENT).activate_in_lectern(pos);
+}
+
+/// The server says this player no longer uses their lectern (`deactivateInLectern`).
+pub(super) fn lectern_off(host: &mut dyn Host) {
+    let messages = lock(&CLIENT).deactivate_in_lectern();
+    send(host, messages);
 }
 
 fn holds_controller(host: &dyn Host) -> bool {
@@ -167,9 +199,13 @@ impl Hooks for Controller {
         if !host.equipment(EquipmentSlot::MainHand).is_some_and(|stack| is_controller(&stack)) {
             return;
         }
-        // On a Redstone Link it is bind mode; anywhere else it toggles the controller.
-        let at_link = host
-            .raycast(REACH)
+        // On a Redstone Link it is bind mode; on a lectern the controller goes there (or is used there), not toggled;
+        // anywhere else it toggles the controller.
+        let hit = host.raycast(REACH);
+        if hit.as_ref().is_some_and(|hit| hit.block == LECTERN || hit.block == LECTERN_CONTROLLER) {
+            return;
+        }
+        let at_link = hit
             .filter(|hit| hit.block == LINK)
             .map(|hit| [hit.block_x, hit.block_y, hit.block_z]);
         let messages = match at_link {
@@ -264,13 +300,28 @@ impl Hooks for Controller {
                     if player.game_mode == util::SPECTATOR && pressed {
                         continue;
                     }
-                    let items = items_of(held);
-                    let keyed: Vec<(usize, Key)> = keys.iter().map(|k| (*k, key_of(&items, *k))).collect();
-                    let mut servers = lock(&SERVERS);
-                    let entry = servers.entry(uuid).or_insert_with(|| (Server::default(), level));
-                    entry.1 = level;
-                    effects.extend(entry.0.receive(pos, &keyed, pressed));
+                    effects.extend(receive(uuid, level, pos, &items_of(held), &keys, pressed));
                 }
+                // `LinkedControllerInputPacket.handleLectern`: the controller on the lectern, if this player uses it.
+                Message::LecternInput { lectern, keys, pressed } => {
+                    if player.game_mode == util::SPECTATOR && pressed {
+                        continue;
+                    }
+                    if host.block(lectern) != LECTERN_CONTROLLER {
+                        continue;
+                    }
+                    let Some(entity) = host.mod_block_entity(lectern) else {
+                        continue;
+                    };
+                    if !lectern_controller::is_used_by(&entity.nbt, uuid) {
+                        continue;
+                    }
+                    let Some(items) = lectern_controller::controller_items(&entity.nbt) else {
+                        continue;
+                    };
+                    effects.extend(receive(uuid, level, pos, &items, &keys, pressed));
+                }
+                Message::StopLectern { lectern } => lectern_controller::try_stop(host, uuid, lectern),
                 Message::Bind { key, pos: at } => {
                     if player.game_mode == util::SPECTATOR || held.is_none() {
                         continue;

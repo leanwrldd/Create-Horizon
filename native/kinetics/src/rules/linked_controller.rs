@@ -50,6 +50,10 @@ pub enum Message {
     Input { keys: Vec<usize>, pressed: bool },
     /// Bind a key to the Redstone Link at the position.
     Bind { key: usize, pos: [i32; 3] },
+    /// `LinkedControllerInputPacket` with a lectern position: the keys of the controller on that lectern.
+    LecternInput { lectern: [i32; 3], keys: Vec<usize>, pressed: bool },
+    /// `LinkedControllerStopLecternPacket`: the player is done with the Lectern Controller.
+    StopLectern { lectern: [i32; 3] },
 }
 
 pub const CHANNEL: &str = "create:linked_controller";
@@ -67,7 +71,27 @@ pub fn encode(message: &Message) -> Vec<u8> {
             }
             out
         }
+        Message::LecternInput { lectern, keys, pressed } => {
+            let mask = keys.iter().filter(|k| **k < 6).fold(0u8, |m, k| m | 1 << k);
+            let mut out = vec![2, u8::from(*pressed), mask];
+            for v in lectern {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+            out
+        }
+        Message::StopLectern { lectern } => {
+            let mut out = vec![3];
+            for v in lectern {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+            out
+        }
     }
+}
+
+fn position(bytes: &[u8]) -> [i32; 3] {
+    let int = |i: usize| i32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
+    [int(0), int(4), int(8)]
 }
 
 pub fn decode(data: &[u8]) -> Option<Message> {
@@ -77,9 +101,16 @@ pub fn decode(data: &[u8]) -> Option<Message> {
             pressed: *pressed == 1,
         }),
         [1, key, rest @ ..] if *key < 6 && rest.len() == 12 => {
-            let int = |i: usize| i32::from_le_bytes([rest[i], rest[i + 1], rest[i + 2], rest[i + 3]]);
-            Some(Message::Bind { key: usize::from(*key), pos: [int(0), int(4), int(8)] })
+            Some(Message::Bind { key: usize::from(*key), pos: position(rest) })
         }
+        [2, pressed, mask, rest @ ..] if *pressed <= 1 && *mask < 64 && rest.len() == 12 => {
+            Some(Message::LecternInput {
+                lectern: position(rest),
+                keys: (0..6).filter(|k| mask & (1 << k) != 0).collect(),
+                pressed: *pressed == 1,
+            })
+        }
+        [3, rest @ ..] if rest.len() == 12 => Some(Message::StopLectern { lectern: position(rest) }),
         _ => None,
     }
 }
@@ -93,6 +124,9 @@ pub enum Mode {
     Active,
     /// Waiting for a key to bind to the link at this position.
     Bind([i32; 3]),
+    /// Using the controller on the lectern at this position (`LinkedControllerClientHandler.lecternPos`): active
+    /// without the controller being in a hand.
+    Lectern([i32; 3]),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -108,10 +142,43 @@ pub struct Client {
 impl Client {
     /// The reset of `onReset`: release what was pressed.
     fn reset(&mut self) -> Vec<Message> {
+        let lectern = match self.mode {
+            Mode::Lectern(pos) => Some(pos),
+            _ => None,
+        };
         self.mode = Mode::Idle;
         self.cooldown = 0;
         let released: Vec<usize> = std::mem::take(&mut self.sent).into_iter().collect();
-        if released.is_empty() { Vec::new() } else { vec![Message::Input { keys: released, pressed: false }] }
+        let mut out = Vec::new();
+        if !released.is_empty() {
+            // Create sends the release without the lectern's position; here it keeps it, so the lectern's own
+            // controller (and not whatever is in the hand) is the one that lets go.
+            out.push(match lectern {
+                Some(lectern) => Message::LecternInput { lectern, keys: released, pressed: false },
+                None => Message::Input { keys: released, pressed: false },
+            });
+        }
+        if let Some(lectern) = lectern {
+            out.push(Message::StopLectern { lectern });
+        }
+        out
+    }
+
+    /// `activateInLectern`: the server says this player now uses the lectern at `pos`.
+    pub fn activate_in_lectern(&mut self, pos: [i32; 3]) {
+        if self.mode == Mode::Idle {
+            self.mode = Mode::Lectern(pos);
+        }
+    }
+
+    /// `deactivateInLectern`: the server says the player no longer uses their lectern.
+    pub fn deactivate_in_lectern(&mut self) -> Vec<Message> {
+        if matches!(self.mode, Mode::Lectern(_)) { self.reset() } else { Vec::new() }
+    }
+
+    /// `inLectern`.
+    pub fn in_lectern(&self) -> bool {
+        matches!(self.mode, Mode::Lectern(_))
     }
 
     /// `toggle`: using the controller in the air or on a block.
@@ -155,7 +222,8 @@ impl Client {
             return Vec::new();
         }
         self.cooldown = self.cooldown.saturating_sub(1);
-        if !holding || blocked {
+        // On a lectern the controller needn't be in a hand (`!inLectern() && !isIn(heldItem)`).
+        if (!holding && !self.in_lectern()) || blocked {
             return self.reset();
         }
         let pressed = self.down.clone();
@@ -163,16 +231,24 @@ impl Client {
         let released: Vec<usize> = self.sent.difference(&pressed).copied().collect();
         let mut out = Vec::new();
         match self.mode {
-            Mode::Active => {
+            Mode::Active | Mode::Lectern(_) => {
+                let lectern = match self.mode {
+                    Mode::Lectern(pos) => Some(pos),
+                    _ => None,
+                };
+                let input = |keys: Vec<usize>, pressed: bool| match lectern {
+                    Some(lectern) => Message::LecternInput { lectern, keys, pressed },
+                    None => Message::Input { keys, pressed },
+                };
                 if !released.is_empty() {
-                    out.push(Message::Input { keys: released, pressed: false });
+                    out.push(input(released, false));
                 }
                 if !new.is_empty() {
-                    out.push(Message::Input { keys: new, pressed: true });
+                    out.push(input(new, true));
                     self.cooldown = PACKET_RATE;
                 }
                 if self.cooldown == 0 && !pressed.is_empty() {
-                    out.push(Message::Input { keys: pressed.iter().copied().collect(), pressed: true });
+                    out.push(input(pressed.iter().copied().collect(), true));
                     self.cooldown = PACKET_RATE;
                 }
             }
@@ -361,6 +437,53 @@ mod tests {
         c.tick(true, false);
         assert_eq!(c.tick(true, true).len(), 1);
         assert!(!c.captures_keys());
+    }
+
+    #[test]
+    fn lectern_messages_round_trip() {
+        let m = Message::LecternInput { lectern: [-4, 70, 12], keys: vec![1, 5], pressed: true };
+        assert_eq!(decode(&encode(&m)), Some(m));
+        let m = Message::StopLectern { lectern: [100, -3, 0] };
+        assert_eq!(decode(&encode(&m)), Some(m));
+        assert_eq!(decode(&[3, 0, 0]), None);
+        assert_eq!(decode(&[2, 1, 200, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), None);
+    }
+
+    #[test]
+    fn a_lectern_session_sends_the_lecterns_position_and_needs_no_controller_in_hand() {
+        let mut c = Client::default();
+        c.activate_in_lectern([5, 64, 5]);
+        assert_eq!(c.mode, Mode::Lectern([5, 64, 5]));
+        assert!(c.captures_keys() && c.in_lectern());
+        c.key(2, true);
+        // Nothing in a hand, still active.
+        let sent = c.tick(false, false);
+        assert_eq!(sent, vec![Message::LecternInput { lectern: [5, 64, 5], keys: vec![2], pressed: true }]);
+        // The server lets go: the keys are released on the lectern, and the stop follows.
+        let sent = c.deactivate_in_lectern();
+        assert_eq!(
+            sent,
+            vec![
+                Message::LecternInput { lectern: [5, 64, 5], keys: vec![2], pressed: false },
+                Message::StopLectern { lectern: [5, 64, 5] }
+            ]
+        );
+        assert_eq!(c.mode, Mode::Idle);
+    }
+
+    #[test]
+    fn a_screen_ends_a_lectern_session_and_an_active_controller_ignores_a_lectern_stop() {
+        let mut c = Client::default();
+        c.activate_in_lectern([1, 2, 3]);
+        assert_eq!(c.tick(false, true), vec![Message::StopLectern { lectern: [1, 2, 3] }]);
+        // Not on a lectern: the server's "stop using" changes nothing.
+        let mut c = Client::default();
+        c.toggle();
+        assert!(c.deactivate_in_lectern().is_empty());
+        assert_eq!(c.mode, Mode::Active);
+        // Already active: a lectern can't be taken over.
+        c.activate_in_lectern([1, 2, 3]);
+        assert_eq!(c.mode, Mode::Active);
     }
 
     #[test]

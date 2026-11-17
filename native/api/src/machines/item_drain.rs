@@ -5,26 +5,32 @@
 //! emptied at once. Pipes draw from the tank (never into it). The timing is
 //! `create_kinetics::rules::item_drain`; what an item gives is `spout_fill`.
 //!
+//! A hopper, a dropper or a chute puts an item in through the drain's item handler
+//! (`ItemDrainItemHandler`): a hopper through its container slot (taken into the held item on the
+//! drain's next tick), a chute through `chute_inv::insert`. A belt funnel above the drain, pulling
+//! and facing the way the item came from, takes its output (`tryExportingToBeltFunnel`).
+//!
 //! Known differences from Create: see `rules/item_drain.rs` and `spout_fill.rs`. Also:
-//! - Hoppers and other inventories can't insert into or take from a drain
-//!   (`ItemDrainItemHandler` is not a container here); belts, funnels, chutes and items falling
-//!   on it can.
-//! - A belt funnel beside the drain doesn't take its output
-//!   (`DirectBeltInputBehaviour.tryExportingToBeltFunnel`).
+//! - Create's item handler exists on the four horizontal sides only; here the top takes items too (the
+//!   natural place for a chute to end), the item moving north as one that falls straight onto the drain does.
+//! - A hopper beside the drain can't take its item (`ItemDrainItemHandler.extractItem`).
 //! - The fluid in the tank rises at once where Create's `LerpedFloat` chases it, and there are no
 //!   comparator signal (the hook gets no block entity) or advancements.
 //! - The block drops what it holds when a player breaks it; an explosion or a piston doesn't.
 
 
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex, PoisonError};
+
 use create_kinetics::belt::Item;
 use create_kinetics::rules::fluids as fluid_rules;
-use create_kinetics::rules::item_drain::{self as rules, Processing, Slide};
+use create_kinetics::rules::item_drain::{self as rules, Export, Processing, Slide};
 use create_kinetics::{Axis, Dir};
 use horizon_client::mod_api::{
-    BlockEntityEvent, BlockEntityFluidsEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
-    BlockEntityTicksEvent, BlockEntityUpdateTagEvent, Compound, DestroyBlockEvent, DisplayContext,
-    EquipmentSlot, Flow, Hooks, Host, ItemStack, ModBlockEntity, ModFluidTanks, RightClickBlockEvent,
-    Tag, UseItemEvent,
+    BlockEntityContainerEvent, BlockEntityEvent, BlockEntityFluidsEvent, BlockEntitySubmitEvent,
+    BlockEntityTickEvent, BlockEntityTicksEvent, BlockEntityUpdateTagEvent, Compound, ContainerAcceptsEvent,
+    DestroyBlockEvent, DisplayContext, EquipmentSlot, Flow, Hooks, Host, ItemStack, ModBlockEntity,
+    ModContainer, ModFluidTanks, RightClickBlockEvent, Tag, UseItemEvent,
 };
 
 use super::fluids;
@@ -218,6 +224,56 @@ fn try_inserting(
     rest
 }
 
+/// `ItemDrainItemHandler.insertItem` through the drain's `face` (the side that touches the giver): what is left of
+/// `stack`. A chute puts items in this way (`chute_inv::insert`); a face with no handler takes nothing.
+pub(crate) fn handler_insert(host: &mut dyn Host, pos: Pos, face: Dir, stack: &ItemStack, simulate: bool) -> ItemStack {
+    let Some(side) = rules::handler_motion(Some(face)) else {
+        return stack.clone();
+    };
+    let angle = (util::random() % 360) as i32;
+    let item = Item::dropped(stack.clone(), 0, angle, true);
+    try_inserting(host, pos, side, &item, simulate)
+}
+
+/// The face each hopper's item came in by, kept from `container_accepts` to the tick that takes it
+/// (the hook gets the face, the tick only the slot), by level and position.
+static FACES: LazyLock<Mutex<HashMap<(u8, Pos), Dir>>> = LazyLock::new(Default::default);
+
+/// `ItemDrainItemHandler.getSlots() == 1`: the one slot a hopper fills through the four sides and the top, never
+/// taking from it (outputs are the drain's own business).
+fn container() -> ModContainer {
+    let mut faces: [Vec<usize>; 6] = [(); 6].map(|()| vec![0]);
+    // Down is the first face.
+    faces[0] = Vec::new();
+    ModContainer { slots: 1, faces, inputs: vec![0], outputs: Vec::new(), menu: None }
+}
+
+/// A stack a hopper put in the container slot becomes the held item, moving across the drain from the side it came
+/// in by (`ItemDrainItemHandler.insertItem`). True when it did.
+fn take_from_slot(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) -> bool {
+    let Some(Some(stack)) = entity.items.first().cloned() else {
+        return false;
+    };
+    entity.items[0] = None;
+    let level = super::diodes_signal::host_level(&*host);
+    let face = FACES.lock().unwrap_or_else(PoisonError::into_inner).remove(&(level, pos));
+    // Without the remembered face (a reload between the two) the item crosses from the south.
+    let motion = rules::handler_motion(face).unwrap_or(Dir::North);
+    let (taken, returned) = rules::accept(stack.count, fill::can_be_emptied(&*host, &stack));
+    let mut inserted = stack.clone();
+    inserted.count = taken;
+    if returned > 0 {
+        let mut rest = stack;
+        rest.count = returned;
+        entity.items[0] = Some(rest);
+    }
+    let angle = (util::random() % 360) as i32;
+    let held = Held::entering(inserted, motion, 0.0, angle);
+    write_held(&*host, &mut entity.nbt, Some(&held));
+    host.block_entity_sync(pos);
+    true
+}
+
 fn put_held(host: &mut dyn Host, pos: Pos, held: &Held) {
     let mut nbt = Compound::new();
     write_held(&*host, &mut nbt, Some(held));
@@ -247,6 +303,10 @@ fn fits(nbt: &Compound, fluid: &str, amount: i32) -> bool {
 /// `ItemDrainBlockEntity.tick` (server).
 fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) {
     let Some(mut held) = Held::read(&entity.nbt) else {
+        // A hopper's item in the container slot goes in first.
+        if take_from_slot(host, pos, entity) {
+            return;
+        }
         // `heldItem == null`: `processingTicks = 0`.
         if processing_of(&entity.nbt) != 0 {
             entity.nbt.insert(PROCESSING.into(), Tag::Int(0));
@@ -371,6 +431,14 @@ enum Leave {
 /// The item at the far end tries to leave (`ItemDrainBlockEntity.tick` past `beltPosition > 1`).
 fn leave(host: &mut dyn Host, pos: Pos, held: &Held) -> Leave {
     let side = held.from;
+    // `tryExportingToBeltFunnel`: a pulling belt funnel on top, facing the way the item came from, takes it.
+    if let Some(rest) = super::funnel::export_from_below(host, util::add(pos, Dir::Up.normal()), &held.stack, side.opposite()) {
+        return match rules::export_result(held.stack.count, rest.count) {
+            Export::Gone => Leave::Gone,
+            Export::Left(_) => Leave::Left(rest),
+            Export::Wait => Leave::Wait,
+        };
+    }
     let next = util::add(pos, side.normal());
     let Some(can) = belt::can_insert_from_side(&*host, next, side) else {
         // No `DirectBeltInputBehaviour` there: thrown out unless something solid is in the way.
@@ -497,6 +565,36 @@ impl Hooks for Drains {
         event: &mut BlockEntityFluidsEvent<'_>,
     ) -> Option<ModFluidTanks> {
         (event.block == ID).then(tanks)
+    }
+
+    /// `ItemDrainItemHandler`, for a hopper or a dropper.
+    fn block_entity_container(
+        &self,
+        _: &dyn Host,
+        event: &mut BlockEntityContainerEvent<'_>,
+    ) -> Option<ModContainer> {
+        (event.block == ID).then(container)
+    }
+
+    /// `ItemDrainItemHandler.insertItem`: nothing goes in while the drain holds an item (or a hopper's item is waiting
+    /// to be taken in), and a side with no handler takes nothing.
+    fn container_accepts(&self, host: &dyn Host, event: &mut ContainerAcceptsEvent<'_>) -> Flow {
+        if event.entity.id != ID {
+            return Flow::Continue;
+        }
+        let face = event.face.map(util::dir);
+        if rules::handler_motion(face).is_none() || event.slot != 0 {
+            return Flow::Cancel;
+        }
+        let occupied = Held::read(&event.entity.nbt).is_some() || event.entity.items.iter().any(Option::is_some);
+        if occupied {
+            return Flow::Cancel;
+        }
+        if let Some(face) = face {
+            let level = super::diodes_signal::host_level(host);
+            FACES.lock().unwrap_or_else(PoisonError::into_inner).insert((level, event.pos), face);
+        }
+        Flow::Continue
     }
 
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {

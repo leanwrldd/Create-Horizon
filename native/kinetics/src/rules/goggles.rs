@@ -221,6 +221,11 @@ impl Lang {
 
     /// `FluidStack.getHoverName` for a fluid id (`minecraft:water`): its fluid type's description id.
     pub fn fluid_name(&self, id: &str) -> String {
+        // A potion fluid is named by its potion (`PotionFluidType.getDescriptionId`).
+        if let Some(potion) = super::potion_fluid::parse(id) {
+            let key = super::potion_fluid::name_key(&potion);
+            return self.get(&key).map_or_else(|| "Potion".to_owned(), str::to_owned);
+        }
         let (namespace, path) = id.split_once(':').unwrap_or(("minecraft", id));
         for kind in ["fluid_type", "block", "fluid"] {
             if let Some(name) = self.get(&format!("{kind}.{namespace}.{path}")) {

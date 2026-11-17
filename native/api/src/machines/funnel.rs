@@ -37,9 +37,9 @@ use create_kinetics::rules::funnel::{self as rules, Activity, Kind, Reaction, Sh
 use create_kinetics::{Dir, Pos};
 use horizon_client::mod_api::{
     BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
-    BlockEntityUpdateTagEvent, BlockStateId, Compound, Flow, Hooks, Host, ItemStack, LevelHost,
-    ModBlockEntity, PlaceBlockEvent, StandaloneModelsEvent, StateForPlacementEvent, Tag,
-    UseItemOnEvent,
+    BlockEntityUpdateTagEvent, BlockStateId, Compound, EquipmentSlot, Flow, Hooks, Host, ItemStack,
+    LevelHost, ModBlockEntity, PlaceBlockEvent, RightClickBlockEvent, StandaloneModelsEvent,
+    StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
 use super::chute_inv::{self as inv, Filter};
@@ -599,6 +599,34 @@ fn direct_belt_input(host: &mut dyn Host, pos: Pos, stack: &ItemStack, simulate:
     inv::insert(host, behind(pos, &v), v.facing, stack, false).unwrap_or_else(|| stack.clone())
 }
 
+/// `DirectBeltInputBehaviour.tryExportingToBeltFunnel` for a block that has a funnel on top (the Item Drain's output):
+/// the funnel at `funnel` takes `stack` into the inventory behind it if it is a belt funnel in its pulling shape facing
+/// `side`. `None` when the block there is no such funnel (the stack goes on as it would), the stack itself when the funnel
+/// is powered, else what is left. The funnel flaps when it took something.
+pub(crate) fn export_from_below(host: &mut dyn Host, funnel: Pos, stack: &ItemStack, side: Dir) -> Option<ItemStack> {
+    let v = view(host, funnel)?;
+    if !create_kinetics::rules::item_drain::belt_funnel_applies(v.belt, v.shape == Shape::Pulling, v.facing, side) {
+        return None;
+    }
+    let mut entity = host.mod_block_entity(funnel)?;
+    if v.powered {
+        return Some(stack.clone());
+    }
+    let now = util::game_time(host);
+    let rest = try_insert(host, funnel, &mut entity, &v, stack, now);
+    if rest.count != stack.count {
+        let (key, tick) = (util::get(&entity.nbt, FLAP_KEY).cloned(), util::get(&entity.nbt, FLAP_TICK).cloned());
+        host.change_mod_block_entity(funnel, &mut |e| {
+            if let (Some(key), Some(tick)) = (&key, &tick) {
+                e.nbt.insert(FLAP_KEY.into(), key.clone());
+                e.nbt.insert(FLAP_TICK.into(), tick.clone());
+            }
+        });
+        host.block_entity_sync(funnel);
+    }
+    Some(rest)
+}
+
 // --- drawing ------------------------------------------------------------------------------------
 
 /// `AngleHelper.horizontalAngle`: south 0, east 90, north 180, west 270.
@@ -737,6 +765,29 @@ impl Hooks for Funnels {
         if let Some(mut entity) = host.mod_block_entity(pos) {
             refresh_state(host, pos, &mut entity, &v);
         }
+    }
+
+    /// A brass funnel's filter is cleared by sneaking with an empty hand (the stand-in for taking the item out of its
+    /// filter slot), as a Smart Chute's is (`chute.rs`).
+    fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
+        let pos = event.pos;
+        let brass = is_brass(&host.block(pos));
+        let Some(player) = host.acting_player() else {
+            return Flow::Continue;
+        };
+        let uuid = player.uuid;
+        // Any item in either hand is another handler's (the filter set, the Wrench, a placement).
+        let main_empty = host.player_equipment(uuid, EquipmentSlot::MainHand).is_none();
+        let off_empty = host.player_equipment(uuid, EquipmentSlot::OffHand).is_none();
+        if player.game_mode == util::SPECTATOR || !rules::clears_filter(brass, player.sneaking, main_empty, off_empty) {
+            return Flow::Continue;
+        }
+        if util::first_click(host, uuid, pos)
+            && let Some(line) = inv::click(host, pos, None)
+        {
+            inv::tell(host, &line);
+        }
+        Flow::Cancel
     }
 
     /// A filter set on a brass funnel (the stand-in for its filter slot), the Wrench

@@ -3,10 +3,10 @@
 Create `mc1.21.1/dev` at 4148fd8: `AllBlocks.SPOUT` (`SharedProperties.copperMetal`, pickaxe only,
 `partialBaseModel`, `AssetLookup`), `SpoutBlock` (`AllShapes.SPOUT`), `AllPartialModels.SPOUT_TOP`,
 `SPOUT_MIDDLE`, `SPOUT_BOTTOM`, `recipe/crafting/kinetics/spout`, `AllSoundEvents.SPOUTING`'s subtitle,
-and the datagen `recipe/filling/*` with what depends on another mod left out.
-
-Left out, as nothing here holds a `create:potion`: `filling/glowstone`, `filling/gunpowder` and
-`filling/redstone` (they take 25 mB of a Night Vision, Harming or Strength potion fluid).
+and the datagen `recipe/filling/*` with what depends on another mod left out. The three that take a
+`create:potion` fluid (`filling/glowstone`, `gunpowder`, `redstone`: 25 mB of a Night Vision, Harming or Strength
+potion, written as a `neoforge:components` ingredient) are in: the fluid is `rules/potion_fluid.rs`'s.
+The behaviour is `native/api/src/machines/spout.rs`.
 """
 
 from gen_content import block
@@ -40,6 +40,16 @@ def _filling(item, fluid, result, tag=False):
             "results": [{"id": result}]}
 
 
+def _potion_filling(potion, result):
+    """`recipe/filling/glowstone` and its two siblings: cinder flour and 25 mB of a regular potion."""
+    return {"type": "create:filling", "ingredients": [
+        {"item": "create:cinder_flour"},
+        {"type": "neoforge:components", "amount": 25, "fluids": "create:potion",
+         "components": {"create:potion_fluid_bottle_type": "regular",
+                        "minecraft:potion_contents": {"potion": potion}}}],
+            "results": [{"id": result}]}
+
+
 RECIPES = {
     # `recipe/crafting/kinetics/spout`.
     "crafting/kinetics/spout": {
@@ -55,12 +65,15 @@ RECIPES = {
     "filling/chocolate_glazed_berries": _filling("minecraft:sweet_berries",
                                                  ("create:chocolate", 250),
                                                  "create:chocolate_glazed_berries"),
+    "filling/glowstone": _potion_filling("minecraft:night_vision", "minecraft:glowstone_dust"),
     "filling/grass_block": _filling("minecraft:dirt", ("minecraft:water", 500),
                                     "minecraft:grass_block"),
+    "filling/gunpowder": _potion_filling("minecraft:harming", "minecraft:gunpowder"),
     "filling/honey_bottle": _filling("minecraft:glass_bottle", ("c:honey", 250),
                                      "minecraft:honey_bottle", tag=True),
     "filling/honeyed_apple": _filling("minecraft:apple", ("c:honey", 250),
                                       "create:honeyed_apple", tag=True),
+    "filling/redstone": _potion_filling("minecraft:strength", "minecraft:redstone"),
     "filling/sweet_roll": _filling("minecraft:bread", ("c:milk", 250), "create:sweet_roll",
                                    tag=True),
 }

@@ -19,6 +19,47 @@ pub fn accept(count: u32, can_be_emptied: bool) -> (u32, u32) {
     if count > 1 && can_be_emptied { (1, count - 1) } else { (count, 0) }
 }
 
+/// Which way an item that a hopper, a chute or a dropper puts in by `face` (the drain's side that touches the giver)
+/// moves, if the drain takes it: `ItemDrainBlockEntity.registerCapabilities` gives the item handler to horizontal
+/// sides only, and `ItemDrainItemHandler.insertItem` sets the item moving `side.getOpposite()`.
+///
+/// Create gives none for the top or the bottom, so a hopper or chute straight above never fed a drain there. Here
+/// the top takes it too (moving north, as an item that falls straight onto the drain does,
+/// `ItemDrainBlock.updateEntityAfterFallOn`), which is the natural place for a chute to end: a known difference.
+pub fn handler_motion(face: Option<crate::Dir>) -> Option<crate::Dir> {
+    match face? {
+        crate::Dir::Down => None,
+        crate::Dir::Up => Some(crate::Dir::North),
+        side => Some(side.opposite()),
+    }
+}
+
+/// `DirectBeltInputBehaviour.tryExportingToBeltFunnel`: whether the funnel above the drain takes the item that has
+/// reached the far end. It must be a belt funnel in its pulling shape that faces `side` (the way the item came from).
+/// `None` when it doesn't apply and the item goes on as usual.
+pub fn belt_funnel_applies(is_belt_funnel: bool, pulling: bool, funnel_facing: crate::Dir, side: crate::Dir) -> bool {
+    is_belt_funnel && pulling && funnel_facing == side
+}
+
+/// What the drain does with the funnel's answer (`tick`): `rest` is what the funnel gave back of a stack of `held`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Export {
+    /// All of it went in.
+    Gone,
+    /// Some went in; this many are left.
+    Left(u32),
+    /// Nothing went and the funnel is there: the item waits (and is not thrown out or passed on).
+    Wait,
+}
+
+pub fn export_result(held: u32, rest: u32) -> Export {
+    if rest != held {
+        if rest == 0 { Export::Gone } else { Export::Left(rest) }
+    } else {
+        Export::Wait
+    }
+}
+
 /// What a tick of a drain holding an item does while it is not being emptied.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Slide {
@@ -86,6 +127,32 @@ pub fn stream(processing_ticks: i32, partial: f32) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Dir;
+
+    #[test]
+    fn a_giver_beside_the_drain_sets_the_item_moving_across_it() {
+        assert_eq!(handler_motion(Some(Dir::West)), Some(Dir::East));
+        assert_eq!(handler_motion(Some(Dir::North)), Some(Dir::South));
+        // The top takes it too (an extension), moving north; the bottom never.
+        assert_eq!(handler_motion(Some(Dir::Up)), Some(Dir::North));
+        assert_eq!(handler_motion(Some(Dir::Down)), None);
+        assert_eq!(handler_motion(None), None);
+    }
+
+    #[test]
+    fn a_pulling_belt_funnel_facing_the_arrival_side_takes_the_output() {
+        assert!(belt_funnel_applies(true, true, Dir::West, Dir::West));
+        assert!(!belt_funnel_applies(true, false, Dir::West, Dir::West), "an extended or retracted funnel pulls nothing");
+        assert!(!belt_funnel_applies(true, true, Dir::East, Dir::West));
+        assert!(!belt_funnel_applies(false, true, Dir::West, Dir::West), "a plain funnel isn't a belt funnel");
+    }
+
+    #[test]
+    fn the_funnels_answer_decides_what_the_drain_does() {
+        assert_eq!(export_result(1, 0), Export::Gone);
+        assert_eq!(export_result(8, 3), Export::Left(3));
+        assert_eq!(export_result(8, 8), Export::Wait);
+    }
 
     #[test]
     fn an_emptiable_stack_goes_in_one_at_a_time() {
