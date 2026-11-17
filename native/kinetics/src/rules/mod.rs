@@ -74,6 +74,7 @@ pub mod steam_engine;
 pub mod steam_engine_whistle;
 pub mod stockpile_switch;
 pub mod super_glue;
+pub mod toolbox;
 pub mod tunnel;
 pub mod tunnel_brass;
 pub mod turntable;
