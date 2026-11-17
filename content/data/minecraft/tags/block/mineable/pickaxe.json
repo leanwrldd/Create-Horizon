@@ -473,6 +473,8 @@
     "create:redstone_link",
     "create:rose_quartz_lamp",
     "create:mechanical_saw",
+    "create:schematicannon",
+    "create:schematic_table",
     "create:sequenced_gearshift",
     "create:smart_fluid_pipe",
     "create:encased_fluid_pipe",

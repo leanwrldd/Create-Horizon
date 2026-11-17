@@ -17,7 +17,7 @@ use crate::rules::contraption::State;
 use crate::rules::schematic_nbt::Nbt;
 use crate::rules::schematic_printer::{
     Candidate, Checklist, Existing, Printer, Requirement, conductor, has_block_entity, is_air, placement_state,
-    requirement, should_ignore,
+    should_ignore,
 };
 use crate::rules::schematic_structure::Pos;
 
@@ -61,26 +61,26 @@ impl RunState {
 /// `ConfigureSchematicannonPacket.Option` for the replace mode (its ordinals are the mode).
 pub const REPLACE_MODES: [&str; 4] = ["dont_replace", "replace_solid", "replace_any", "replace_empty"];
 
-/// What the Schematicannon's screen says for each status, in `en_us` (`gui.schematicannon.status`).
+/// What the Schematicannon's screen says for each status, in `en_us` (`create.schematicannon.status.*`).
 pub fn status_text(status: &str) -> &'static str {
     match status {
         "idle" => "Idle",
-        "ready" => "Ready to Start",
+        "ready" => "Ready",
         "running" => "Running",
         "paused" => "Paused",
         "stopped" => "Stopped",
         "finished" => "Finished",
-        "placing" => "Placing Blocks",
+        "placing" => "Placing",
         "clearing" => "Clearing Blocks",
         "searching" => "Searching",
-        "skipping" => "Skipping Missing Block",
-        "missingBlock" => "Missing Block",
+        "skipping" => "Skipping",
+        "missingBlock" => "Missing Item:",
         "noGunpowder" => "Out of Gunpowder",
-        "targetNotLoaded" => "Target not Loaded",
-        "targetOutsideRange" => "Target too Far Away",
-        "schematicInvalid" => "No Schematic Selected",
+        "targetNotLoaded" => "Target is not loaded",
+        "targetOutsideRange" => "Target too far away",
+        "schematicInvalid" => "Schematic Invalid",
         "schematicNotPlaced" => "Schematic not Positioned",
-        "schematicErrored" => "Schematic File Errored",
+        "schematicErrored" => "Incompatible Blocks",
         "schematicExpired" => "Schematic File Expired",
         _ => "",
     }
@@ -439,7 +439,8 @@ impl Cannon {
     /// `initializePrinter`.
     fn initialize_printer(&mut self, printer: &mut Option<Printer>, io: &mut dyn Io, effects: &mut Vec<Effect>) {
         match io.blueprint() {
-            Blueprint::Invalid => {
+            // `!blueprint.has(SCHEMATIC_ANCHOR)`: an empty slot has none either.
+            Blueprint::Invalid | Blueprint::Empty => {
                 self.state = RunState::Stopped;
                 self.status = "schematicInvalid".to_owned();
                 effects.push(Effect::Update);
@@ -451,7 +452,7 @@ impl Cannon {
                 effects.push(Effect::Update);
                 return;
             }
-            Blueprint::Empty | Blueprint::Deployed => {}
+            Blueprint::Deployed => {}
         }
         let loaded = io.load();
         let expired = match &loaded {
@@ -943,6 +944,22 @@ mod tests {
         cannon.state = RunState::Paused;
         run(&mut cannon, &mut printer, &mut io, 2, 2);
         assert_eq!(cannon.status, "idle");
+    }
+
+    #[test]
+    fn a_slot_emptied_while_running_gives_no_free_schematic() {
+        let mut io = Fake::new(&[([0, 0, 0], "minecraft:stone")]);
+        io.blueprint = Blueprint::Empty;
+        let mut cannon = Cannon::new([0, 0, 0]);
+        cannon.state = RunState::Running;
+        let mut printer = None;
+        let effects = run(&mut cannon, &mut printer, &mut io, 0, 1);
+        assert_eq!(cannon.status, "schematicInvalid");
+        assert_eq!(cannon.state, RunState::Stopped);
+        // The next tick settles it at idle, as Create's does.
+        let effects = [effects, run(&mut cannon, &mut printer, &mut io, 1, 2)].concat();
+        assert_eq!(cannon.status, "idle");
+        assert!(!effects.iter().any(|e| matches!(e, Effect::ClearBlueprint { .. })));
     }
 
     #[test]

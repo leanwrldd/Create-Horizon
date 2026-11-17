@@ -12,3 +12,5 @@ horizon-client = { git = "https://github.com/horizon-rust/horizon" }
 # The bundle's own `[[crate]]` (horizon-mixin.toml).
 create-kinetics = { path = "../kinetics" }
 serde = { version = "1", features = ["derive"] }
+# Gzip for the schematic files: Horizon's own crate and features (its Cargo.lock has them).
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", "runtime_detection"] }
