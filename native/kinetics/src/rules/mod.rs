@@ -20,6 +20,7 @@ pub mod belt_slope;
 pub mod blueprint;
 pub mod bracket;
 pub mod burner;
+pub mod cart_assembler;
 pub mod chain_drive;
 pub mod chassis;
 pub mod chute;

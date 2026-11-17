@@ -248,9 +248,9 @@ The engine that lifts a group of blocks out of the world, moves or turns it and 
 A structure is saved in the controller's block entity in Create's layout (`Anchor`, `Blocks.Palette`,
 `Blocks.BlockList`), is out of the world while it moves, and is drawn by the controller's block entity;
 a reload resumes it. Known differences from Create: nothing collides with a moving structure (no one rides,
-stands on or is pushed by it), blocks in it are drawn as their block model only, no actors, seats or
-movement interactions, only the "move and place" mode, the Clockwork Bearing and the Cart Assembler are not
-here, belts and the Creative Fluid Tank can't be moved (a Fluid Tank can, with its content, if the whole tank is in the structure; its multi-block `Controller` is kept relative to the structure), and a controller destroyed by an explosion loses its structure. A structure can be held still (the `Stalled` flag of the controller, only the piston and bearing honour it; the Portable Interfaces use it). Tested in
+stands on or is pushed by it), blocks in it are drawn as their block model only, no seats with riders or
+movement interactions (actors: see below), only the "move and place" mode, the Cart Assembler is not
+here (see below), belts and the Creative Fluid Tank can't be moved (a Fluid Tank can, with its content, if the whole tank is in the structure; its multi-block `Controller` is kept relative to the structure), and a controller destroyed by an explosion loses its structure. A structure can be held still (the `Stalled` flag of the controller, only the piston and bearing honour it; the Portable Interfaces use it). Tested in
 game (build `8d883ba`): extend and retract, sticky pistons and the slime ball, stopping at an obstacle, slime
 structures, the bearing turning and setting down every way, save and reload mid-stroke, and breaking a
 controller while it runs. The chassis, Super Glue, windmill and sails, gantry, Rope Pulley and Elevator Pulley
@@ -317,6 +317,21 @@ movement) calls `visitNewPosition`. Known differences from Create:
 | Sticker | Each rise of the redstone signal toggles it; extended, it glues the block in front of it to a structure that moves (the structure takes that block along, and the block takes the Sticker if it is the one gathered: Contraption.moveBlock, BlockMovementChecksImpl); retracted, nothing is supported on its face. The head slides out and in. The Wrench turns it. Unplayed. Differences: the signal is polled by the block entity, no hit sound or glue particles, no slime bounce on an upright Sticker |
 | Clockwork Bearing | An empty hand assembles it: the block in front of it and what holds to it is the hour hand, and past that hand's line (the first cell in line with no block of it) a second, unglued structure is the minute hand. Turning, they show the day time (the hour hand a 12-hour dial, 24-hour or minute-hand-first with a sneaking empty-hand click that steps the setting), each chasing the time at no more than the bearing's speed; an empty hand again, the Wrench, a broken bearing or no rotation sets both down unturned. 4 su per RPM. Unplayed. Differences: no actors on a hand, the day time on a client is the game time plus an offset renewed every 5 seconds, a dimension other than the Overworld runs its dial 24 times faster |
 | Redstone Contact | Two facing each other power each other (15 on every side but the one they face through, polled each tick); on a moving structure a contact powers the contact it faces as it passes (held until it moves on, ContactMovementBehaviour). The cabin of an Elevator Pulley uses one; the Wrench turns it and makes one that faces a column of floors an Elevator Contact. Unplayed. Differences: polled rather than on block updates, the item doesn't turn into an Elevator Contact when placed |
+#### Cart Assembler and minecart contraptions: what Horizon lacks
+
+Not declared: Cart Assembler, Minecart Contraption items (minecart_contraption, urnace_minecart_contraption,
+chest_minecart_contraption), Controller Rail, Minecart Anchor. Only the Cart Assembler's rules are written and
+tested (ules/cart_assembler.rs: getActionForCart, canAssembleTo). What the API offers, found in
+	arget/apigen: entity_velocity / entity_set_velocity steer a vanilla minecart (coupling.rs), ehicle_move
+and entity_tick_post hear it, a level attachment can keep the structure per cart (as super_glue.rs keeps glue),
+and Pose::Translating already gives the actors a position from the cart's. What is missing is the drawing:
+mob_submit and mob_layer are asked for mobs and players only, world_submit draws sprite quads, not block
+models, and a block entity draws only where it stands, so nothing can draw a structure on a vanilla minecart
+(which is not a mob) and keep it there as the cart runs. The nearest thing is block display entities riding the
+cart (summon plus /ride): one entity per block, mod blocks drawn by a block entity would not show, and the
+structure could not turn to face the motion. That route was not tried (no game was run) and is not in the tree.
+Also missing: no modded entity type for OrientedContraptionEntity, no moving collider for the cart's structure,
+and the Minecart Anchor is a block the structure needs as its anchor.
 ### Curiosities (equipment)
 
 Each module's header (`native/api/src/machines/<name>.rs`) lists its differences from Create in full.
