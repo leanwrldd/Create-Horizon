@@ -639,4 +639,41 @@ mod tests {
         assert_eq!(kind_of("create:brass_funnel"), Some(Kind::Funnel { brass: true }));
         assert_eq!(kind_of("minecraft:stone"), None);
     }
+
+    /// The in-game "harvester on a bearing reaps nothing" report: a Harvester two blocks out from a
+    /// bearing's axis, facing south, on an up bearing turning at +16 RPM (4.8 degrees a tick,
+    /// right-handed about +y). It moves north, back first, so `isActive` keeps it asleep as in
+    /// Create; faced north it works and visits cells on the circle of radius 2.
+    #[test]
+    fn a_harvester_on_a_turning_structure_must_face_the_way_it_goes() {
+        use super::super::portable_interface::rotate_vec;
+        let run = |facing: Dir| {
+            let mut ctx = Context::default();
+            let local = [2.0, 0.0, 0.0];
+            let offset = active_area_offset(Kind::Harvester, Some(facing), false);
+            let (mut awake, mut cells) = (0, Vec::new());
+            for t in 0..40 {
+                let angle = 4.8 * f64::from(t);
+                let turned = rotate_vec(local, crate::Axis::Y, angle);
+                let ahead = rotate_vec(offset, crate::Axis::Y, angle);
+                let position = [0.5 + turned[0] + ahead[0], 0.5, 0.5 + turned[2] + ahead[2]];
+                let visited = ctx.arrive(position, &|v| rotate_vec(v, crate::Axis::Y, -angle), false);
+                if !is_active(Kind::Harvester, false, Some(facing), ctx.relative_motion, false) {
+                    continue;
+                }
+                awake += 1;
+                cells.extend(visited);
+            }
+            (awake, cells)
+        };
+        let (awake, cells) = run(Dir::South);
+        // (The first tick has no motion yet, so it counts as awake once.)
+        assert!(awake <= 1 && cells.is_empty(), "{awake} {cells:?}");
+        let (awake, cells) = run(Dir::North);
+        assert!(awake > 30 && cells.len() > 3, "{awake} {cells:?}");
+        for cell in cells {
+            let d = f64::from(cell[0]).hypot(f64::from(cell[2]));
+            assert!((1.0..=3.5).contains(&d), "{cell:?}");
+        }
+    }
 }
