@@ -320,6 +320,11 @@ pub enum Joint {
     /// `target` RPM as a generator ([`rules::speed_controller::resolve`]). `target` is the
     /// scroll value, -256 to 256.
     SpeedController { axis: Axis, target: i16 },
+    /// A Chain Conveyor (`ChainConveyorBlock`, `ChainConveyorBlockEntity.propagateRotationTo`): a
+    /// shaft along Y whose chains join it to other conveyors anywhere nearby, at the same speed
+    /// and direction (ratio 1). The chains are links passed to [`solve_with_links`], not
+    /// neighbours.
+    ChainConveyor,
 }
 
 /// The shaft ends of a [`Kind::Shafts`] block: a bit per face, in [`Dir::ALL`] order.
@@ -411,6 +416,14 @@ impl Kind {
                 axis,
                 target: target.clamp(-i32::from(MAX_SPEED as i16), i32::from(MAX_SPEED as i16)) as i16,
             },
+        })
+    }
+
+    /// A Chain Conveyor: a shaft along Y, joined to other conveyors by chains.
+    pub fn chain_conveyor() -> Self {
+        Kind::Shafts(Ends {
+            faces: Self::face_bits(&Self::axis_ends(Axis::Y)),
+            joint: Joint::ChainConveyor,
         })
     }
 
@@ -662,6 +675,10 @@ fn is_cut(kind: Kind) -> bool {
     )
 }
 
+fn is_conveyor_at(nodes: &BTreeMap<Pos, Node>, pos: &Pos) -> bool {
+    nodes.get(pos).is_some_and(|node| is_conveyor(node.kind))
+}
+
 fn close(a: f32, b: f32) -> bool {
     (a - b).abs() <= 1e-4 * a.abs().max(b.abs()).max(1.0)
 }
@@ -673,8 +690,16 @@ fn close(a: f32, b: f32) -> bool {
 /// speed first: the network is solved, then again with those generators in it
 /// ([`rules::speed_controller::resolve`]).
 pub fn solve(nodes: &BTreeMap<Pos, Node>) -> Solution {
-    let plain = solve_once(nodes);
-    rules::speed_controller::resolve(nodes, plain)
+    solve_with_links(nodes, &BTreeMap::new())
+}
+
+/// [`solve`] with chains: `links` lists, for a Chain Conveyor, the positions of the conveyors
+/// its chains reach (`ChainConveyorBlockEntity.connections`, as world positions). A chain
+/// joins two conveyors at the same speed whichever of them lists it, and only between two
+/// Chain Conveyors (`propagateRotationTo` answers 0 for any other block).
+pub fn solve_with_links(nodes: &BTreeMap<Pos, Node>, links: &BTreeMap<Pos, Vec<Pos>>) -> Solution {
+    let plain = solve_once_with_links(nodes, links);
+    rules::speed_controller::resolve_with(nodes, plain, &|driven| solve_once_with_links(driven, links))
 }
 
 /// How a Sequenced Gearshift's end `face` turns relative to the end the rotation comes in by:
@@ -698,6 +723,32 @@ fn sequenced_modifier(kind: Kind) -> Option<i8> {
 
 /// [`solve`] without the speed controllers' output.
 pub(crate) fn solve_once(nodes: &BTreeMap<Pos, Node>) -> Solution {
+    solve_once_with_links(nodes, &BTreeMap::new())
+}
+
+/// A Chain Conveyor (`Joint::ChainConveyor`).
+fn is_conveyor(kind: Kind) -> bool {
+    matches!(
+        kind,
+        Kind::Shafts(Ends {
+            joint: Joint::ChainConveyor,
+            ..
+        })
+    )
+}
+
+/// [`solve_once`] with the chains of [`solve_with_links`].
+pub(crate) fn solve_once_with_links(nodes: &BTreeMap<Pos, Node>, links: &BTreeMap<Pos, Vec<Pos>>) -> Solution {
+    // Chains join both ways, whichever end lists them.
+    let mut chained: BTreeMap<Pos, Vec<Pos>> = BTreeMap::new();
+    for (from, targets) in links {
+        for to in targets {
+            if from != to && is_conveyor_at(nodes, from) && is_conveyor_at(nodes, to) {
+                chained.entry(*from).or_default().push(*to);
+                chained.entry(*to).or_default().push(*from);
+            }
+        }
+    }
     let mut solution = Solution::default();
     let mut seen = BTreeSet::new();
     // Generators first, and powered clutches last: a clutch belongs to the first network that
@@ -728,12 +779,16 @@ pub(crate) fn solve_once(nodes: &BTreeMap<Pos, Node>) -> Solution {
             if is_cut(kind) {
                 continue;
             }
-            for offset in offsets() {
-                let next = add(pos, offset);
+            // The six faces and twelve edges, then the chains of a Chain Conveyor.
+            let chains = chained.get(&pos).into_iter().flatten().map(|to| (*to, [to[0] - pos[0], to[1] - pos[1], to[2] - pos[2]], true));
+            let candidates = offsets().map(|offset| (add(pos, offset), offset, false)).chain(chains);
+            for (next, offset, chain) in candidates {
                 let Some(node) = nodes.get(&next) else {
                     continue;
                 };
-                let Some(mut ratio) = ratio(kind, node.kind, offset) else {
+                // `ChainConveyorBlockEntity.propagateRotationTo`: 1 between two conveyors.
+                let found = if chain { Some(1.0) } else { ratio(kind, node.kind, offset) };
+                let Some(mut ratio) = found else {
                     continue;
                 };
                 // A powered clutch already in a network (this one or another) isn't joined again,
@@ -883,6 +938,52 @@ mod tests {
         assert_eq!(solution.speeds[&[3, 0, 0]], 0.0);
         assert!(solution.breaks.is_empty());
         assert_eq!(solution.networks.len(), 3);
+    }
+
+    #[test]
+    fn chain_conveyors_turn_together_across_a_chain_and_only_with_each_other() {
+        let conveyor = Kind::chain_conveyor();
+        let nodes = world([
+            ([0, -1, 0], motor(Dir::Up, 16.0)),
+            passive([0, 0, 0], conveyor),
+            passive([5, 2, -3], conveyor),
+            // A shaft the chain's far end doesn't touch, and one the chain would have to reach.
+            passive([5, 2, 5], Kind::Shaft(Axis::Y)),
+            passive([9, 0, 0], conveyor),
+        ]);
+        // Without chains the far conveyors stand still.
+        assert_eq!(solve(&nodes).speeds[&[5, 2, -3]], 0.0);
+        // One side lists the chain: both ends turn with the motor, in the same direction.
+        let links = BTreeMap::from([([0, 0, 0], vec![[5, 2, -3]])]);
+        let speeds = solve_with_links(&nodes, &links).speeds;
+        assert_eq!(speeds[&[0, 0, 0]], 16.0);
+        assert_eq!(speeds[&[5, 2, -3]], 16.0);
+        assert_eq!(speeds[&[9, 0, 0]], 0.0);
+        // The listing side doesn't matter: the far conveyor listing it joins them too.
+        let links = BTreeMap::from([([5, 2, -3], vec![[0, 0, 0]])]);
+        assert_eq!(solve_with_links(&nodes, &links).speeds[&[5, 2, -3]], 16.0);
+        // A chain to anything that isn't a conveyor joins nothing, and a chain runs on to the next.
+        let links = BTreeMap::from([([0, 0, 0], vec![[5, 2, 5], [5, 2, -3]]), ([5, 2, -3], vec![[9, 0, 0]])]);
+        let speeds = solve_with_links(&nodes, &links).speeds;
+        assert_eq!(speeds[&[5, 2, 5]], 0.0);
+        assert_eq!(speeds[&[9, 0, 0]], 16.0);
+    }
+
+    #[test]
+    fn a_conveyor_is_a_shaft_along_y_and_its_chain_counts_in_one_network() {
+        let conveyor = Kind::chain_conveyor();
+        assert!(conveyor.has_shaft(Dir::Up) && conveyor.has_shaft(Dir::Down));
+        assert!(!conveyor.has_shaft(Dir::North));
+        // It turns with a shaft above it, as any shaft end does.
+        assert_eq!(ratio(conveyor, Kind::Shaft(Axis::Y), [0, 1, 0]), Some(1.0));
+        let mut load = Node::passive(conveyor);
+        load.impact = 1.0;
+        let nodes = world([([0, -1, 0], motor(Dir::Up, 16.0)), ([0, 0, 0], load), ([4, 0, 0], load)]);
+        let links = BTreeMap::from([([0, 0, 0], vec![[4, 0, 0]])]);
+        let solution = solve_with_links(&nodes, &links);
+        // Both conveyors are one network, and both cost their stress.
+        assert_eq!(solution.network_of[&[0, 0, 0]], solution.network_of[&[4, 0, 0]]);
+        assert_eq!(solution.networks[solution.network_of[&[0, 0, 0]]].stress, 2.0 * 16.0);
     }
 
     #[test]

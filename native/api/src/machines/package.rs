@@ -145,6 +145,11 @@ pub fn containing(host: &dyn Host, contents: &Contents<ItemStack>) -> ItemStack 
     stack
 }
 
+/// `PackageItem.getHookDistance` of an item, in blocks.
+pub fn style_hook(item: &str) -> f32 {
+    rules::hook_distance(item)
+}
+
 /// `PackageStyles.getRandomBox`.
 pub fn random_box() -> &'static str {
     rules::random_box(|bound| (util::random() % u64::from(bound.max(1))) as u32)
