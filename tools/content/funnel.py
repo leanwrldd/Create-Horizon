@@ -12,7 +12,8 @@ The blocks are in the chunk mesh (Create's `block/*_funnel_*` models, picked by 
 blockstates); the block entity draws the flaps. The behaviour is
 `native/api/src/machines/funnel.rs`.
 
-Shapes are cut to the block's own cell (Create's reach 2 to 5 texels outside it).
+Shapes are cut to the block's own cell (Create's reach 2 to 5 texels outside it). The 0.1 and 15.9 texel sides of
+the mouth boxes are taken out to 0 and 16 (`_edge`): see its note on the edge click.
 """
 
 from gen_content import ANDESITE, FACING_STATE, HORIZONTAL_FACING_STATE, block
@@ -28,13 +29,21 @@ HORIZONTALS = ["north", "south", "west", "east"]
 SHAPES = ["retracted", "extended", "pushing", "pulling"]  # `BeltFunnelBlock.Shape`
 
 
+def _edge(v):
+    """Create's mouth boxes stop 0.1 texel short of the cell's sides (`add(0.1, .., 15.9, ..)`, so that the
+    funnel beside doesn't draw its outline over this one's). A ray at the very edge of the funnel's face, as the
+    game's own look-at-block aims, passes through that gap to the block behind and the click never reaches the
+    funnel: the outline reaches the sides here."""
+    return {0.1: 0, 15.9: 16}.get(v, v)
+
+
 def _clamped(boxes):
     """Texel boxes `[x0, y0, z0, x1, y1, z1]` as blocks inside the cell; boxes left with no
     thickness are dropped."""
     out = []
     for box in boxes:
-        lo = [min(max(v, 0), 16) / 16 for v in box[:3]]
-        hi = [min(max(v, 0), 16) / 16 for v in box[3:]]
+        lo = [min(max(_edge(v), 0), 16) / 16 for v in box[:3]]
+        hi = [min(max(_edge(v), 0), 16) / 16 for v in box[3:]]
         if all(hi[i] > lo[i] for i in range(3)):
             out.append([round(v, 6) for v in lo + hi])
     return out
