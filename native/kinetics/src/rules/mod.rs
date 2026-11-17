@@ -98,6 +98,8 @@ pub mod steam_engine;
 pub mod steam_engine_whistle;
 pub mod stockpile_switch;
 pub mod super_glue;
+pub mod symmetry_wand;
+pub mod symmetry_wand_state;
 pub mod toolbox;
 pub mod tree_fertilizer;
 pub mod tunnel;
