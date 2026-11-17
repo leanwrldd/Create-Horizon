@@ -36,6 +36,8 @@ pub fn impact(block: &str) -> f32 {
         "turntable" | "millstone" | "mechanical_mixer" | "mechanical_pump" | "mechanical_bearing"
         | "mechanical_drill" | "mechanical_saw" | "deployer" | "mechanical_piston"
         | "sticky_mechanical_piston" => 4.0,
+        // `ROPE_PULLEY` and `ELEVATOR_PULLEY` (the gantry sets none).
+        "rope_pulley" | "elevator_pulley" => 4.0,
         // `CRUSHING_WHEEL` and `MECHANICAL_PRESS`.
         "crushing_wheel" | "mechanical_press" => 8.0,
         _ => 0.0,
@@ -51,6 +53,8 @@ pub fn capacity(block: &str) -> f32 {
         // `HAND_CRANK` and `COPPER_VALVE_HANDLE` (the dyed handles have none).
         "hand_crank" | "copper_valve_handle" => 8.0,
         "steam_engine" => 1024.0,
+        // `WINDMILL_BEARING`.
+        "windmill_bearing" => 512.0,
         _ => 0.0,
     }
 }
