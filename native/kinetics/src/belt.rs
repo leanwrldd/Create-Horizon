@@ -4,16 +4,18 @@
 //! `BeltBlock`, `BeltBlockEntity`, `BeltConnectorItem`, `transport/BeltInventory`,
 //! `transport/TransportedItemStack` and `transport/ItemHandlerBeltSegment`.
 //!
-//! This is the straight horizontal belt. Items move along it, queue one block apart, and at the
-//! end either fly off as item entities, wait at a block whose face closes the way, or are handed
-//! on to a block that takes items from a belt (`Ending.INSERT`: another belt, a depot, a basin).
-//! A processor two blocks above a block of the belt (the press) can hold an item in the middle
-//! of that block while it works (`BeltProcessingBehaviour`). Fans, funnels, tunnels, crushers
-//! and slopes are not here yet.
+//! Items move along it, queue one block apart, and at the end either fly off as item entities,
+//! wait at a block whose face closes the way, or are handed on to a block that takes items from a
+//! belt (`Ending.INSERT`: another belt, a depot, a basin). A processor two blocks above a block of
+//! a horizontal belt (the press) can hold an item in the middle of that block while it works
+//! (`BeltProcessingBehaviour`). Fans and crushers are not here yet.
 //!
-//! An item's position counts blocks from the belt's start (its controller, `index` 0) along
-//! the belt's facing: 0 is the start block's back edge, `length` the end block's front edge.
+//! An item's position counts blocks from the belt's start (its controller, `index` 0) along the
+//! chain: 0 is the start block's back edge, `length` the end block's front edge. Where the blocks
+//! of a chain are on a slope is `rules::belt_slope` (Belts III); a slope changes none of the item
+//! rules below but where processors, funnels and tunnels may work (`Surroundings::horizontal`).
 
+use crate::rules::belt_slope;
 use crate::{Axis, Dir, Pos};
 
 /// `CKinetics.maxBeltLength`'s default: the two shafts must be closer than this.
@@ -111,69 +113,17 @@ fn scale(a: Pos, by: i32) -> Pos {
 }
 
 /// `BeltBlock.nextSegmentPosition` for a horizontal belt: the next block of the chain, or the
-/// previous one, or none past either end.
+/// previous one, or none past either end. A slope's is `belt_slope::next_segment`.
 pub fn next_segment(pos: Pos, facing: Dir, part: Part, forward: bool) -> Option<Pos> {
-    if (part == Part::End && forward) || (part == Part::Start && !forward) {
-        return None;
-    }
-    Some(add(pos, scale(facing.normal(), if forward { 1 } else { -1 })))
+    belt_slope::next_segment(pos, facing, Slope::Horizontal, part, forward)
 }
 
-/// `BeltHelper.getPositionForOffset` for a horizontal belt.
+/// `BeltHelper.getPositionForOffset` for a horizontal belt. A slope's is `belt_slope::Chain::at`.
 pub fn segment_position(controller: Pos, facing: Dir, offset: i32) -> Pos {
     add(controller, scale(facing.normal(), offset))
 }
 
-/// Why two shafts can't be joined (`BeltConnectorItem.canConnect` refuses).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Refusal {
-    /// Not closer than [`MAX_LENGTH`].
-    TooFar,
-    /// The same shaft twice.
-    Same,
-    /// Not in a line that crosses both shafts' axis, or the axes differ.
-    NotInLine,
-    /// A slope, a vertical belt or a sideways one: not in this slice yet.
-    NotHorizontal,
-}
-
-/// Where a belt between the shafts at `first` and `second` goes, both shafts on `axis`, as
-/// `BeltConnectorItem.canConnect` and `createBelts` place it: its facing (from `first`, the
-/// start, to `second`, the end) and every block of it in order. Only the geometry: the game
-/// still checks the blocks between and the shafts' speeds.
-pub fn connect(first: Pos, second: Pos, axis: Axis, second_axis: Axis) -> Result<(Dir, Vec<Pos>), Refusal> {
-    let diff = [second[0] - first[0], second[1] - first[1], second[2] - first[2]];
-    if diff == [0, 0, 0] {
-        return Err(Refusal::Same);
-    }
-    // `Vec3i.closerThan`: distSqr < maxLength².
-    let distance = diff.iter().map(|c| c * c).sum::<i32>();
-    if distance >= MAX_LENGTH * MAX_LENGTH {
-        return Err(Refusal::TooFar);
-    }
-    let [x, y, z] = diff.map(i32::abs);
-    let sames = i32::from(x == y) + i32::from(y == z) + i32::from(z == x);
-    if diff[axis.index()] != 0 || sames != 1 || axis != second_axis {
-        return Err(Refusal::NotInLine);
-    }
-    if axis == Axis::Y || diff[1] != 0 {
-        return Err(Refusal::NotHorizontal);
-    }
-    // `getFacingFromTo`: along x unless the two share an x.
-    let along = if first[0] == second[0] { Axis::Z } else { Axis::X };
-    let sign = diff[along.index()].signum();
-    let facing = match (along, sign > 0) {
-        (Axis::X, true) => Dir::East,
-        (Axis::X, false) => Dir::West,
-        (_, true) => Dir::South,
-        (_, false) => Dir::North,
-    };
-    let steps = diff[along.index()].abs();
-    let chain = (0..=steps)
-        .map(|i| add(first, scale(facing.normal(), i)))
-        .collect();
-    Ok((facing, chain))
-}
+pub use crate::rules::belt_slope::{Chain, Connection, Refusal, connect};
 
 /// The part a block of a new belt gets (`createBelts`): `pulley` when a shaft stood there.
 pub fn part_at(index: usize, length: usize, pulley: bool) -> Part {
@@ -271,6 +221,12 @@ pub enum Crossing {
 pub trait Surroundings<S> {
     /// `BeltInventory.resolveEnding`: asked once, and only when an item comes near the end.
     fn ending(&mut self) -> Ending;
+
+    /// The belt is horizontal: only then do processors above it catch its items
+    /// (`BeltInventory.tick`'s `horizontal`).
+    fn horizontal(&self) -> bool {
+        true
+    }
 
     /// `BeltProcessingBehaviour.handleHeldItem` of the processor above `segment`, for an item
     /// it holds; `None` where there is none (the item is let go).
@@ -509,15 +465,17 @@ impl<S> Inventory<S> {
             } else {
                 movement.max(to_end)
             };
-            // Belt item processing.
+            // Belt item processing: on a horizontal belt only.
             let next_offset = item.pos + limited;
-            match handle_processing(&mut item, next_offset, no_movement, positive, env) {
-                Handled::Nothing => {}
-                Handled::Changed => moved.reordered = true,
-                Handled::Removed => {
-                    front = Some(item.pos);
-                    moved.reordered = true;
-                    continue;
+            if env.horizontal() {
+                match handle_processing(&mut item, next_offset, no_movement, positive, env) {
+                    Handled::Nothing => {}
+                    Handled::Changed => moved.reordered = true,
+                    Handled::Removed => {
+                        front = Some(item.pos);
+                        moved.reordered = true;
+                        continue;
+                    }
                 }
             }
             if item.locked || no_movement {
@@ -761,10 +719,62 @@ pub enum Slope {
 }
 
 impl Slope {
+    pub const ALL: [Slope; 5] = [
+        Slope::Horizontal,
+        Slope::Upward,
+        Slope::Downward,
+        Slope::Vertical,
+        Slope::Sideways,
+    ];
+
     /// `BeltRenderer`'s `diagonal`: a belt on a slope has its own model and sprite.
     pub const fn is_diagonal(self) -> bool {
         matches!(self, Slope::Upward | Slope::Downward)
     }
+
+    /// `BeltSlope.getSerializedName`: the state's `slope` value.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Slope::Horizontal => "horizontal",
+            Slope::Upward => "upward",
+            Slope::Downward => "downward",
+            Slope::Vertical => "vertical",
+            Slope::Sideways => "sideways",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.name() == name)
+    }
+
+    /// `BeltBlock.canTransportObjects`: items and entities ride every belt but a vertical and a
+    /// sideways one, which only turn.
+    pub const fn transports(self) -> bool {
+        !matches!(self, Slope::Vertical | Slope::Sideways)
+    }
+}
+
+/// `BeltBlock.getRotationAxis`: the axis a belt's shafts turn about. A sideways belt turns about
+/// the vertical, any other across its facing.
+pub const fn rotation_axis_of(facing: Dir, slope: Slope) -> Axis {
+    if matches!(slope, Slope::Sideways) {
+        Axis::Y
+    } else {
+        rotation_axis(facing)
+    }
+}
+
+/// Whether two blocks of belts, `a` at the origin and `b` at `diff` from it, are neighbours in the
+/// same chain, one turning with the other (`BeltBlockEntity.propagateRotationTo`: same controller;
+/// here, the same facing and slope with `b` the next block after `a`, or the one before).
+pub fn linked(a: (Dir, Slope, Part), b: (Dir, Slope, Part), diff: Pos) -> bool {
+    if a.0 != b.0 || a.1 != b.1 {
+        return false;
+    }
+    let step = belt_slope::step(a.0, a.1);
+    let follows = |from: Part, to: Part| from != Part::End && to != Part::Start;
+    (diff == step && follows(a.2, b.2))
+        || (diff == [-step[0], -step[1], -step[2]] && follows(b.2, a.2))
 }
 
 /// A sprite shift a model is drawn with: its faces textured `source` are drawn from `target`
@@ -1273,10 +1283,10 @@ mod tests {
 
     #[test]
     fn connecting_two_shafts_in_a_line() {
-        let (facing, chain) = connect([0, 0, 0], [3, 0, 0], Axis::Z, Axis::Z).unwrap();
-        assert_eq!(facing, Dir::East);
+        let Connection { facing, chain, slope } = connect([0, 0, 0], [3, 0, 0], Axis::Z, Axis::Z).unwrap();
+        assert_eq!((facing, slope), (Dir::East, Slope::Horizontal));
         assert_eq!(chain, vec![[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]]);
-        let (facing, chain) = connect([0, 0, 0], [0, 0, -2], Axis::X, Axis::X).unwrap();
+        let Connection { facing, chain, .. } = connect([0, 0, 0], [0, 0, -2], Axis::X, Axis::X).unwrap();
         assert_eq!(facing, Dir::North);
         assert_eq!(chain.len(), 3);
         // Along the shafts' own axis, or with different axes, there is no belt.
@@ -1287,16 +1297,16 @@ mod tests {
         // Closer than 20: a belt is at most 20 blocks long.
         assert!(connect([0, 0, 0], [19, 0, 0], Axis::Z, Axis::Z).is_ok());
         assert_eq!(connect([0, 0, 0], [20, 0, 0], Axis::Z, Axis::Z), Err(Refusal::TooFar));
-        // Slopes and vertical belts come later.
-        assert_eq!(connect([0, 0, 0], [2, 2, 0], Axis::Z, Axis::Z), Err(Refusal::NotHorizontal));
-        assert_eq!(connect([0, 0, 0], [0, 3, 0], Axis::Z, Axis::Z), Err(Refusal::NotHorizontal));
+        // Slopes and vertical belts are `rules::belt_slope`'s tests.
+        assert_eq!(connect([0, 0, 0], [2, 2, 0], Axis::Z, Axis::Z).unwrap().slope, Slope::Upward);
+        assert_eq!(connect([0, 0, 0], [0, 3, 0], Axis::Z, Axis::Z).unwrap().slope, Slope::Vertical);
     }
 
     #[test]
     fn a_belt_turns_as_one_and_drives_shafts_at_its_pulleys() {
         use crate::{Kind, Node, solve};
         use std::collections::BTreeMap;
-        let belt = |part| Node::passive(Kind::Belt(Dir::East, part));
+        let belt = |part| Node::passive(Kind::Belt(Dir::East, part, Slope::Horizontal));
         let mut motor = Node::passive(Kind::Motor(Dir::South));
         motor.generated = 16.0;
         motor.capacity = 16384.0;
@@ -1324,6 +1334,80 @@ mod tests {
         for pos in [[1, 0, 1], [3, 0, 0], [4, 0, 0]] {
             assert_eq!(speeds[&pos], 0.0, "{pos:?}");
         }
+    }
+
+    #[test]
+    fn belts_on_a_slope_a_vertical_one_and_a_sideways_one_turn_as_one_too() {
+        use crate::{Kind, Node, solve};
+        use std::collections::BTreeMap;
+        let run = |motor: (Pos, Dir), blocks: &[(Pos, Part)], facing: Dir, slope: Slope, neighbour: Option<Pos>| {
+            let mut driver = Node::passive(Kind::Motor(motor.1));
+            driver.generated = 16.0;
+            driver.capacity = 16384.0;
+            let mut nodes: BTreeMap<Pos, Node> = BTreeMap::new();
+            nodes.insert(motor.0, driver);
+            for &(pos, part) in blocks {
+                nodes.insert(pos, Node::passive(Kind::Belt(facing, part, slope)));
+            }
+            if let Some(pos) = neighbour {
+                // A block of another belt next to the end, which must not follow.
+                nodes.insert(pos, Node::passive(Kind::Belt(facing, Part::Start, slope)));
+            }
+            let solution = solve(&nodes);
+            assert!(solution.breaks.is_empty(), "{:?}", solution.breaks);
+            (blocks.iter().map(|b| solution.speeds[&b.0]).collect::<Vec<_>>(),
+             neighbour.map(|n| solution.speeds[&n]))
+        };
+        // Upward, facing east: a block up for each block along; its pulleys turn about z.
+        let up = [([0, 0, 0], Part::Start), ([1, 1, 0], Part::Middle), ([2, 2, 0], Part::Middle), ([3, 3, 0], Part::End)];
+        let (speeds, other) = run(([0, 0, -1], Dir::South), &up, Dir::East, Slope::Upward, Some([4, 4, 0]));
+        assert_eq!(speeds, vec![16.0; 4]);
+        assert_eq!(other, Some(0.0));
+        // Downward, facing north.
+        let down = [([5, 3, 5], Part::Start), ([5, 2, 4], Part::Middle), ([5, 1, 3], Part::End)];
+        let (speeds, _) = run(([4, 3, 5], Dir::East), &down, Dir::North, Slope::Downward, None);
+        assert_eq!(speeds, vec![16.0; 3]);
+        // A middle block with a block of the wrong slope between: not joined.
+        let broken = [([0, 0, 0], Part::Start), ([2, 2, 0], Part::End)];
+        assert_eq!(run(([0, 0, -1], Dir::South), &broken, Dir::East, Slope::Upward, None).0, vec![16.0, 0.0]);
+        // Vertical, facing south: stacked, pulleys turn about x.
+        let vertical = [([0, 0, 0], Part::Start), ([0, 1, 0], Part::Middle), ([0, 2, 0], Part::End)];
+        let (speeds, _) = run(([-1, 0, 0], Dir::East), &vertical, Dir::South, Slope::Vertical, None);
+        assert_eq!(speeds, vec![16.0; 3]);
+        // Sideways, facing east: pulleys turn about the vertical.
+        let sideways = [([0, 0, 0], Part::Start), ([1, 0, 0], Part::Middle), ([2, 0, 0], Part::End)];
+        let (speeds, _) = run(([0, -1, 0], Dir::Up), &sideways, Dir::East, Slope::Sideways, None);
+        assert_eq!(speeds, vec![16.0; 3]);
+        // Their shafts are on those axes.
+        assert_eq!(rotation_axis_of(Dir::East, Slope::Sideways), Axis::Y);
+        assert_eq!(rotation_axis_of(Dir::East, Slope::Upward), Axis::Z);
+        assert_eq!(rotation_axis_of(Dir::South, Slope::Vertical), Axis::X);
+    }
+
+    #[test]
+    fn only_horizontal_belts_let_processors_work() {
+        struct Flat(bool);
+        impl Surroundings<u32> for Flat {
+            fn ending(&mut self) -> Ending {
+                Ending::Eject
+            }
+            fn horizontal(&self) -> bool {
+                self.0
+            }
+            fn received(&mut self, _: i32, _: &Item<u32>) -> Option<Processing> {
+                Some(Processing::Hold)
+            }
+        }
+        // Over a flat belt the processor catches the item; on a slope it rides through.
+        let mut flat = belt(&[1.4], true);
+        flat.tick_with(0.2, 6, &mut Flat(true));
+        assert!(flat.items[0].locked);
+        let mut sloped = belt(&[1.4], true);
+        for _ in 0..10 {
+            sloped.tick_with(0.2, 6, &mut Flat(false));
+        }
+        assert!(!sloped.items[0].locked);
+        assert!(sloped.items[0].pos > 3.0);
     }
 
     /// A belt's surroundings for the tests: a processor above one segment and a block at the end.
@@ -1566,6 +1650,94 @@ mod tests {
         assert!(inventory.can_insert_at_from_side(1, Dir::South, Dir::South));
         // Another side is not held up by it.
         assert!(inventory.can_insert_at_from_side(1, Dir::East, Dir::South));
+    }
+
+    // --- The horizontal belt as it was before slopes (Belts III kept all of this) ---------------
+
+    #[test]
+    fn a_horizontal_belt_is_laid_in_a_line_from_start_to_end_whichever_way_it_faces() {
+        for (second, facing) in [
+            ([4, 7, 0], Dir::East),
+            ([-4, 7, 0], Dir::West),
+            ([0, 7, 4], Dir::South),
+            ([0, 7, -4], Dir::North),
+        ] {
+            // The shafts turn about the axis the belt runs across.
+            let axis = if second[0] != 0 { Axis::Z } else { Axis::X };
+            let Connection { facing: got, chain, slope } = connect([0, 7, 0], second, axis, axis).unwrap();
+            assert_eq!((got, slope), (facing, Slope::Horizontal));
+            assert_eq!(chain.len(), 5);
+            assert_eq!(chain[0], [0, 7, 0]);
+            assert_eq!(chain[4], second);
+            // Each step is one block along the facing and no height.
+            for pair in chain.windows(2) {
+                assert_eq!(
+                    [pair[1][0] - pair[0][0], pair[1][1] - pair[0][1], pair[1][2] - pair[0][2]],
+                    facing.normal()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_blocks_of_a_horizontal_belt_are_found_from_any_of_them() {
+        let facing = Dir::West;
+        // `BeltHelper.getPositionForOffset` and `BeltBlock.nextSegmentPosition`.
+        let controller = [10, 3, 5];
+        for offset in 0..5 {
+            assert_eq!(segment_position(controller, facing, offset), [10 - offset, 3, 5]);
+        }
+        assert_eq!(segment_position(controller, facing, -1), [11, 3, 5]);
+        let mut at = controller;
+        for _ in 0..4 {
+            at = next_segment(at, facing, Part::Middle, true).unwrap();
+        }
+        assert_eq!(at, [6, 3, 5]);
+        assert_eq!(next_segment(at, facing, Part::End, true), None);
+        assert_eq!(next_segment(controller, facing, Part::Start, false), None);
+        assert_eq!(next_segment(at, facing, Part::End, false), Some([7, 3, 5]));
+    }
+
+    #[test]
+    fn horizontal_belt_blocks_of_one_facing_turn_together_and_pulleys_take_side_shafts() {
+        use crate::{Kind, ratio};
+        let belt = |facing, part| Kind::Belt(facing, part, Slope::Horizontal);
+        // Along the facing, the start's next block follows it and the end's doesn't.
+        assert_eq!(
+            ratio(belt(Dir::South, Part::Start), belt(Dir::South, Part::Middle), [0, 0, 1]),
+            Some(1.0)
+        );
+        assert_eq!(
+            ratio(belt(Dir::South, Part::Middle), belt(Dir::South, Part::End), [0, 0, 1]),
+            Some(1.0)
+        );
+        assert_eq!(
+            ratio(belt(Dir::South, Part::End), belt(Dir::South, Part::Start), [0, 0, 1]),
+            None
+        );
+        // The same blocks the other way round are the same pair.
+        assert_eq!(
+            ratio(belt(Dir::South, Part::End), belt(Dir::South, Part::Middle), [0, 0, -1]),
+            Some(1.0)
+        );
+        // A belt of another facing next to it is not linked.
+        assert_eq!(
+            ratio(belt(Dir::South, Part::Start), belt(Dir::East, Part::Middle), [0, 0, 1]),
+            None
+        );
+        // A pulley turns the shaft beside it across the belt; a middle block does not.
+        let shaft = Kind::Shaft(Axis::X);
+        assert_eq!(ratio(belt(Dir::South, Part::Start), shaft, [1, 0, 0]), Some(1.0));
+        assert_eq!(ratio(belt(Dir::South, Part::Middle), shaft, [1, 0, 0]), None);
+    }
+
+    #[test]
+    fn horizontal_items_are_ejected_where_they_left_and_the_way_the_belt_moves() {
+        // The movement facing and speed `eject` throws an item with.
+        assert_eq!(movement_facing(32.0, Dir::East), Dir::West);
+        assert_eq!(movement_facing(-32.0, Dir::East), Dir::East);
+        assert_eq!(movement_facing(32.0, Dir::North), Dir::North.opposite());
+        assert_eq!(movement_facing(32.0, Dir::South), Dir::South);
     }
 
     #[test]
