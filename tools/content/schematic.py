@@ -51,12 +51,18 @@ _DISPENSER = {"hardness": 3.5, "explosion_resistance": 3.5, "requires_tool": Tru
 _LECTERN = {"hardness": 2.5, "explosion_resistance": 2.5, "requires_tool": False,
             "sounds": "minecraft:oak_planks"}
 
+# Horizon opens a mod block's container menu only when the template's class opens a menu on use (a glass
+# template never does), so both blocks use the crafting table, which has no states of its own; the
+# menu itself is the hopper-shaped one of their `ModContainer`.
+_OPENS_A_MENU = "minecraft:crafting_table"
+
 BLOCKS = {
     "schematicannon": block(None, None, _DISPENSER, GRAY,
-                            {"default": _CANNON}, render_shape="MODEL"),
+                            {"default": _CANNON}, render_shape="MODEL", template=_OPENS_A_MENU),
     "schematic_table": block(
         {"facing": {"type": "enum", "values": ["north", "south", "west", "east"]}},
-        {"facing": "north"}, _LECTERN, PODZOL, _table_shapes(), render_shape="MODEL"),
+        {"facing": "north"}, _LECTERN, PODZOL, _table_shapes(), render_shape="MODEL",
+        template=_OPENS_A_MENU),
 }
 BLOCKS["schematic_table"]["collision_shapes"] = {"default": _POLE}
 # `forceSolidOn` on the table, and neither block hides its neighbours' faces.

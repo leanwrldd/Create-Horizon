@@ -107,6 +107,7 @@ pub mod schematic_facts;
 pub mod schematic_nbt;
 pub mod schematic_printer;
 pub mod schematic_structure;
+pub mod schematic_table;
 pub mod schematic_transform;
 pub mod seat;
 pub mod sequenced;
