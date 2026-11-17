@@ -735,33 +735,90 @@ pub fn throw_motion(look: [f64; 3], velocity: f32) -> Option<[f64; 3]> {
 
 // --- summaries -------------------------------------------------------------------------------------
 
+/// `BigItemStack.INF`: a count this large is "infinite" (a Creative Crate, a bottomless handler).
+pub const INF: u32 = 1_000_000_000;
+
 /// `InventorySummary` without the game: stacks merged by key, in the order they came.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Summary<K> {
     pub stacks: Vec<Big<K>>,
+    /// `InventorySummary.contributingLinks`: how many Stock Links contributed to a network's
+    /// summary.
+    pub contributing_links: u32,
+    /// `InventorySummary.totalCount`: stops growing once it reaches [`INF`].
+    pub total_count: i64,
 }
 
 impl<K> Default for Summary<K> {
     fn default() -> Self {
-        Self { stacks: Vec::new() }
+        Self { stacks: Vec::new(), contributing_links: 0, total_count: 0 }
     }
 }
 
 impl<K: PartialEq + Clone> Summary<K> {
-    /// `InventorySummary.add(stack, count)`.
+    /// `InventorySummary.add(stack, count)`: an existing entry stops growing at [`INF`]. A
+    /// count never goes below zero here (Create's int can: nothing reads a negative entry).
     pub fn add(&mut self, key: &K, count: i64) {
         if count == 0 {
             return;
         }
+        if self.total_count < i64::from(INF) {
+            self.total_count += count;
+        }
         match self.stacks.iter_mut().find(|(k, _)| k == key) {
-            Some((_, have)) => *have = (i64::from(*have) + count).max(0) as u32,
-            None => self.stacks.push((key.clone(), count.max(0) as u32)),
+            Some((_, have)) => {
+                if *have < INF {
+                    *have = (i64::from(*have) + count).clamp(0, i64::from(u32::MAX)) as u32;
+                }
+            }
+            None => self.stacks.push((key.clone(), count.clamp(0, i64::from(u32::MAX)) as u32)),
+        }
+    }
+
+    /// `InventorySummary.add(InventorySummary)`: every stack, and the links that contributed.
+    pub fn add_summary(&mut self, other: &Summary<K>) {
+        for (key, count) in &other.stacks {
+            self.add(key, i64::from(*count));
+        }
+        self.contributing_links += other.contributing_links;
+    }
+
+    /// `InventorySummary.copy`: the stacks only (`contributingLinks` isn't carried over).
+    pub fn copy(&self) -> Summary<K> {
+        let mut copy = Summary::default();
+        for (key, count) in &self.stacks {
+            copy.add(key, i64::from(*count));
+        }
+        copy
+    }
+
+    /// `InventorySummary.erase`.
+    pub fn erase(&mut self, key: &K) -> bool {
+        match self.stacks.iter().position(|(k, _)| k == key) {
+            Some(index) => {
+                let (_, count) = self.stacks.remove(index);
+                self.total_count -= i64::from(count);
+                true
+            }
+            None => false,
         }
     }
 
     /// `InventorySummary.getCountOf`.
     pub fn count_of(&self, key: &K) -> u32 {
         self.stacks.iter().find(|(k, _)| k == key).map_or(0, |(_, count)| *count)
+    }
+
+    /// `InventorySummary.getTotalOfMatching`.
+    pub fn total_of_matching(&self, mut filter: impl FnMut(&K) -> bool) -> i64 {
+        self.stacks.iter().filter(|(k, _)| filter(k)).map(|(_, count)| i64::from(*count)).sum()
+    }
+
+    /// `InventorySummary.getStacksByCount`: the most first (a stable sort, `BigItemStack.comparator`).
+    pub fn stacks_by_count(&self) -> Vec<Big<K>> {
+        let mut stacks = self.stacks.clone();
+        stacks.sort_by_key(|s| std::cmp::Reverse(s.1));
+        stacks
     }
 
     pub fn is_empty(&self) -> bool {
