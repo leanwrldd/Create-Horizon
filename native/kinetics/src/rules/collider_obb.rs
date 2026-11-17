@@ -175,11 +175,11 @@ impl Aabb {
     /// `AABB.expandTowards(Vec3)`: grown on the side the vector points to.
     pub fn expand_towards(&self, v: Vec3) -> Self {
         let mut r = *self;
-        for i in 0..3 {
-            if v[i] < 0.0 {
-                r.min[i] += v[i];
-            } else if v[i] > 0.0 {
-                r.max[i] += v[i];
+        for (i, c) in v.into_iter().enumerate() {
+            if c < 0.0 {
+                r.min[i] += c;
+            } else if c > 0.0 {
+                r.max[i] += c;
             }
         }
         r
@@ -189,11 +189,11 @@ impl Aabb {
     pub fn contract(&self, x: f64, y: f64, z: f64) -> Self {
         let v = [x, y, z];
         let mut r = *self;
-        for i in 0..3 {
-            if v[i] < 0.0 {
-                r.min[i] -= v[i];
-            } else if v[i] > 0.0 {
-                r.max[i] -= v[i];
+        for (i, c) in v.into_iter().enumerate() {
+            if c < 0.0 {
+                r.min[i] -= c;
+            } else if c > 0.0 {
+                r.max[i] -= c;
             }
         }
         r
@@ -674,14 +674,14 @@ pub fn collide_many(
                 // Create would fail on a missing axis; none is possible when the centres differ.
                 if mf.step_separation <= f64::from(entity_max_step) {
                     let sep = with_signed_epsilon(mf.step_separation);
-                    for i in 0..3 {
-                        response[i] += mf.step_axis[i] * sep;
+                    for (r, a) in response.iter_mut().zip(mf.step_axis) {
+                        *r += a * sep;
                     }
                 } else {
                     let sep = with_signed_epsilon(mf.separation);
                     let axis = mf.axis.unwrap_or([0.0; 3]);
-                    for i in 0..3 {
-                        response[i] += axis[i] * sep;
+                    for (r, a) in response.iter_mut().zip(axis) {
+                        *r += a * sep;
                     }
                 }
                 time_of_impact = 0.0;
