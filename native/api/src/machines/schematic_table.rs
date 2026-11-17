@@ -11,8 +11,12 @@
 //! - Nothing is uploaded: the Schematic names a file of the one `schematics/` folder (see
 //!   `schematic_files.rs`), so the write is instant and there is no progress bar.
 //! - The table's slots are not reachable by hoppers or funnels.
+//! - `/schematic give <file or number>` hands over a written Schematic at once: Horizon's `/give`
+//!   can't carry a mod's data component (`Unknown item component`), so the command is the way to get
+//!   one without the table.
 
 use create_kinetics::looking;
+use create_kinetics::rules::schematic_table::pick;
 use horizon_client::mod_api::{
     BlockEntityContainerEvent, BlockEntityEvent, BlockStateId, Compound, Flow, Hooks, Host,
     LevelHost, ModContainer, RightClickBlockEvent, StateForPlacementEvent, UseItemOnEvent,
@@ -45,31 +49,6 @@ fn container() -> ModContainer {
         inputs: Vec::new(),
         outputs: Vec::new(),
         menu: Some("minecraft:hopper".to_owned()),
-    }
-}
-
-/// The file a name or a number picks among `names`.
-fn pick(names: &[String], wanted: &str) -> Result<String, String> {
-    let wanted = wanted.trim();
-    if wanted.is_empty() {
-        return Err("Give a file name or a number from /schematic list".to_owned());
-    }
-    if let Ok(n) = wanted.parse::<usize>()
-        && n >= 1
-        && n <= names.len()
-    {
-        return Ok(names[n - 1].clone());
-    }
-    let lower = wanted.to_lowercase();
-    let with_ext = if lower.ends_with(".nbt") { lower.clone() } else { format!("{lower}.nbt") };
-    if let Some(name) = names.iter().find(|n| n.to_lowercase() == with_ext) {
-        return Ok(name.clone());
-    }
-    let starting: Vec<&String> = names.iter().filter(|n| n.to_lowercase().starts_with(&lower)).collect();
-    match starting.as_slice() {
-        [one] => Ok((*one).clone()),
-        [] => Err(format!("No schematic called {wanted} (see /schematic list)")),
-        _ => Err(format!("{wanted} fits more than one file (see /schematic list)")),
     }
 }
 
@@ -129,6 +108,34 @@ pub fn write(host: &mut dyn Host, uuid: u128, name: &str) {
     let _ = dimension;
 }
 
+/// `/schematic give`: a written Schematic of a file of the folder into the player's inventory.
+pub fn give(host: &mut dyn Host, uuid: u128, name: &str) {
+    let reply = |host: &mut dyn Host, line: String| {
+        host.tell(uuid, horizon_client::mod_api::Text::literal(line));
+    };
+    let Some(player) = host.acting_player() else {
+        return;
+    };
+    let names = files::list(&*host);
+    let file = match pick(&names, name) {
+        Ok(file) => file,
+        Err(error) => {
+            reply(host, error);
+            return;
+        }
+    };
+    match items::new_schematic(&*host, &file, &player.name) {
+        Ok(stack) => {
+            if host.give_stack(uuid, stack).is_some() {
+                reply(host, "Your inventory is full".to_owned());
+            } else {
+                reply(host, format!("Gave a Schematic of {file}"));
+            }
+        }
+        Err(error) => reply(host, format!("Schematic failed to Load: {error}")),
+    }
+}
+
 impl Hooks for Tables {
     fn block_entity(&self, _: &mut dyn Host, event: &mut BlockEntityEvent<'_>) -> Option<(String, Compound)> {
         (event.block == TABLE).then(|| (TABLE.to_owned(), Compound::new()))
@@ -178,27 +185,5 @@ impl Hooks for Tables {
             return Flow::Continue;
         }
         util::wrench(host, event.pos, |_| {})
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn names() -> Vec<String> {
-        ["castle.nbt", "castle_keep.nbt", "House.nbt"].map(str::to_owned).to_vec()
-    }
-
-    #[test]
-    fn a_file_is_picked_by_number_or_name() {
-        assert_eq!(pick(&names(), "3").unwrap(), "House.nbt");
-        assert_eq!(pick(&names(), "house").unwrap(), "House.nbt");
-        assert_eq!(pick(&names(), "castle.nbt").unwrap(), "castle.nbt");
-        // An exact name wins over the files it is the start of.
-        assert_eq!(pick(&names(), "castle").unwrap(), "castle.nbt");
-        assert!(pick(&names(), "cast").unwrap_err().contains("more than one"));
-        assert!(pick(&names(), "moat").is_err());
-        assert!(pick(&names(), "").is_err());
-        assert!(pick(&names(), "9").is_err());
     }
 }

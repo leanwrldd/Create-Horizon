@@ -30,6 +30,7 @@ use std::sync::Mutex;
 
 use create_kinetics::rules::contraption_facts::REPLACEABLE;
 use create_kinetics::rules::schematic_structure::{FALLBACK_NAME, Pos};
+use create_kinetics::rules::schematic_table::block_takes_click;
 use create_kinetics::rules::schematic_transform::{Mirror, Rotation, Transformation};
 use create_kinetics::looking;
 use horizon_client::mod_api::{
@@ -327,12 +328,13 @@ fn mirror_text(mirror: Mirror) -> &'static str {
 
 // ---- commands ---------------------------------------------------------------------------------------
 
-const USAGES: [&str; 14] = [
+const USAGES: [&str; 15] = [
     "schematic list",
     "schematic save",
     "schematic save <name:text>",
     "schematic expand <amount:integer>",
     "schematic write <file:text>",
+    "schematic give <file:text>",
     "schematic rotate",
     "schematic rotate <direction:word>",
     "schematic flip <axis:word>",
@@ -344,9 +346,10 @@ const USAGES: [&str; 14] = [
     "schematic selection",
 ];
 
-const HELP: [&str; 9] = [
+const HELP: [&str; 10] = [
     "Schematic And Quill: right-click two blocks, then a third time to save as My Schematic; /schematic save <name> to name it; sneak to discard; /schematic expand <n> to grow the box the way you look.",
     "Schematic Table: put an Empty Schematic in it, then /schematic write <file or number> (see /schematic list).",
+    "/schematic give <file or number>   a written Schematic of a saved file, without the table (Horizon's /give can't carry one)",
     "Schematic: right-click a block to position it, sneak-right-click to turn it a quarter turn.",
     "/schematic rotate [cw|ccw]   turn it 90 degrees about its centre",
     "/schematic flip x|z          mirror it (x swaps east and west, z swaps north and south)",
@@ -402,6 +405,10 @@ fn command(host: &mut dyn Host, uuid: u128, words: &[&str], text: &str, held: Op
         "write" => {
             let name = text.trim().strip_prefix("write").unwrap_or("").trim();
             super::schematic_table::write(host, uuid, name);
+        }
+        "give" => {
+            let name = text.trim().strip_prefix("give").unwrap_or("").trim();
+            super::schematic_table::give(host, uuid, name);
         }
         "rotate" => {
             let clockwise = !matches!(words.get(1).map(|w| w.to_lowercase()).as_deref(), Some("ccw" | "counterclockwise" | "left"));
@@ -621,8 +628,9 @@ impl Hooks for Schematics {
         }
         let (pos, face) = (event.pos, event.face);
         let target = host.block(pos);
-        // The cannon and the table take the Schematic themselves.
-        if item == SCHEMATIC && (target == CANNON || target == TABLE) {
+        // The cannon and the table take the click themselves (they open their screens, and a
+        // block's use comes before the item's), the Quill and the Schematic alike.
+        if block_takes_click(&target) {
             return Flow::Continue;
         }
         if !util::first_click(&*host, player.uuid, pos) {

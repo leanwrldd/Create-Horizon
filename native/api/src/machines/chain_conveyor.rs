@@ -58,7 +58,10 @@ const LOOPING: &str = "LoopingPackages";
 /// This port's own: the game time the saved positions are those of.
 const SINCE: &str = "Since";
 
-const SPRITE: &str = "minecraft:block/iron_chain";
+/// The block atlas's key for the chain texture: vanilla's sprites are keyed without the namespace
+/// (`block/iron_chain`); `minecraft:block/iron_chain` is unknown to `draw_quad`, which then draws
+/// nothing (the in-game report: no chains between the wheels).
+const SPRITE: &str = "block/iron_chain";
 
 struct Conveyors;
 
@@ -896,6 +899,12 @@ mod tests {
         assert_eq!(util::long(&nbt, SINCE), 99);
         // Nothing differs now.
         assert!(diff(&nbt, &back, 100).is_empty());
+    }
+
+    #[test]
+    fn the_chain_sprite_is_keyed_as_the_atlas_keys_vanilla_sprites() {
+        assert!(!SPRITE.contains(':'), "{SPRITE}");
+        assert!(SPRITE.starts_with("block/"));
     }
 
     #[test]

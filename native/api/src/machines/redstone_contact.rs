@@ -175,11 +175,13 @@ impl Hooks for Contacts {
         signal::mask(event);
     }
 
-    /// `RedstoneContactBlock.isSignalSource`: a block with a contact's states (an observer's are the
-    /// same and it is a source already).
+    /// `RedstoneContactBlock.isSignalSource` (`POWERED`): a block with a contact's states that is
+    /// powered (an observer's states are the same and it is a source already: only ever set, never
+    /// cleared).
     fn is_signal_source(&self, level: &dyn LevelHost, event: &mut IsSignalSourceEvent) {
-        if signal::boolean(level, event.state, "powered").is_some()
+        if let Some(powered) = signal::boolean(level, event.state, "powered")
             && signal::choice(level, event.state, "facing", &FACINGS).is_some()
+            && rules::is_signal_source(powered)
         {
             event.source = true;
         }
