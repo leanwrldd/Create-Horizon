@@ -21,6 +21,7 @@ mod types;
 include!("types_names.rs");
 
 pub mod adapter;
+pub mod events;
 pub use adapter::Adapter;
 
 use std::collections::BTreeSet;

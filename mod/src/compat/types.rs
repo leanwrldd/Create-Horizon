@@ -211,7 +211,7 @@ impl BlockEntityDraw {
         let ctx: &mut (dyn BlockEntityDrawContext + 'static) = unsafe { std::mem::transmute(ctx) };
         Self { partial, game_time, light, ctx: std::ptr::NonNull::from(ctx) }
     }
-    fn ctx(&mut self) -> &mut dyn BlockEntityDrawContext {
+    pub(crate) fn ctx(&mut self) -> &mut dyn BlockEntityDrawContext {
         // SAFETY: see `new`.
         unsafe { self.ctx.as_mut() }
     }

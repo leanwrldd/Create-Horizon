@@ -17,6 +17,8 @@ mod draw;
 mod forward;
 pub(crate) mod kinetic;
 mod machines;
+mod parts;
+mod parts_gen;
 mod ponder;
 mod press;
 pub(crate) mod recipes;
@@ -596,9 +598,97 @@ impl Hooks for Core {
     }
 }
 
-/// The new API's one `impl Hooks`, which has to be at the crate root. It forwards to `compat`.
+/// The old dispatcher: `Core`, the machine modules and Ponder, behind the old `Hooks`.
+static CREATE: LazyLock<Box<dyn Hooks>> = LazyLock::new(create_hooks);
+
+pub(crate) fn create() -> &'static dyn Hooks {
+    &**CREATE
+}
+
+/// The new API's one `impl Hooks`, which has to be at the crate root. It attaches a Part to every Create block and
+/// forwards the global hooks through `compat::events` to the old dispatcher (MIGRATION.md has the table).
 #[derive(Default)]
 struct Mod;
 
 #[mod_api::horizon_mod]
-impl mod_api::Hooks for Mod {}
+impl mod_api::Hooks for Mod {
+    fn register(&self, r: &mut dyn mod_api::Registrar, _: &mod_api::RegistrationContext) {
+        for &id in parts_gen::BLOCKS {
+            let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
+            let key = r.block_key(full);
+            r.block_part(key, parts::CreateBlock { id: full });
+        }
+        for &id in parts_gen::BLOCK_ENTITIES {
+            let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
+            let kind = r.block_entity_type(id).blocks(&[id]).build();
+            r.block_entity_part(&kind, parts::CreateEntity { id: full })
+                .expect("a native block entity type");
+        }
+    }
+
+    fn standalone_models(&self, _: &mod_api::RegistrationContext, event: &mut mod_api::StandaloneModelsEvent<'_>) {
+        compat::events::standalone_models(event)
+    }
+
+    fn component_types(&self, _: &mod_api::RegistrationContext, event: &mut mod_api::ComponentTypesEvent<'_>) {
+        compat::events::component_types(event)
+    }
+
+    fn server_tick(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::ServerTickEvent<'_>) {
+        compat::events::server_tick(host, event)
+    }
+
+    fn level_tick_post(&self, host: mod_api::HostSide<'_>, _: &mut mod_api::LevelTickPostEvent) {
+        compat::events::level_tick_post(host)
+    }
+
+    fn client_tick_post(&self, host: &mut dyn mod_api::ClientHost, _: &mut mod_api::ClientTickPostEvent) {
+        compat::events::client_tick_post(host)
+    }
+
+    fn right_click_block(&self, host: mod_api::HostSide<'_>, event: &mut mod_api::RightClickBlockEvent<'_>) -> mod_api::Flow {
+        compat::events::right_click_block(host, event)
+    }
+
+    fn left_click_block(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::LeftClickBlockEvent) -> mod_api::Flow {
+        compat::events::left_click_block(host, event)
+    }
+
+    fn model_baking_completed(&self, host: &mut dyn mod_api::ClientHost, _: &mut mod_api::ModelBakingCompletedEvent) {
+        compat::events::model_baking_completed(host)
+    }
+
+    fn block_step_on(&self, event: &mut mod_api::BlockStepOnEvent<'_>) {
+        compat::events::block_step_on(event)
+    }
+}
+
+#[cfg(test)]
+mod dump_block_entities {
+    use super::*;
+
+    struct NoHost;
+    impl compat::Host for NoHost {}
+
+    /// Asks every module, for every block the content declares, whether it has a block entity, and writes the
+    /// names to `$CREATE_BLOCK_ENTITIES_OUT` (tools/block_entities.txt, via tools/dump_block_entities.sh).
+    #[test]
+    #[ignore = "writes tools/block_entities.txt; run by tools/dump_block_entities.sh"]
+    fn dump_block_entities() {
+        let mut names = Vec::new();
+        for &id in parts_gen::BLOCKS {
+            let full = format!("create:{id}");
+            let mut event = compat::BlockEntityEvent { block: &full };
+            if create().block_entity(&mut NoHost, &mut event).is_some() {
+                names.push(id);
+            }
+        }
+        let text = names.join("
+") + "
+";
+        match std::env::var("CREATE_BLOCK_ENTITIES_OUT") {
+            Ok(path) => std::fs::write(path, text).expect("writing the list"),
+            Err(_) => print!("{text}"),
+        }
+    }
+}
