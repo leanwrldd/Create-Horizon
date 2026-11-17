@@ -456,6 +456,18 @@ impl Hooks for Create {
         }
     }
 
+    fn entity_tick_listened(&self, host: &mut dyn Host, event: &mut EntityTickListenedEvent) {
+        for module in &self.modules {
+            module.entity_tick_listened(host, event);
+        }
+    }
+
+    fn entity_tick_post(&self, host: &mut dyn Host, event: &mut EntityTickPostEvent<'_>) {
+        for module in &self.modules {
+            module.entity_tick_post(host, event);
+        }
+    }
+
     fn menu_input_closed(&self, host: &mut dyn Host, event: &mut MenuInputClosedEvent<'_>) {
         for module in &self.modules {
             module.menu_input_closed(host, event);

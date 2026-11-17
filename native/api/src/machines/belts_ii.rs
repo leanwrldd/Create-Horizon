@@ -9,6 +9,7 @@
 //!   belt stays). An andesite casing is drawn as Create does, the brass casing model with its sprite
 //!   shifted onto the andesite one (`BeltModel`), and the dye by the belt's scrolling sprite for
 //!   that colour (`BeltRenderer`), both through Horizon's UV shift (`draw_terrain_model`).
+//! - The casing goes on every slope (Belts III, `belt_look::casing`), and its shape is `belt_shapes`'s.
 //! - No `Covered` casing (a block above the belt that makes the casing a cover), and only dyes
 //!   and a water bucket wash or dye; no other fluid container. The items are not used up, as in
 //!   Create.
@@ -16,7 +17,9 @@
 
 use horizon_client::mod_api::{Flow, Hooks, Host, StandaloneModelsEvent, UseItemOnEvent};
 
-use crate::belt::{self, CASING_MODELS};
+use create_kinetics::rules::belt_look;
+
+use crate::belt;
 use crate::util;
 
 const ANDESITE_CASING: &str = "create:andesite_casing";
@@ -61,9 +64,10 @@ fn dye_of(item: &str) -> Option<&'static str> {
 
 impl Hooks for BeltsII {
     fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
-        for model in CASING_MODELS {
-            if !event.models.iter().any(|m| m == model) {
-                event.models.push(model.to_owned());
+        // The casing on every slope (`BeltGenerator`): flat, diagonal and sideways models.
+        for model in belt_look::casing_models() {
+            if !event.models.contains(&model) {
+                event.models.push(model);
             }
         }
     }

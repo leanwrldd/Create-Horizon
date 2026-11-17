@@ -192,10 +192,10 @@ pub enum Kind {
     Crank(Dir),
     /// A shaft along the axis, both ends.
     WaterWheel(Axis),
-    /// One block of a horizontal belt facing from its start to its end. Every block of a belt
-    /// turns with the next (`BeltBlockEntity.propagateRotationTo`); those with a pulley also
-    /// take a shaft on both sides, across the belt.
-    Belt(Dir, belt::Part),
+    /// One block of a belt facing from its start to its end, on a slope or not. Every block of a
+    /// belt turns with the next (`BeltBlockEntity.propagateRotationTo`); those with a pulley also
+    /// take a shaft on both sides, across the belt (above and below a sideways one).
+    Belt(Dir, belt::Part, belt::Slope),
     /// A machine with shaft ends on some faces and a rule for how they relate ([`Ends`]).
     /// What a press, a fan or a mixer is to its network ([`Kind::shafts`]: every end turning as
     /// one), and the casings of the transmission blocks ([`Kind::gearshift`], [`Kind::clutch`],
@@ -455,8 +455,8 @@ impl Kind {
             Kind::Motor(facing) => face == facing,
             Kind::Crank(facing) => face == facing.opposite(),
             // `BeltBlock.hasShaftTowards`.
-            Kind::Belt(facing, part) => {
-                part.has_pulley() && face.axis() == belt::rotation_axis(facing)
+            Kind::Belt(facing, part, slope) => {
+                part.has_pulley() && face.axis() == belt::rotation_axis_of(facing, slope)
             }
             Kind::Shafts(ends) => ends.faces & (1 << face as u8) != 0,
         }
@@ -519,6 +519,13 @@ pub fn ratio(a: Kind, b: Kind, diff: Pos) -> Option<f32> {
     if diff.iter().any(|c| c.abs() > 1) {
         return None;
     }
+    // The next block of the same belt, a face away or, on a slope, a diagonal: `b` follows `a`, or
+    // `a` follows `b` (`BeltBlockEntity.propagateRotationTo`).
+    if let (Kind::Belt(fa, pa, sa), Kind::Belt(fb, pb, sb)) = (a, b)
+        && belt::linked((fa, sa, pa), (fb, sb, pb), diff)
+    {
+        return Some(1.0);
+    }
     match nonzero {
         1 => {
             let face = Dir::from_normal(diff)?;
@@ -571,15 +578,6 @@ pub fn ratio(a: Kind, b: Kind, diff: Pos) -> Option<f32> {
                         ..
                     }),
                 ) if face == pinion.opposite() => Some(rules::gantry::pinion_modifier(shaft, pinion)),
-                // The next block of the same belt: `b` follows `a`, or `a` follows `b`.
-                (Kind::Belt(x, pa), Kind::Belt(y, pb)) if x == y => {
-                    let follows = |from: belt::Part, to: belt::Part| {
-                        from != belt::Part::End && to != belt::Part::Start
-                    };
-                    let linked = (face == x && follows(pa, pb))
-                        || (face == x.opposite() && follows(pb, pa));
-                    linked.then_some(1.0)
-                }
                 _ => None,
             }
         }

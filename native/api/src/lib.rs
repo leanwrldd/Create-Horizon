@@ -180,8 +180,11 @@ impl Core {
             let part = host
                 .block_state_property(state, "part")
                 .and_then(create_kinetics::belt::Part::from_name);
-            if let (Some(facing), Some(part)) = (facing, part) {
-                belt::draw(host, draw, facing, part, entity);
+            let slope = host
+                .block_state_property(state, "slope")
+                .and_then(create_kinetics::belt::Slope::from_name);
+            if let (Some(facing), Some(slope), Some(part)) = (facing, slope, part) {
+                belt::draw(host, draw, facing, slope, part, entity);
             }
             return;
         }
@@ -209,7 +212,7 @@ impl Hooks for Core {
     fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
         event.models.extend(draw::MODELS.map(str::to_owned));
         event.models.extend(press::MODELS.map(str::to_owned));
-        event.models.extend(belt::MODELS.map(str::to_owned));
+        event.models.extend(belt::models());
     }
 
     fn block_entity(
@@ -253,8 +256,11 @@ impl Hooks for Core {
             && let Some(facing) = host
                 .block_state_property(event.state, "facing")
                 .and_then(Dir::from_name)
+            && let Some(slope) = host
+                .block_state_property(event.state, "slope")
+                .and_then(create_kinetics::belt::Slope::from_name)
         {
-            belt::bounds(facing, event.entity, event.bounds);
+            belt::bounds(facing, slope, event.entity, event.bounds);
         }
     }
 

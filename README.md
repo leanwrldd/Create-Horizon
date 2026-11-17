@@ -67,11 +67,12 @@ above presses what it holds, putting extra results in eight output slots drawn i
 Not yet: funnels, upright and package items. A block item's model is told apart from a flat
 one by whether the item names a block, not by its model's `gui3d` flag.
 
-### Mechanical Belt (straight, horizontal)
+### Mechanical Belt
 
 Click a shaft with the Mechanical Belt (`create:belt_connector`, six dried kelp), then a second shaft on the same
-axis and level, in line across that axis and closer than 20 blocks (`BeltConnectorItem.canConnect`); sneak-click to
-forget the first. The belt turns with the shafts at its ends and at any shaft it was laid through. It moves at
+axis, closer than 20 blocks (`BeltConnectorItem.canConnect`): level and across the shafts' axis for a flat belt, one
+block up for each block along for a sloped one, straight above for a vertical one, and two upright shafts for a
+sideways one; sneak-click to forget the first. The belt turns with the shafts at its ends and at any shaft it was laid through. It moves at
 RPM / 480 blocks a tick (`BeltBlockEntity.getBeltMovementSpeed`).
 
 Drop items on it and each stack (up to its maximum size) rides as one, keeping a block from the one ahead
@@ -87,8 +88,18 @@ over a belt stops each item and presses it one at a time, and casings and dye ca
 The belt's texture scrolls with its speed and shows its dye, and an andesite casing draws as andesite (all through
 Horizon's UV shift, `Host::draw_terrain_model`, API 564; not yet checked in game).
 
-Not yet: slopes, vertical and sideways belts, fans over the belt, carrying players and mobs, and
-upright items. The rest of a broken belt goes one block a tick, not
+Belts III: sloped, vertical and sideways belts. Items ride a slope as they ride a flat belt (tilted on it, up or
+down a block for each block along, handing on and flying off at the ends along the slope); processors, funnels and
+tunnels still work on flat belts only, as in Create. A vertical or a sideways belt only turns (it carries nothing, as
+`BeltBlock.canTransportObjects` says), and casings go on every slope. Players and mobs standing on a turning belt
+are carried along it and up and down slopes (below); sneaking or flying players stay put. The belt's outline and
+collision follow Create's `BeltShapes`, a staircase on a slope, so a person walks up one.
+
+Entities are pushed, not moved: Horizon gives a server mod velocity (`entity_push` for a mob, a message that makes a
+player's client push them, as the Fan does) and no `Entity.move`, so an entity eases up to the belt's speed over a
+few ticks. Not carried: the pull towards the belt's line, Slowness on mobs, and the cardboard and diving boots
+exceptions; the belt slicer (Belt Connector on a belt, Wrench) isn't ported. Unplayed: type-checked and unit-tested
+only. Not yet: fans over the belt and upright items. The rest of a broken belt goes one block a tick, not
 all at once, and only a player's break drops its items (an explosion loses them). The first shaft is remembered per
 player rather than on the item, with no outline shown.
 
@@ -121,6 +132,7 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Mechanical Drill | Breaks the block in front at Create's speed for its hardness, with the crack shown; hurts entities |
 | Mechanical Saw | Sideways: breaks blocks and fells whole trees (Create's `TreeCutter`). Upright: cuts items dropped on it or carried in by belts with `create:cutting` and stonecutting recipes, and hands results on |
 | Belts II | Compacting with the press over a basin; the press over a belt and a depot; belt hand-off; depot output slots and hoppers; belt casings and dye |
+| Belts III | Sloped, vertical and sideways belts with their models, scroll, shapes and casings; items riding slopes; players, mobs and minecarts carried by a turning belt (pushed, not moved) |
 | Chutes, Funnels | Chute and Smart Chute (items fall, fans push them up, hoppers and belts feed them); Andesite and Brass Funnels taking from and putting into the block behind, and on belts and depots as belt funnels; filters set by sneak-clicking with an item |
 | Andesite and Brass Tunnels | A casing over a belt block (it puts a casing on the belt if there is none) that takes the shape of what is beside the belt: straight, T, cross, or a window between tunnels and funnels (the Wrench closes and opens a window). Flaps swing as items pass. The Andesite Tunnel splits one item off a stack to each side output (belts, depots, funnels). The Brass Tunnel takes whole stacks and gives them out by its mode (split, forced split, round robin, forced round robin, prefer nearest, randomize, synchronize inputs) across the group of tunnels side by side, with a filter on each side; an empty hand takes back what the group holds. Sneak-click the top steps the mode, sneak-click a side with an item sets that side's filter. Unplayed: type-checked and unit-tested only |
 | Steam | The boiler on a Fluid Tank, heated by Blaze Burners and fed water by pipes, with its gauge; the Steam Engine turning a Powered Shaft; the Steam Whistle and its extensions, pitched by size |
