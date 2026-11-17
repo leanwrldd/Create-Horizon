@@ -60,6 +60,7 @@ pub mod millstone;
 pub mod mixer;
 pub mod nixie_tube;
 pub mod piston;
+pub mod portable_interface;
 pub mod pulley;
 pub mod pump;
 pub mod redstone_link;

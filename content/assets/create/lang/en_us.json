@@ -564,6 +564,8 @@
   "block.create.sticky_mechanical_piston": "Sticky Mechanical Piston",
   "block.create.piston_extension_pole": "Piston Extension Pole",
   "block.create.mechanical_piston_head": "Mechanical Piston Head",
+  "block.create.portable_storage_interface": "Portable Storage Interface",
+  "block.create.portable_fluid_interface": "Portable Fluid Interface",
   "block.create.rope_pulley": "Rope Pulley",
   "block.create.rope": "Rope",
   "block.create.pulley_magnet": "Pulley Magnet",

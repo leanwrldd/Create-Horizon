@@ -43,6 +43,7 @@ use horizon_client::mod_api::{
 use super::contraption::{
     self as engine, ASSEMBLE, CONTRAPTION, HostWorld, LAST_EXCEPTION, RUNNING, SYNC_TIME,
 };
+use super::portable_interface_motion as psi_motion;
 use crate::{kinetic, util};
 
 const MECHANICAL: &str = "create:mechanical_bearing";
@@ -192,6 +193,7 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, facing: Dir, angle: f
 
 fn stop(entity: &mut ModBlockEntity, now: i64) {
     entity.nbt.insert(RUNNING.into(), flag(false));
+    entity.nbt.remove(&psi_motion::STALLED.into());
     entity.nbt.remove(&CONTRAPTION.into());
     util::set_float(&mut entity.nbt, ANGLE, 0.0);
     entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
@@ -267,7 +269,7 @@ impl Hooks for Bearing {
         // one from here.
         if changed {
             if state.running {
-                let angle = angle_at(state.angle, state.time, previous, now as f64);
+                let angle = angle_at(state.angle, state.time, psi_motion::moving_rpm(entity, previous), now as f64);
                 util::set_float(&mut entity.nbt, ANGLE, angle);
                 entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
                 state.angle = angle;
@@ -285,7 +287,7 @@ impl Hooks for Bearing {
 
         // A click on a running bearing sets it down (`MechanicalBearingBlock.useItemOn`).
         if state.running && state.disassemble {
-            let angle = angle_at(state.angle, state.time, rpm, now as f64);
+            let angle = angle_at(state.angle, state.time, psi_motion::moving_rpm(entity, rpm), now as f64);
             set_down(host, pos, &entity.nbt.clone(), facing, angle);
             stop(entity, now);
             host.block_entity_sync(pos);
@@ -311,6 +313,26 @@ impl Hooks for Bearing {
                 }
             }
         }
+
+        // `PortableStorageInterfaceMovement`: an interface on the structure holds it still beside a
+        // stationary one (the snapshot is moved to now, then the structure follows no speed).
+        if rpm != 0.0 && util::boolean(&entity.nbt, RUNNING) {
+            if let Some(live) = engine::live(&dimension, pos, &entity.nbt) {
+                let state = saved(entity);
+                let held = psi_motion::is_stalled(&entity.nbt);
+                let spin = psi_motion::moving_rpm(entity, rpm);
+                let angle = |t: f64| f64::from(angle_at(state.angle, state.time, spin, t));
+                let pose = psi_motion::Pose::Turning { anchor: live.moving.anchor, axis: facing.axis(), angle: &angle };
+                let want = psi_motion::tick(host, pos, &live.moving, &pose, now);
+                if want != held {
+                    let at = angle_at(state.angle, state.time, spin, now as f64);
+                    util::set_float(&mut entity.nbt, ANGLE, at);
+                    entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
+                    psi_motion::set_stalled(entity, want);
+                    host.block_entity_sync(pos);
+                }
+            }
+        }
     }
 
     fn block_entity_update_tag(&self, event: &mut BlockEntityUpdateTagEvent<'_>) -> Option<Compound> {
@@ -329,6 +351,7 @@ impl Hooks for Bearing {
         };
         tag.insert(LAST_EXCEPTION.into(), Tag::String(line.as_str().into()));
         tag.insert(CONTRAPTION.into(), engine::client_contraption(entity));
+        tag.insert(psi_motion::STALLED.into(), psi_motion::tag_value(&entity.nbt));
         Some(tag)
     }
 
@@ -353,7 +376,7 @@ impl Hooks for Bearing {
         let parsed = engine::parsed(event.pos, event.entity);
         // The turn is the game's: `degrees * game_time + phase`, with the snapshot's angle
         // worked back to game time 0 (in f64, then reduced: an f32 phase would lose it).
-        let rate = f64::from(bearing_rules::convert_to_angular(rpm));
+        let rate = f64::from(bearing_rules::convert_to_angular(psi_motion::moving_rpm(event.entity, rpm)));
         let turning = parsed.is_some() && rate != 0.0;
         let phase = if parsed.is_some() {
             (f64::from(state.angle) - rate * state.time as f64).rem_euclid(360.0) as f32
@@ -522,7 +545,12 @@ impl Hooks for Bearing {
             return Flow::Continue;
         };
         let now = util::game_time(host);
-        let angle = angle_at(state.angle, state.time, kinetic::speed(&entity), now as f64);
+        let angle = angle_at(
+            state.angle,
+            state.time,
+            psi_motion::moving_rpm(&entity, kinetic::speed(&entity)),
+            now as f64,
+        );
         set_down(host, pos, &entity.nbt, facing, angle);
         Flow::Continue
     }

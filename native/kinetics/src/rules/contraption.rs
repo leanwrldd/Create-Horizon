@@ -366,14 +366,15 @@ pub fn movable_empty(state: &State) -> bool {
             || path.ends_with("_banner"))
 }
 
-/// This mod's blocks whose block entity holds positions of other blocks (a tank's controller, an
-/// engine's boiler, a belt's controller): moving them would leave their data pointing at the old
-/// place, so they stay (`create:non_movable` here).
+/// This mod's blocks whose block entity holds positions of other blocks (an engine's boiler, a
+/// belt's controller): moving them would leave their data pointing at the old place, so they stay
+/// (`create:non_movable` here). A Fluid Tank's `Controller` is kept relative to the structure
+/// (`localise_controller` and `globalise_controller` in the glue), so a tank moves; the Creative
+/// Fluid Tank still doesn't.
 fn keeps_position_data(path: &str) -> bool {
     matches!(
         path,
         "belt"
-            | "fluid_tank"
             | "creative_fluid_tank"
             | "steam_engine"
             | "crushing_wheel_controller"
@@ -1358,6 +1359,14 @@ mod tests {
         assert_eq!(found.blocks.len(), 1);
         grid.set([0, 0, 1], "minecraft:bedrock");
         assert!(search(&grid, &config(Some(Dir::South), [0, 0, 0])).is_err());
+    }
+
+    #[test]
+    fn a_fluid_tank_may_move_but_a_creative_one_and_a_belt_may_not() {
+        let grid = Grid::new();
+        assert!(movement_allowed(&grid, &State::parse("create:fluid_tank"), [0, 0, 0]));
+        assert!(!movement_allowed(&grid, &State::parse("create:creative_fluid_tank"), [0, 0, 0]));
+        assert!(!movement_allowed(&grid, &State::parse("create:belt"), [0, 0, 0]));
     }
 
     #[test]

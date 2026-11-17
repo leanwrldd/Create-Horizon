@@ -4,6 +4,8 @@
     "create:brass_door",
     "create:copper_door",
     "create:train_door",
-    "create:framed_glass_door"
+    "create:framed_glass_door",
+    "create:portable_storage_interface",
+    "create:portable_fluid_interface"
   ]
 }

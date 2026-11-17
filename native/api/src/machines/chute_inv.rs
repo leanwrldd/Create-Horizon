@@ -201,6 +201,10 @@ pub(crate) fn parts(host: &dyn Host, pos: Pos) -> Vec<(Pos, usize)> {
 /// The items of the container at `pos`: their slots and stacks, from the saved data (`Items`:
 /// `Slot`, `id`, `count`, `components`). `None` where there is no such list.
 pub(crate) fn items_of(host: &mut dyn Host, pos: Pos) -> Option<Vec<(usize, ItemStack)>> {
+    // A Portable Storage Interface is the whole structure's inventory while it is linked.
+    if host.block(pos) == super::portable_interface::ITEMS {
+        return super::portable_interface::items_view(&*host, pos);
+    }
     let dimension = host.dimension();
     let mut out = Vec::new();
     let mut found = false;
@@ -338,7 +342,18 @@ pub fn plan(
 pub fn take(host: &mut dyn Host, pos: Pos, face: Dir, plan: &Plan<ItemStack>) -> Option<ItemStack> {
     let dimension = host.dimension();
     let mut taken: Option<ItemStack> = None;
+    let interface = host.block(pos) == super::portable_interface::ITEMS;
     for (slot, count) in &plan.takes {
+        if interface {
+            let Some(got) = super::portable_interface::extract_slot(host, pos, *slot, *count) else {
+                break;
+            };
+            match &mut taken {
+                Some(have) => have.count += got.count,
+                None => taken = Some(got),
+            }
+            continue;
+        }
         // A vault's slots are numbered across all its blocks: ask the block that holds the slot.
         let (at, local) = if host.block(pos) == VAULT {
             parts(host, pos)
@@ -406,6 +421,10 @@ pub fn insert(
     // and answers a simulation too.
     if host.block(pos) == super::crafter_world::ID {
         return Some(super::crafter_world::handler_insert(host, pos, stack, simulate));
+    }
+    // The linked interface answers for the structure, simulations included.
+    if host.block(pos) == super::portable_interface::ITEMS {
+        return Some(super::portable_interface::insert(host, pos, stack, simulate));
     }
     if !is_inventory(host, pos) {
         return None;

@@ -415,6 +415,8 @@ pub fn capture(
 ) -> Moving {
     let dimension = host.dimension();
     let mut blocks = Vec::with_capacity(found.len() + extra.len());
+    let in_structure: std::collections::HashSet<Pos> =
+        found.iter().chain(extra.iter()).map(|(p, _)| *p).collect();
     for (pos, state) in extra {
         blocks.push(MovedBlock {
             local: local_of(*pos),
@@ -424,7 +426,10 @@ pub fn capture(
     }
     for (pos, state) in found {
         let data = match host.block_entity_tag(dimension, *pos) {
-            Some(Tag::Compound(data)) if !data.is_empty() => Some(data),
+            Some(Tag::Compound(mut data)) if !data.is_empty() => {
+                localise_controller(&mut data, local_of, &|p| in_structure.contains(&p));
+                Some(data)
+            }
             _ => None,
         };
         blocks.push(MovedBlock {
@@ -441,6 +446,36 @@ pub fn capture(
         .map(|g| GlueBox::span(local_of(g.min), local_of(g.max)))
         .collect();
     Moving { anchor, blocks, glue, sails: 0 }
+}
+
+/// `Contraption.moveBlock`'s handling of a multi-block's controller (a Fluid Tank's, an Item Vault's):
+/// its saved `Controller` is kept relative to the structure's anchor. One that points outside
+/// the structure (the multi-block is only partly in it) is dropped and the block stands alone.
+pub fn localise_controller(data: &mut Compound, local_of: &dyn Fn(Pos) -> Pos, inside: &dyn Fn(Pos) -> bool) {
+    let world: Pos = match util::get(data, "Controller") {
+        Some(Tag::IntArray(c)) if c.len() == 3 => [c[0], c[1], c[2]],
+        _ => return,
+    };
+    if inside(world) {
+        data.insert("Controller".into(), Tag::IntArray(local_of(world).to_vec()));
+        return;
+    }
+    util::remove(data, "Controller");
+    for key in ["Size", "Height", "Length"] {
+        if util::has(data, key) {
+            data.insert(key.into(), Tag::Int(1));
+        }
+    }
+}
+
+/// The other way: a `Controller` relative to the structure goes where the structure lands
+/// (`Contraption.addBlocksToWorld`'s `translateMultiblockControllers`).
+pub fn globalise_controller(data: &mut Compound, transform: &Transform) {
+    let local: Pos = match util::get(data, "Controller") {
+        Some(Tag::IntArray(c)) if c.len() == 3 => [c[0], c[1], c[2]],
+        _ => return,
+    };
+    data.insert("Controller".into(), Tag::IntArray(transform.apply(local).to_vec()));
 }
 
 /// What `Contraption.capture` changes in a state as it is taken: a button or pressure plate is
@@ -576,7 +611,9 @@ pub fn place_in_world(
             }
             placed += 1;
             if let Some(data) = &block.data {
-                host.set_block_tag(dimension, target, Tag::Compound(data.clone()));
+                let mut data = data.clone();
+                globalise_controller(&mut data, transform);
+                host.set_block_tag(dimension, target, Tag::Compound(data));
                 host.block_entity_sync(target);
             }
         }
@@ -772,6 +809,8 @@ pub fn draw_state(host: &dyn Host, draw: &mut BlockEntityDraw, state: &State) {
     if !host.draw_block(draw, &state.name, &props) {
         host.draw_block(draw, &state.name, &[]);
     }
+    // A Portable Interface's middle and top are drawn by its renderer, which doesn't run here.
+    super::portable_interface_motion::draw_moving(host, draw, state);
 }
 
 /// A block a block entity draws all of (`ENTITYBLOCK_ANIMATED`): its item's model, turned to its
@@ -952,6 +991,34 @@ mod tests {
         let back = Moving::from_nbt(&nbt).expect("reads back");
         assert!(back.blocks.iter().all(|b| b.data.is_none()));
         assert_eq!(back.blocks.len(), 4);
+    }
+
+    #[test]
+    fn a_multi_blocks_controller_is_saved_relative_and_goes_where_the_structure_lands() {
+        let anchor = [10, 64, 10];
+        let local_of = |p: Pos| [p[0] - anchor[0], p[1] - anchor[1], p[2] - anchor[2]];
+        let mut data = Compound::new();
+        data.insert("Controller".into(), Tag::IntArray(vec![10, 65, 11]));
+        data.insert("Size".into(), Tag::Int(2));
+        localise_controller(&mut data, &local_of, &|p| p == [10, 65, 11]);
+        assert_eq!(util::get(&data, "Controller"), Some(&Tag::IntArray(vec![0, 1, 1])));
+        assert_eq!(util::int(&data, "Size"), 2);
+        // Landing three blocks east and a quarter turn about Y.
+        let transform = Transform { offset: [13, 64, 10], axis: create_kinetics::Axis::Y, quarters: 0 };
+        globalise_controller(&mut data, &transform);
+        assert_eq!(util::get(&data, "Controller"), Some(&Tag::IntArray(vec![13, 65, 11])));
+        // A controller outside the structure is dropped and the block stands alone.
+        let mut outside = Compound::new();
+        outside.insert("Controller".into(), Tag::IntArray(vec![0, 0, 0]));
+        outside.insert("Size".into(), Tag::Int(3));
+        outside.insert("Height".into(), Tag::Int(4));
+        localise_controller(&mut outside, &local_of, &|_| false);
+        assert!(!util::has(&outside, "Controller"));
+        assert_eq!((util::int(&outside, "Size"), util::int(&outside, "Height")), (1, 1));
+        // A block with no controller is left alone.
+        let mut plain = Compound::new();
+        localise_controller(&mut plain, &local_of, &|_| true);
+        assert!(plain.is_empty());
     }
 
     #[test]
