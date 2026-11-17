@@ -32,6 +32,8 @@
             "create:crushing_wheel",
             "create:deployer",
             "create:mechanical_drill",
+            "create:elevator_pulley",
+            "create:elevator_contact",
             "create:andesite_encased_shaft",
             "create:brass_encased_shaft",
             "create:andesite_encased_cogwheel",
@@ -67,6 +69,8 @@
             "create:andesite_belt_funnel",
             "create:brass_funnel",
             "create:brass_belt_funnel",
+            "create:gantry_shaft",
+            "create:gantry_carriage",
             "create:gearshift",
             "create:metal_girder",
             "create:metal_girder_encased_shaft",
@@ -426,6 +430,8 @@
             "create:veridium_pillar",
             "create:mechanical_piston",
             "create:sticky_mechanical_piston",
+            "create:rope_pulley",
+            "create:pulley_magnet",
             "create:mechanical_pump",
             "create:mechanical_saw",
             "create:smart_fluid_pipe",
@@ -438,7 +444,8 @@
             "create:stockpile_switch",
             "create:andesite_tunnel",
             "create:brass_tunnel",
-            "create:weighted_ejector"
+            "create:weighted_ejector",
+            "create:windmill_bearing"
           ],
           "correct_for_drops": true
         }

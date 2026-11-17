@@ -1,0 +1,33 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 2.0,
+    "explosion_resistance": 2.0,
+    "requires_tool": false,
+    "sounds": "minecraft:stripped_spruce_wood",
+    "map_color": 48,
+    "render_shape": "MODEL"
+  },
+  "state_properties": {
+    "axis": {
+      "type": "enum",
+      "values": [
+        "x",
+        "y",
+        "z"
+      ]
+    },
+    "sticky_top": {
+      "type": "boolean"
+    },
+    "sticky_bottom": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "axis": "y",
+    "sticky_top": "false",
+    "sticky_bottom": "false"
+  }
+}

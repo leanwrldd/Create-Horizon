@@ -20,6 +20,9 @@
     "create:lit_blaze_burner",
     "create:encased_chain_drive",
     "create:adjustable_chain_gearshift",
+    "create:linear_chassis",
+    "create:secondary_linear_chassis",
+    "create:radial_chassis",
     "create:chute",
     "create:smart_chute",
     "create:clutch",
@@ -40,6 +43,8 @@
     "create:powered_toggle_latch",
     "create:display_link",
     "create:mechanical_drill",
+    "create:elevator_pulley",
+    "create:elevator_contact",
     "create:andesite_encased_shaft",
     "create:brass_encased_shaft",
     "create:andesite_encased_cogwheel",
@@ -75,6 +80,8 @@
     "create:andesite_belt_funnel",
     "create:brass_funnel",
     "create:brass_belt_funnel",
+    "create:gantry_shaft",
+    "create:gantry_carriage",
     "create:speedometer",
     "create:stressometer",
     "create:gearshift",
@@ -446,6 +453,9 @@
     "create:sticky_mechanical_piston",
     "create:piston_extension_pole",
     "create:mechanical_piston_head",
+    "create:rope_pulley",
+    "create:rope",
+    "create:pulley_magnet",
     "create:mechanical_pump",
     "create:redstone_link",
     "create:rose_quartz_lamp",
@@ -461,6 +471,7 @@
     "create:andesite_tunnel",
     "create:brass_tunnel",
     "create:turntable",
-    "create:weighted_ejector"
+    "create:weighted_ejector",
+    "create:windmill_bearing"
   ]
 }

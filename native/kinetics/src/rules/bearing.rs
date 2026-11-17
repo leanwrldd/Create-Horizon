@@ -72,10 +72,10 @@ pub fn disassembly(anchor: Pos, facing: Dir, angle: f32) -> Transform {
     Transform::from_angle(anchor, facing.axis(), angle)
 }
 
-/// `BearingContraption`'s sail count: blocks in the `create:windmill_sails` tag (wool).
+/// `BearingContraption`'s sail count: blocks in the `create:windmill_sails` tag
+/// (`rules::windmill`).
 pub fn is_sail(state: &State) -> bool {
-    (state.name.starts_with("minecraft:") && state.path().ends_with("_wool"))
-        || (state.name.starts_with("create:") && state.path().ends_with("sail"))
+    crate::rules::windmill::is_sail(state)
 }
 
 /// The turn that takes a model made facing up to face `face`: `(axis, degrees)` right-handed,
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn sails_are_wool_and_create_sails() {
         assert!(is_sail(&State::new("minecraft:white_wool")));
-        assert!(is_sail(&State::new("create:sail")));
+        assert!(is_sail(&State::new("create:white_sail")));
         assert!(!is_sail(&State::new("minecraft:stone")));
     }
 }

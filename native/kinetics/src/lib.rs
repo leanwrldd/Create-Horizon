@@ -304,6 +304,12 @@ pub enum Joint {
     Cog { axis: Axis, large: bool },
     /// An encased chain drive: ends on its axis, and a chain to the next drive.
     Chain(Chain),
+    /// A powered Gantry Shaft (`GantryShaftBlockEntity.propagateRotationTo`): it turns with a
+    /// Gantry Carriage beside it that faces out of it. An unpowered one is a [`Kind::Shaft`].
+    GantryShaft { facing: Dir },
+    /// A Gantry Carriage: its shaft ends are on its rotation axis, and it meshes with a powered
+    /// Gantry Shaft behind it (`GantryCarriageBlockEntity.propagateRotationTo`).
+    Pinion { facing: Dir },
 }
 
 /// The shaft ends of a [`Kind::Shafts`] block: a bit per face, in [`Dir::ALL`] order.
@@ -372,6 +378,22 @@ impl Kind {
         Kind::Shafts(Ends {
             faces: Self::face_bits(&Self::axis_ends(chain.axis)),
             joint: Joint::Chain(chain),
+        })
+    }
+
+    /// A powered Gantry Shaft along `facing`'s axis.
+    pub fn gantry_shaft(facing: Dir) -> Self {
+        Kind::Shafts(Ends {
+            faces: Self::face_bits(&Self::axis_ends(facing.axis())),
+            joint: Joint::GantryShaft { facing },
+        })
+    }
+
+    /// A Gantry Carriage facing `facing` with its shaft along `rotation_axis`.
+    pub fn pinion(rotation_axis: Axis, facing: Dir) -> Self {
+        Kind::Shafts(Ends {
+            faces: Self::face_bits(&Self::axis_ends(rotation_axis)),
+            joint: Joint::Pinion { facing },
         })
     }
 
@@ -494,6 +516,28 @@ pub fn ratio(a: Kind, b: Kind, diff: Pos) -> Option<f32> {
                 {
                     Some(ca.modifier() / cb.modifier())
                 }
+                // A powered gantry shaft and the carriage on it: they turn against each other by
+                // `getGantryPinionModifier`, whichever drives.
+                (
+                    Kind::Shafts(Ends {
+                        joint: Joint::GantryShaft { facing: shaft },
+                        ..
+                    }),
+                    Kind::Shafts(Ends {
+                        joint: Joint::Pinion { facing: pinion },
+                        ..
+                    }),
+                ) if face == pinion => Some(rules::gantry::pinion_modifier(shaft, pinion)),
+                (
+                    Kind::Shafts(Ends {
+                        joint: Joint::Pinion { facing: pinion },
+                        ..
+                    }),
+                    Kind::Shafts(Ends {
+                        joint: Joint::GantryShaft { facing: shaft },
+                        ..
+                    }),
+                ) if face == pinion.opposite() => Some(rules::gantry::pinion_modifier(shaft, pinion)),
                 // The next block of the same belt: `b` follows `a`, or `a` follows `b`.
                 (Kind::Belt(x, pa), Kind::Belt(y, pb)) if x == y => {
                     let follows = |from: belt::Part, to: belt::Part| {
@@ -1087,6 +1131,30 @@ mod tests {
         ]);
         assert_eq!(solve(&nodes).speeds[&[0, 1, 0]], 16.0);
         assert_eq!(drive_modifier(1), 1.0 + 2.0 / 16.0);
+    }
+
+    #[test]
+    fn a_powered_gantry_shaft_turns_with_its_carriage_and_an_unpowered_one_does_not() {
+        // The carriage faces east with its shaft along Z, a motor on its north end; the gantry
+        // shaft behind it runs along Y (`GantryShaftBlockEntity.propagateRotationTo`).
+        let rig = |shaft: Kind| {
+            world([
+                ([1, 0, -1], motor(Dir::South, 16.0)),
+                passive([1, 0, 0], Kind::pinion(Axis::Z, Dir::East)),
+                passive([0, 0, 0], shaft),
+                passive([0, 1, 0], Kind::Shaft(Axis::Y)),
+                // A carriage facing another way isn't meshed with this shaft.
+                passive([-1, 0, 0], Kind::pinion(Axis::Z, Dir::East)),
+            ])
+        };
+        let speeds = solve(&rig(Kind::gantry_shaft(Dir::Up))).speeds;
+        // `getGantryPinionModifier(UP, EAST)` is -1: the shaft turns against the carriage, and
+        // the rest of the shaft line with it.
+        assert_eq!(speeds[&[0, 0, 0]], -16.0);
+        assert_eq!(speeds[&[0, 1, 0]], -16.0);
+        assert_eq!(speeds[&[-1, 0, 0]], 0.0);
+        let speeds = solve(&rig(Kind::Shaft(Axis::Y))).speeds;
+        assert_eq!(speeds[&[0, 0, 0]], 0.0);
     }
 
     fn drive_modifier(signal: u8) -> f32 {
