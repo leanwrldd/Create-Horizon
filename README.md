@@ -17,12 +17,12 @@ is not pinned to one Horizon commit.
 | Kinetics | 48 | 57 | 84% |
 | Materials | 18 | 20 | 90% |
 | Logistics | 23 | 52 | 44% |
-| Fluids | 16 | 18 | 89% |
-| Contraptions | 32 | 42 | 76% |
+| Fluids | 18 | 18 | 100% |
+| Contraptions | 33 | 42 | 79% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 8 | 13 | 62% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **184** | **246** | **74.8%** |
+| **All** | **187** | **246** | **76.0%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
