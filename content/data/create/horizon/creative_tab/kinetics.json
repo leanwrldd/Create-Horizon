@@ -90,6 +90,7 @@
     "create:item_drain",
     "create:item_vault",
     "create:large_water_wheel",
+    "create:linked_controller",
     "create:wheat_flour",
     "create:dough",
     "create:cinder_flour",

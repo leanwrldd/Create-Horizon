@@ -56,6 +56,7 @@ pub mod goggles_overlay;
 pub mod item_drain;
 pub mod item_vault;
 pub mod large_water_wheel;
+pub mod linked_controller;
 pub mod millstone;
 pub mod mixer;
 pub mod nixie_tube;

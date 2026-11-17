@@ -476,4 +476,16 @@ impl Hooks for Create {
         }
         Flow::Continue
     }
+
+    fn movement_input(&self, host: &dyn Host, event: &mut MovementInputEvent) {
+        for module in &self.modules {
+            module.movement_input(host, event);
+        }
+    }
+
+    fn net_from_client(&self, host: &mut dyn Host, event: &mut NetFromClientEvent<'_>) {
+        for module in &self.modules {
+            module.net_from_client(host, event);
+        }
+    }
 }

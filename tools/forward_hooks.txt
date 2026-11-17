@@ -66,3 +66,5 @@ living_entity_use_item_finish
 menu_input_closed
 register_commands
 perform_command
+movement_input
+net_from_client
