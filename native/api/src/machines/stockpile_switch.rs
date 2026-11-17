@@ -128,7 +128,7 @@ fn read_level(host: &mut dyn Host, at: Pos, filter: &Filter) -> Option<(Level, K
             }
             max += space;
             if let Some(stack) = slot
-                && filter.test(stack)
+                && filter.test(host, stack)
             {
                 current += stack.count as i32;
             }

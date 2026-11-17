@@ -317,6 +317,10 @@ impl Hooks for Placard {
             inside.is_none(),
             powered,
             || match &inside {
+                // `FilterItem` held: `FilterItemStack.test`; else `isSameItemSameComponents`.
+                Some(stack) if super::filter::is_filter_item(&stack.item) => {
+                    super::filter::matches(&*host, stack, in_hand)
+                }
                 Some(stack) => util::same_item(stack, in_hand),
                 None => false,
             },

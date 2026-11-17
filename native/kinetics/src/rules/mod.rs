@@ -38,6 +38,8 @@ pub mod elevator;
 pub mod encased;
 pub mod fan;
 pub mod fan_nozzle;
+pub mod filter;
+pub mod filter_items;
 pub mod flap_display;
 pub mod fluid_pipe;
 pub mod fluid_pipe_attachments;

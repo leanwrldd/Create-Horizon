@@ -118,7 +118,7 @@ fn read_items(host: &mut dyn Host, source: Source, pos: Pos) -> Reading {
     let Some(slots) = observed::read_slots(host, at) else {
         return Reading::Missing;
     };
-    let stacks = slots.into_iter().flatten().filter(|stack| stack.count > 0 && filter.test(stack));
+    let stacks = slots.into_iter().flatten().filter(|stack| stack.count > 0 && filter.test(host, stack));
     if source == Source::CountItems {
         return Reading::Total(stacks.map(|stack| i64::from(stack.count)).sum());
     }

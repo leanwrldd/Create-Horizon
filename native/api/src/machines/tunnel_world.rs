@@ -181,6 +181,14 @@ pub fn filter_allows(nbt: &Compound, side: Dir, stack: &ItemStack) -> bool {
     filter_passes(item.as_ref().map(|s| &*s.item), &stack.item)
 }
 
+/// [`filter_allows`] with Filter items filtering by what they hold (`filter.rs`).
+pub fn filter_allows_in(host: &dyn Host, nbt: &Compound, side: Dir, stack: &ItemStack) -> bool {
+    match filter_item(nbt, side) {
+        None => true,
+        Some(filter) => super::filter::matches(host, &filter, stack),
+    }
+}
+
 /// Sets or clears the filter on `side` (one item, as `FilteringBehaviour.setFilter` keeps).
 pub fn set_filter(nbt: &mut Compound, side: Dir, item: Option<&ItemStack>) {
     let mut filters = match util::get(nbt, FILTERS) {

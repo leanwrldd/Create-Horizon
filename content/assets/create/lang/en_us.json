@@ -81,6 +81,8 @@
   "death.attack.create.fan_fire.player": "%1$s was thrown into a smoker by %2$s",
   "death.attack.create.fan_lava": "%1$s was incinerated by an Encased Fan",
   "death.attack.create.fan_lava.player": "%1$s was thrown into a smelter by %2$s",
+  "item.create.filter": "List Filter",
+  "item.create.attribute_filter": "Attribute Filter",
   "block.create.display_board": "Display Board",
   "block.create.fluid_pipe": "Fluid Pipe",
   "block.create.glass_fluid_pipe": "Glass Fluid Pipe",

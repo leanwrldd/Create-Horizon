@@ -45,9 +45,23 @@ pub struct Filter {
 }
 
 impl Filter {
-    /// `FilteringBehaviour.test`.
-    pub fn test(&self, stack: &ItemStack) -> bool {
-        rules::filter_passes(self.item.as_ref().map(|s| &*s.item), &stack.item)
+    /// `FilteringBehaviour.test`: an empty filter passes anything, a Filter item filters by what
+    /// it holds (`filter.rs`), any other item passes its own item.
+    pub fn test(&self, host: &dyn Host, stack: &ItemStack) -> bool {
+        match &self.item {
+            None => true,
+            Some(filter) => super::filter::matches(host, filter, stack),
+        }
+    }
+
+    /// [`Filter::test`] where the host can't be reached (a closure that a belt or depot calls while
+    /// it holds the host): a Filter item filters by what it holds, but an Attribute Filter's
+    /// attributes that ask the game (tags, recipes, whether an item is placeable) don't match.
+    pub fn test_static(&self, stack: &ItemStack) -> bool {
+        match &self.item {
+            None => true,
+            Some(filter) => super::filter::matches_static(filter, stack),
+        }
     }
 
     pub fn max_stack(&self, host: &dyn Host) -> i32 {

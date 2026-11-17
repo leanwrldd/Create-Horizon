@@ -45,7 +45,7 @@ fn cross(host: &mut dyn Host, item: &mut Item<ItemStack>, from: Pos, to: Pos, mo
             let (state, _) = world::read_state(at, &entity.nbt);
             let entry = movement.opposite();
             let brass = BrassAhead {
-                entry_allowed: world::filter_allows(&entity.nbt, entry, &item.stack),
+                entry_allowed: world::filter_allows_in(&*host, &entity.nbt, entry, &item.stack),
                 distributes: world::distributes(&entity.nbt, view.axis),
                 holding: state.count > 0,
                 can_take: state.can_take(),

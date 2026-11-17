@@ -336,7 +336,7 @@ fn waiting(
     // `item != stack || !filtering.test(item)`: a held item that fails the filter is moved out.
     let held = held_of(entity);
     if let Some(stack) = &held
-        && !inv::filter_of(&entity.nbt).test(stack)
+        && !inv::filter_of(&entity.nbt).test(host, stack)
     {
         if entity.items.len() < SLOTS {
             entity.items.resize(SLOTS, None);
@@ -682,11 +682,11 @@ impl Hooks for Deployers {
     }
 
     /// `DeployerItemHandler.isItemValid`: the filter's, for the held slot only.
-    fn container_accepts(&self, _: &dyn Host, event: &mut ContainerAcceptsEvent<'_>) -> Flow {
+    fn container_accepts(&self, host: &dyn Host, event: &mut ContainerAcceptsEvent<'_>) -> Flow {
         if event.entity.id != ID {
             return Flow::Continue;
         }
-        if event.slot != 0 || !inv::filter_of(&event.entity.nbt).test(event.stack) {
+        if event.slot != 0 || !inv::filter_of(&event.entity.nbt).test(host, event.stack) {
             return Flow::Cancel;
         }
         Flow::Continue

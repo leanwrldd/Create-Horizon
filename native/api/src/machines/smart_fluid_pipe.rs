@@ -62,11 +62,19 @@ fn click(host: &mut dyn Host, pos: [i32; 3], hand: Option<&ItemStack>) -> Option
         .as_ref(),
     );
     // `GenericItemEmptying` of the filter: the fluid it stands for, none for an item that holds none.
-    let fluid: Option<Option<String>> = after
-        .as_ref()
-        .map(|stack| spout_fill::empty_item(&*host, stack).map(|emptied| emptied.fluid));
+    // A Filter item stands for the fluids its items hold (`filter.rs`): the pipe asks it per fluid.
+    let fluid: Option<Option<String>> = after.as_ref().map(|stack| {
+        if super::filter::is_filter_item(&stack.item) {
+            Some(String::new())
+        } else {
+            spout_fill::empty_item(&*host, stack).map(|emptied| emptied.fluid)
+        }
+    });
     let line = match (&after, &fluid) {
         (None, _) => "Fluid filter cleared".to_owned(),
+        (Some(stack), _) if super::filter::is_filter_item(&stack.item) => {
+            format!("Fluid filter: {}", stack.item)
+        }
         (Some(stack), Some(Some(fluid))) => format!("Fluid filter: {} ({fluid})", stack.item),
         (Some(stack), _) => format!("Fluid filter: {} (holds no fluid: nothing passes)", stack.item),
     };
