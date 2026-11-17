@@ -709,18 +709,14 @@ pub fn contains([x, y, w, h]: [f32; 4], at: [f32; 2]) -> bool {
     at[0] >= x && at[0] < x + w && at[1] >= y && at[1] < y + h
 }
 
+/// The marker the pointer is on (`rules::ponder_timeline`: the bar's markers are drawn over its inside, `width - 2`
+/// pixels, and the pointer is read over the same, so a click exactly on a marker takes it).
 fn hovered_mark(layout: Layout, mouse: [f32; 2], duration: f32, markers: &[f32]) -> Option<f32> {
     let [x, _, width, _] = layout.timeline();
-    if !contains(layout.timeline(), mouse) || markers.len() < 2 {
+    if !contains(layout.timeline(), mouse) {
         return None;
     }
-    let tick = (mouse[0] - x) * duration / width;
-    let last = *markers.last()?;
-    Some(if duration - tick < (tick - last) / 2.0 {
-        duration
-    } else {
-        markers[markers.partition_point(|&at| at <= tick).saturating_sub(1)]
-    })
+    create_kinetics::rules::ponder_timeline::hovered_mark(x, width, mouse[0], duration, markers)
 }
 
 pub fn draw(
@@ -1164,7 +1160,7 @@ fn scene_hud(
         .filter(|&mark| mark > 0.0 && mark < duration)
         .chain(selected.filter(|&mark| mark == 0.0 || mark == duration))
     {
-        let pos = x + (width - 2.0) * mark / duration;
+        let pos = create_kinetics::rules::ponder_timeline::mark_x(x, width, mark, duration);
         if selected == Some(mark) {
             host.fill(batch, [pos, y - 3.0, 2.0, 9.0], HOT);
             host.text(
