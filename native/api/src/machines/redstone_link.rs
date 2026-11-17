@@ -523,6 +523,44 @@ fn set_frequency(host: &mut dyn Host, pos: Pos, first: bool, stack: Option<ItemS
     signal::tell(host, &line);
 }
 
+// --- the Linked Controller (`machines/linked_controller.rs`) ------------------------------------
+
+/// `LinkedControllerItem.toFrequency`: the network key of two frequency items.
+pub(crate) fn controller_key(first: Option<&ItemStack>, second: Option<&ItemStack>) -> Key {
+    Key::new(
+        first.map_or_else(Frequency::empty, frequency_of),
+        second.map_or_else(Frequency::empty, frequency_of),
+    )
+}
+
+/// `LinkedControllerServerHandler.ManualFrequencyEntry` joining the network: a transmitter of 15
+/// where the player is.
+pub(crate) fn controller_add(level: u8, key: &Key, pos: Pos) {
+    let now = NOW.load(Ordering::Relaxed);
+    if let Ok(mut state) = STATE.lock() {
+        state.links.add(level, key, pos, false, 15, now);
+    }
+}
+
+/// The entry is still alive this tick (a link not heard from for a few ticks is pruned).
+pub(crate) fn controller_touch(level: u8, key: &Key, pos: Pos) {
+    let now = NOW.load(Ordering::Relaxed);
+    if let Ok(mut state) = STATE.lock() {
+        state.links.touch(level, key, pos, now);
+    }
+}
+
+pub(crate) fn controller_remove(level: u8, key: &Key, pos: Pos) {
+    if let Ok(mut state) = STATE.lock() {
+        state.links.remove(level, key, pos);
+    }
+}
+
+/// `LinkedControllerBindPacket`: the two frequency items a link is set to.
+pub(crate) fn link_stacks(nbt: &Compound) -> [Option<ItemStack>; 2] {
+    [slot_stack(nbt, FREQUENCY_FIRST), slot_stack(nbt, FREQUENCY_LAST)]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

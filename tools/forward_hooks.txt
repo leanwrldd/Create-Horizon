@@ -63,3 +63,13 @@ use_duration
 use_animation
 living_entity_use_item_tick
 living_entity_use_item_finish
+menu_input_closed
+register_commands
+perform_command
+movement_input
+net_from_client
+living_breathe
+living_incoming_damage_v3
+living_knockback
+hears_projectile_impacts
+projectile_impact

@@ -10,8 +10,10 @@ pub mod arm;
 pub mod arm_draw;
 pub mod arm_select;
 pub mod arm_world;
+pub mod backtank;
 pub mod basin;
 pub mod bearing;
+pub mod bell;
 pub mod belts_ii;
 pub mod bracket;
 pub mod burner;
@@ -19,6 +21,7 @@ pub mod chain_drive;
 pub mod chassis;
 pub mod chute;
 pub mod chute_inv;
+pub mod clipboard;
 pub mod clutch;
 pub mod content_observer;
 pub mod content_observer_target;
@@ -41,9 +44,11 @@ pub mod display_link;
 pub mod display_link_select;
 pub mod display_link_source;
 pub mod display_link_target;
+pub mod diving;
 pub mod drill;
 pub mod elevator;
 pub mod encased;
+pub mod extendo_grip;
 pub mod fan;
 pub mod fan_nozzle;
 pub mod flap_display;
@@ -63,10 +68,12 @@ pub mod goggles;
 pub mod item_drain;
 pub mod item_vault;
 pub mod large_water_wheel;
+pub mod linked_controller;
 pub mod millstone;
 pub mod mixer;
 pub mod nixie_tube;
 pub mod piston;
+pub mod potato_cannon;
 pub mod pulley;
 pub mod pump;
 pub mod redstone_link;
@@ -86,6 +93,7 @@ pub mod steam_engine_boiler;
 pub mod steam_engine_whistle;
 pub mod stockpile_switch;
 pub mod super_glue;
+pub mod toolbox;
 pub mod tunnel;
 pub mod tunnel_cross;
 pub mod tunnel_distribute;
@@ -95,5 +103,5 @@ pub mod weighted_ejector;
 pub mod windmill;
 
 pub fn all() -> Vec<Box<dyn Hooks>> {
-    vec![analog_lever::hooks(), arm::hooks(), arm_draw::hooks(), arm_select::hooks(), arm_world::hooks(), basin::hooks(), bearing::hooks(), belts_ii::hooks(), bracket::hooks(), burner::hooks(), chain_drive::hooks(), chassis::hooks(), chute::hooks(), chute_inv::hooks(), clutch::hooks(), content_observer::hooks(), content_observer_target::hooks(), contraption::hooks(), contraption_controls::hooks(), copycat::hooks(), crafter::hooks(), crafter_draw::hooks(), crafter_recipes::hooks(), crafter_world::hooks(), creative_crate::hooks(), crushing_wheel::hooks(), cuckoo_clock::hooks(), deployer::hooks(), deployer_apply::hooks(), deployer_use::hooks(), diodes::hooks(), diodes_signal::hooks(), display_link::hooks(), display_link_select::hooks(), display_link_source::hooks(), display_link_target::hooks(), drill::hooks(), elevator::hooks(), encased::hooks(), fan::hooks(), fan_nozzle::hooks(), flap_display::hooks(), fluid_pipe::hooks(), fluid_pipe_attachments::hooks(), fluid_tank::hooks(), fluid_valve::hooks(), fluid_valve_handle::hooks(), fluids::hooks(), flywheel::hooks(), funnel::hooks(), gantry::hooks(), gauges::hooks(), gearshift::hooks(), girder::hooks(), goggles::hooks(), item_drain::hooks(), item_vault::hooks(), large_water_wheel::hooks(), millstone::hooks(), mixer::hooks(), nixie_tube::hooks(), piston::hooks(), pulley::hooks(), pump::hooks(), redstone_link::hooks(), rose_quartz_lamp::hooks(), sand_paper::hooks(), saw::hooks(), seat::hooks(), sequenced::hooks(), sequenced_gearshift::hooks(), smart_fluid_pipe::hooks(), smart_fluid_pipe_encased::hooks(), speed_controller::hooks(), spout::hooks(), spout_fill::hooks(), steam_engine::hooks(), steam_engine_boiler::hooks(), steam_engine_whistle::hooks(), stockpile_switch::hooks(), super_glue::hooks(), tunnel::hooks(), tunnel_cross::hooks(), tunnel_distribute::hooks(), tunnel_world::hooks(), turntable::hooks(), weighted_ejector::hooks(), windmill::hooks()]
+    vec![analog_lever::hooks(), arm::hooks(), arm_draw::hooks(), arm_select::hooks(), arm_world::hooks(), backtank::hooks(), basin::hooks(), bearing::hooks(), bell::hooks(), belts_ii::hooks(), bracket::hooks(), burner::hooks(), chain_drive::hooks(), chassis::hooks(), chute::hooks(), chute_inv::hooks(), clipboard::hooks(), clutch::hooks(), content_observer::hooks(), content_observer_target::hooks(), contraption::hooks(), contraption_controls::hooks(), copycat::hooks(), crafter::hooks(), crafter_draw::hooks(), crafter_recipes::hooks(), crafter_world::hooks(), creative_crate::hooks(), crushing_wheel::hooks(), cuckoo_clock::hooks(), deployer::hooks(), deployer_apply::hooks(), deployer_use::hooks(), diodes::hooks(), diodes_signal::hooks(), display_link::hooks(), display_link_select::hooks(), display_link_source::hooks(), display_link_target::hooks(), diving::hooks(), drill::hooks(), elevator::hooks(), encased::hooks(), extendo_grip::hooks(), fan::hooks(), fan_nozzle::hooks(), flap_display::hooks(), fluid_pipe::hooks(), fluid_pipe_attachments::hooks(), fluid_tank::hooks(), fluid_valve::hooks(), fluid_valve_handle::hooks(), fluids::hooks(), flywheel::hooks(), funnel::hooks(), gantry::hooks(), gauges::hooks(), gearshift::hooks(), girder::hooks(), goggles::hooks(), item_drain::hooks(), item_vault::hooks(), large_water_wheel::hooks(), linked_controller::hooks(), millstone::hooks(), mixer::hooks(), nixie_tube::hooks(), piston::hooks(), potato_cannon::hooks(), pulley::hooks(), pump::hooks(), redstone_link::hooks(), rose_quartz_lamp::hooks(), sand_paper::hooks(), saw::hooks(), seat::hooks(), sequenced::hooks(), sequenced_gearshift::hooks(), smart_fluid_pipe::hooks(), smart_fluid_pipe_encased::hooks(), speed_controller::hooks(), spout::hooks(), spout_fill::hooks(), steam_engine::hooks(), steam_engine_boiler::hooks(), steam_engine_whistle::hooks(), stockpile_switch::hooks(), super_glue::hooks(), toolbox::hooks(), tunnel::hooks(), tunnel_cross::hooks(), tunnel_distribute::hooks(), tunnel_world::hooks(), turntable::hooks(), weighted_ejector::hooks(), windmill::hooks()]
 }

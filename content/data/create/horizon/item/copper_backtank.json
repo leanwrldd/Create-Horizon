@@ -1,0 +1,21 @@
+{
+  "template": "minecraft:iron_chestplate",
+  "max_stack_size": 1,
+  "place_block": "create:copper_backtank",
+  "components": {
+    "minecraft:enchantable": {
+      "value": 7
+    },
+    "!minecraft:max_damage": {},
+    "!minecraft:repairable": {},
+    "minecraft:attribute_modifiers": [
+      {
+        "type": "minecraft:armor",
+        "id": "minecraft:armor.chestplate",
+        "amount": 4.0,
+        "operation": "add_value",
+        "slot": "chest"
+      }
+    ]
+  }
+}
