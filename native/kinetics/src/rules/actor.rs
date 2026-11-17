@@ -125,7 +125,7 @@ pub fn active_area_offset(kind: Kind, facing: Option<Dir>, extracting: bool) -> 
             }
         }
         // `ContactMovementBehaviour.getActiveAreaOffset`.
-        Kind::Contact => scale(n, 1.0),
+        Kind::Contact => scale(n, SIXTY_FIVE),
         Kind::Seat | Kind::Controls => [0.0; 3],
     }
 }

@@ -473,6 +473,7 @@
     "create:rope",
     "create:pulley_magnet",
     "create:mechanical_pump",
+    "create:redstone_contact",
     "create:redstone_link",
     "create:rose_quartz_lamp",
     "create:mechanical_saw",

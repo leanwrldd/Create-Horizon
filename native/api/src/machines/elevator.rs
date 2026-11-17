@@ -88,6 +88,14 @@ static SEEN: LazyLock<Mutex<HashMap<(String, Pos), i64>>> = LazyLock::new(Mutex:
 /// The floor the cabin of each column stands at, once it has arrived: that contact powers.
 static ARRIVED: LazyLock<Mutex<HashMap<Key, i32>>> = LazyLock::new(Mutex::default);
 
+/// `ElevatorColumn.get(level, coords) != null`: some Elevator Contact has registered a floor in the
+/// column (the Redstone Contact's Wrench uses it).
+pub(super) fn column_exists(dimension: &str, coords: ColumnCoords) -> bool {
+    lock(&COLUMNS)
+        .get(&(dimension.to_owned(), coords))
+        .is_some_and(|column| !column.floors().is_empty())
+}
+
 /// How long a contact may go without ticking before its column forgets it.
 const STALE: i64 = 60;
 

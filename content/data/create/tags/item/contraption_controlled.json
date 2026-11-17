@@ -18,6 +18,7 @@
     "create:framed_glass_door",
     "create:mechanical_plough",
     "create:portable_storage_interface",
-    "create:portable_fluid_interface"
+    "create:portable_fluid_interface",
+    "create:redstone_contact"
   ]
 }

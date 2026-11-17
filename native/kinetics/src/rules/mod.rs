@@ -87,6 +87,7 @@ pub mod portable_interface;
 pub mod potato_cannon;
 pub mod pulley;
 pub mod pump;
+pub mod redstone_contact;
 pub mod redstone_link;
 pub mod rose_quartz_lamp;
 pub mod sandpaper;

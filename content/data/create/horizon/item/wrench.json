@@ -446,6 +446,7 @@
             "create:rope_pulley",
             "create:pulley_magnet",
             "create:mechanical_pump",
+            "create:redstone_contact",
             "create:mechanical_saw",
             "create:sequenced_gearshift",
             "create:smart_fluid_pipe",

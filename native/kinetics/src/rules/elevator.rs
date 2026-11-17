@@ -9,8 +9,9 @@
 //! No game types: the glue is `native/api/src/machines/elevator.rs`.
 //!
 //! Known differences from Create:
-//! - There is no Redstone Contact in this port yet, so the cabin's contact is an Elevator Contact
-//!   (Create converts a Redstone Contact, picked up as one, into the column's contacts).
+//! - The cabin's contact is a Redstone Contact, as Create's; the Wrench makes one that faces the
+//!   column of floors an Elevator Contact (`RedstoneContactBlock.onWrenched`), but the item doesn't
+//!   do so when placed (`RedstoneContactItem`).
 //! - No floor screen (`ElevatorContactScreen`), no door controls, no Contraption Controls panel
 //!   and no Display Link source: a contact's names are only kept and numbered by `initNames`.
 //! - A contact keeps being a signal source only for the pulse an arrival gives it
@@ -216,9 +217,10 @@ pub fn cabin_column(contacts: &[(Pos, Dir)]) -> Result<(ColumnCoords, i32), Fail
     }
 }
 
-/// Whether a block in a cabin is the contact `cabin_column` reads.
+/// Whether a block in a cabin is the contact `cabin_column` reads: a horizontal Redstone Contact
+/// (`ElevatorContraption.capture` counts `AllBlocks.REDSTONE_CONTACT`; the floors are Elevator Contacts).
 pub fn is_contact(state: &State) -> bool {
-    state.is(CONTACT) && state.dir("facing").is_some_and(|f| f.axis() != crate::Axis::Y)
+    state.is(crate::rules::redstone_contact::ID) && state.dir("facing").is_some_and(|f| f.axis() != crate::Axis::Y)
 }
 
 /// `ElevatorColumn.initNames`: the contacts with no name of their own are numbered by the ones
@@ -329,8 +331,10 @@ mod tests {
             cabin_column(&[([0, 0, 0], Dir::East), ([0, 1, 0], Dir::West)]),
             Err(Fail::TooManyContacts)
         );
-        assert!(is_contact(&State::parse("create:elevator_contact[facing=north]")));
-        assert!(!is_contact(&State::parse("create:elevator_contact[facing=up]")));
+        assert!(is_contact(&State::parse("create:redstone_contact[facing=north]")));
+        assert!(!is_contact(&State::parse("create:redstone_contact[facing=up]")));
+        // The floors' own block is not the cabin's contact.
+        assert!(!is_contact(&State::parse("create:elevator_contact[facing=north]")));
     }
 
     #[test]

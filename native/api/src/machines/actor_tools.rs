@@ -56,6 +56,8 @@ pub(super) enum Extra {
     #[default]
     None,
     Deployer(Box<Hand>),
+    /// A Redstone Contact's `lastContact`.
+    Contact(Option<Pos>),
 }
 
 /// `DeployerFakePlayer`'s state: what is in its hand, the block it is mining, the stall's timer.
@@ -458,7 +460,7 @@ fn hand_mut(actor: &mut Actor) -> &mut Hand {
     }
     match &mut actor.extra {
         Extra::Deployer(hand) => hand,
-        Extra::None => unreachable!("the hand was just made"),
+        Extra::None | Extra::Contact(_) => unreachable!("the hand was just made"),
     }
 }
 

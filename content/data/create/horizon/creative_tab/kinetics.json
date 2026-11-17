@@ -172,6 +172,7 @@
     "create:potato_cannon",
     "create:rope_pulley",
     "create:mechanical_pump",
+    "create:redstone_contact",
     "create:redstone_link",
     "create:rose_quartz_lamp",
     "create:sand_paper",

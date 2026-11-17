@@ -624,6 +624,7 @@
   "block.create.rope": "Rope",
   "block.create.pulley_magnet": "Pulley Magnet",
   "block.create.mechanical_pump": "Mechanical Pump",
+  "block.create.redstone_contact": "Redstone Contact",
   "block.create.redstone_link": "Redstone Link",
   "block.create.rose_quartz_lamp": "Rose Quartz Lamp",
   "item.create.sand_paper": "Sand Paper",
