@@ -12,7 +12,7 @@
 //! - A belt funnel beside the drain doesn't take its output
 //!   (`DirectBeltInputBehaviour.tryExportingToBeltFunnel`).
 //! - The fluid in the tank rises at once where Create's `LerpedFloat` chases it, and there are no
-//!   comparator signal (the hook gets no block entity), goggle tooltip or advancements.
+//!   comparator signal (the hook gets no block entity) or advancements.
 //! - The block drops what it holds when a player breaks it; an explosion or a piston doesn't.
 
 

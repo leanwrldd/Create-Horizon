@@ -35,8 +35,8 @@
 //!   it steps the amount through "any", "exactly 1" ... "exactly 64" ("up to N" and "any" are
 //!   the first row of Create's value box, which can't be reached here but by editing the
 //!   block entity's `UpTo` and `FilterAmount`); sneaking with an empty hand clears it. Create's
-//!   filter slot and value box, the displayed filter item and Goggles' tooltip
-//!   (`IHaveGoggleInformation`) are not drawn. Filter items (`FilterItem`, attribute and list
+//!   filter slot and value box, the displayed filter item are not drawn.
+//!   Goggles show the chute's fans, direction and item (`goggles.rs`). Filter items (`FilterItem`, attribute and list
 //!   filters) don't exist here.
 //! - No air particles, no package handling (`PackageEntity`), no waterlogging, no advancements.
 //! - Collision boxes are cut to the block's own cell.

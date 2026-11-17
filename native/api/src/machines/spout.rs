@@ -11,8 +11,7 @@
 //!   `TransportedItemStackHandlerBehaviour`), not items lying on the ground, and neither does this one.
 //! - The fluid in the tank rises at once where Create's `LerpedFloat` chases it; there are no
 //!   splash or stream particles (`FluidFX`, `sendSplash`), no comparator signal
-//!   (`ComparatorUtil.levelOfSmartFluidTank`: the hook gets no block entity), no goggle
-//!   tooltip, no advancement and no waterlogging.
+//!   (`ComparatorUtil.levelOfSmartFluidTank`: the hook gets no block entity), no advancement and no waterlogging.
 
 use create_kinetics::belt::Processing;
 use create_kinetics::rules::spout::{self as rules, Held, Item, Spout};

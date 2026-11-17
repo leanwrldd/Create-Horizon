@@ -17,7 +17,8 @@
 //! - A bearing inside a structure is carried as a rigid block, not as a stabilised
 //!   sub-contraption (`StabilizedBearingMovementBehaviour`).
 //! - The windmill bearing, sails, and the Clockwork Bearing are not here yet.
-//! - The assembly exception is shown on the action bar of the players near, not in the goggles.
+//! - The assembly exception is shown on the action bar of the players near and in the goggle
+//!   overlay (`goggles.rs`, `IDisplayAssemblyExceptions`), with or without goggles.
 
 use create_kinetics::rules::bearing as bearing_rules;
 use create_kinetics::rules::contraption::{Transform, add};

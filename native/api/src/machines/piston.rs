@@ -20,7 +20,8 @@
 //!   (see `contraption.rs`).
 //! - Breaking a pole or the head doesn't break the rest of the piston (`playerWillDestroy`);
 //!   breaking the piston while it runs sets the structure down first.
-//! - The assembly exception is shown on the action bar of the players near, not in the goggles.
+//! - The assembly exception is shown on the action bar of the players near and in the goggle
+//!   overlay (`goggles.rs`, `IDisplayAssemblyExceptions`), with or without goggles.
 //! - The piston's own shape while extended or moving is Create's (`AllShapes.MECHANICAL_PISTON*`);
 //!   waterlogging is left out, as elsewhere.
 

@@ -15,7 +15,7 @@
 //! - The heat under the tank is read again every 5 ticks, not when the block below changes
 //!   (`FluidTankBlock.updateShape`); a change shows up to a quarter second late. An engine or
 //!   whistle placed or broken counts a tick or two late too (`updateBoilerState`).
-//! - The goggles' boiler status, the pipe organ and Full Steam advancements and the steam hiss of
+//! - The pipe organ and Full Steam advancements and the steam hiss of
 //!   a working engine (`BoilerData.sound`) are not done.
 //! - The gauge needle jumps to its value (Create's `LerpedFloat` chases it and jitters above 1),
 //!   and the gauges' occlusion is looked at every 10 ticks as in `updateOcclusion`, from the

@@ -18,7 +18,7 @@
 //!   empty hand to clear it. Filters are one item each (no amount, no filter items). The Wrench
 //!   closes and opens a window as in Create; sneaking with it picks the tunnel up.
 //! - An empty-hand click on a Brass Tunnel takes the stacks of its group, as Create's does. There
-//!   is no goggle tooltip, no item handler (a hopper or funnel can't insert into a tunnel, and a
+//!   is no goggle tooltip (the group's held stacks aren't sent to clients), no item handler (a hopper or funnel can't insert into a tunnel, and a
 //!   Smart Observer or comparator doesn't see what it holds), no Display Link support, and no
 //!   connected texture on the top of Brass Tunnels in a group.
 //! - A tunnel is placed on a horizontal belt only and puts a casing on the belt where there is
