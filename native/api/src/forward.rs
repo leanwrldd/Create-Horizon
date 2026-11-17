@@ -488,4 +488,19 @@ impl Hooks for Create {
             module.net_from_client(host, event);
         }
     }
+
+    fn living_breathe(&self, event: &mut LivingBreatheEvent<'_>) {
+        for module in &self.modules {
+            module.living_breathe(event);
+        }
+    }
+
+    fn living_incoming_damage_v3(&self, event: &mut LivingIncomingDamageV3Event<'_>) -> Flow {
+        for module in &self.modules {
+            if let Flow::Cancel = module.living_incoming_damage_v3(event) {
+                return Flow::Cancel;
+            }
+        }
+        Flow::Continue
+    }
 }

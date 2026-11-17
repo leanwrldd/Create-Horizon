@@ -68,3 +68,5 @@ register_commands
 perform_command
 movement_input
 net_from_client
+living_breathe
+living_incoming_damage_v3

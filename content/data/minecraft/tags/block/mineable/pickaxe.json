@@ -12,6 +12,8 @@
     "create:belt",
     "create:analog_lever",
     "create:mechanical_arm",
+    "create:copper_backtank",
+    "create:netherite_backtank",
     "create:basin",
     "create:mechanical_bearing",
     "create:wooden_bracket",

@@ -1,0 +1,21 @@
+{
+  "template": "minecraft:iron_boots",
+  "components": {
+    "minecraft:enchantable": {
+      "value": 7
+    },
+    "minecraft:max_damage": 91,
+    "minecraft:repairable": {
+      "items": "minecraft:copper_ingot"
+    },
+    "minecraft:attribute_modifiers": [
+      {
+        "type": "minecraft:armor",
+        "id": "minecraft:armor.boots",
+        "amount": 1.0,
+        "operation": "add_value",
+        "slot": "feet"
+      }
+    ]
+  }
+}
