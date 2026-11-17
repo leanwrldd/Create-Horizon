@@ -674,9 +674,12 @@ impl Drainer {
         self.validation_visited.clear();
     }
 
-    /// `getDrainableFluid`: the fluid a bucket's worth can be taken of now, without taking it.
+    /// `getDrainableFluid`: the fluid a bucket's worth can be taken of now, without taking it. Unlike
+    /// Create's it always looks (`pullNext` in simulation), which is what a `drain` of the handler
+    /// does first: a hose that knows no fluid yet only learns it that way, and a network asks what a
+    /// handler holds before it asks it to give.
     pub fn drainable(&mut self, level: &dyn Level, cfg: &Config, root: Pos) -> Option<String> {
-        if self.fluid.is_none() || self.searching() {
+        if self.searching() {
             return None;
         }
         if !self.pull_next(&mut ReadOnly(level), cfg, root, true) {
@@ -1439,6 +1442,27 @@ mod tests {
         assert!(drainer.pull_next(&mut grid, &cfg, root, false));
         assert!(grid.edits.iter().any(|(pos, change)| *pos == [0, 3, 0] && *change == Change::Unwaterlog)
             || grid.edits.iter().any(|(pos, change)| *pos == [1, 3, 0] && *change == Change::Air));
+    }
+
+    #[test]
+    fn asking_what_can_be_drained_starts_the_search_of_a_hose_that_knows_nothing_yet() {
+        let cfg = Config::default();
+        let mut grid = Grid::water_box([-1, 1, -1], [1, 3, 1]);
+        let mut drainer = Drainer::new(OWN, &cfg);
+        let root = [0, 3, 0];
+        // Only asking, as a pump does before it asks for fluid: the answers are nothing until the
+        // context is built and searched, then a bucket of water.
+        let mut answer = None;
+        for _ in 0..6 {
+            answer = drainer.drainable(&grid, &cfg, root);
+            if answer.is_some() {
+                break;
+            }
+            settle(&mut drainer, &grid, &cfg);
+        }
+        assert_eq!(answer.as_deref(), Some("minecraft:water"));
+        assert!(grid.edits.is_empty());
+        let _ = &mut grid;
     }
 
     #[test]
