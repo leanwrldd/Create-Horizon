@@ -40,6 +40,12 @@ pub fn signal(powered: bool, facing: Dir, side: Dir) -> i32 {
     if powered && side != facing.opposite() { 15 } else { 0 }
 }
 
+/// `RedstoneContactBlock.isSignalSource`: `state.getValue(POWERED)`. Redstone wire beside an unpowered
+/// contact does not connect to it.
+pub fn is_signal_source(powered: bool) -> bool {
+    powered
+}
+
 /// `ContactMovementBehaviour.visitNewPosition`'s decision.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Visit {
@@ -97,6 +103,27 @@ mod tests {
         // A contact there to face: against it, and powered.
         let valid = |d: Dir| d == Dir::Down;
         assert_eq!(placement(Dir::North, Dir::Up, false, &valid), (Dir::Down, true));
+    }
+
+    #[test]
+    fn it_is_a_signal_source_only_while_powered() {
+        assert!(is_signal_source(true));
+        assert!(!is_signal_source(false));
+    }
+
+    /// The in-game pair (east-facing and west-facing, lamps above and north of both): every lamp
+    /// reads 15 from both contacts, the lamp's side being `Down`/`South` (it reads towards the
+    /// contact), so a lamp that stays dark was never told to look (a `setblock`'d lamp isn't).
+    #[test]
+    fn a_facing_pair_lights_lamps_above_and_beside_both() {
+        for facing in [Dir::East, Dir::West] {
+            for side in [Dir::Down, Dir::South] {
+                assert_eq!(signal(true, facing, side), 15, "{facing:?} read from {side:?}");
+            }
+        }
+        // Only the side it faces through (the reader in front, looking back) is dark.
+        assert_eq!(signal(true, Dir::East, Dir::West), 0);
+        assert_eq!(signal(true, Dir::West, Dir::East), 0);
     }
 
     #[test]
