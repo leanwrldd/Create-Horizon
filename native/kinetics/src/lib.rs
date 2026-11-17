@@ -310,6 +310,16 @@ pub enum Joint {
     /// A Gantry Carriage: its shaft ends are on its rotation axis, and it meshes with a powered
     /// Gantry Shaft behind it (`GantryCarriageBlockEntity.propagateRotationTo`).
     Pinion { facing: Dir },
+    /// A Sequenced Gearshift (`SequencedGearshiftBlockEntity.getRotationSpeedModifier`): the end
+    /// the rotation comes in by turns at the block's speed, the other at `modifier` times it
+    /// (0 stands still: idle, in a delay or waiting). Which end is the input is decided as the
+    /// network is walked (the first reached), see [`solve`].
+    Sequenced { modifier: i8 },
+    /// A Rotation Speed Controller (`SpeedControllerBlockEntity`): an ordinary shaft through it,
+    /// and, if a large cogwheel stands above it across its axis, that cogwheel is driven at
+    /// `target` RPM as a generator ([`rules::speed_controller::resolve`]). `target` is the
+    /// scroll value, -256 to 256.
+    SpeedController { axis: Axis, target: i16 },
 }
 
 /// The shaft ends of a [`Kind::Shafts`] block: a bit per face, in [`Dir::ALL`] order.
@@ -378,6 +388,29 @@ impl Kind {
         Kind::Shafts(Ends {
             faces: Self::face_bits(&Self::axis_ends(chain.axis)),
             joint: Joint::Chain(chain),
+        })
+    }
+
+    /// A Sequenced Gearshift along `axis` whose output turns at `modifier` times its input
+    /// (`Instruction.getSpeedModifier`: -2, -1, 0, 1 or 2).
+    pub fn sequenced(axis: Axis, modifier: i32) -> Self {
+        Kind::Shafts(Ends {
+            faces: Self::face_bits(&Self::axis_ends(axis)),
+            joint: Joint::Sequenced {
+                modifier: modifier.clamp(-2, 2) as i8,
+            },
+        })
+    }
+
+    /// A Rotation Speed Controller with its shaft along `axis`, conveying `target` RPM to the
+    /// large cogwheel above it.
+    pub fn speed_controller(axis: Axis, target: i32) -> Self {
+        Kind::Shafts(Ends {
+            faces: Self::face_bits(&Self::axis_ends(axis)),
+            joint: Joint::SpeedController {
+                axis,
+                target: target.clamp(-i32::from(MAX_SPEED as i16), i32::from(MAX_SPEED as i16)) as i16,
+            },
         })
     }
 
@@ -635,7 +668,36 @@ fn close(a: f32, b: f32) -> bool {
 
 /// Every block's speed. The same blocks always give the same answer: positions are walked in
 /// order, so which block of a jammed network breaks doesn't depend on a hash.
+///
+/// A Rotation Speed Controller's cogwheel is a generator of its own, which needs its input's
+/// speed first: the network is solved, then again with those generators in it
+/// ([`rules::speed_controller::resolve`]).
 pub fn solve(nodes: &BTreeMap<Pos, Node>) -> Solution {
+    let plain = solve_once(nodes);
+    rules::speed_controller::resolve(nodes, plain)
+}
+
+/// How a Sequenced Gearshift's end `face` turns relative to the end the rotation comes in by:
+/// 1 for the input end, the modifier for the other.
+fn split_end(modifier: i8, input: Option<Dir>, face: Dir) -> f32 {
+    match input {
+        Some(input) if input != face => f32::from(modifier),
+        _ => 1.0,
+    }
+}
+
+fn sequenced_modifier(kind: Kind) -> Option<i8> {
+    match kind {
+        Kind::Shafts(Ends {
+            joint: Joint::Sequenced { modifier },
+            ..
+        }) => Some(modifier),
+        _ => None,
+    }
+}
+
+/// [`solve`] without the speed controllers' output.
+pub(crate) fn solve_once(nodes: &BTreeMap<Pos, Node>) -> Solution {
     let mut solution = Solution::default();
     let mut seen = BTreeSet::new();
     // Generators first, and powered clutches last: a clutch belongs to the first network that
@@ -656,6 +718,9 @@ pub fn solve(nodes: &BTreeMap<Pos, Node>) -> Solution {
         let mut factors = BTreeMap::from([(root, 1.0f32)]);
         let mut queue = VecDeque::from([root]);
         let mut jammed = None;
+        // The end each Sequenced Gearshift was first reached by: its input, the end its block
+        // speed (the factor) is that of. Create's is the end of its source.
+        let mut inputs: BTreeMap<Pos, Dir> = BTreeMap::new();
         while let Some(pos) = queue.pop_front() {
             let kind = nodes[&pos].kind;
             let factor = factors[&pos];
@@ -668,11 +733,43 @@ pub fn solve(nodes: &BTreeMap<Pos, Node>) -> Solution {
                 let Some(node) = nodes.get(&next) else {
                     continue;
                 };
-                let Some(ratio) = ratio(kind, node.kind, offset) else {
+                let Some(mut ratio) = ratio(kind, node.kind, offset) else {
                     continue;
                 };
-                // A powered clutch already in a network (this one or another) isn't joined again.
+                // A powered clutch already in a network (this one or another) isn't joined again,
+                // and nor is a Sequenced Gearshift: its two ends aren't one connection (an idle
+                // one's output joins nothing), so another network can reach it from its far end.
                 if is_cut(node.kind) && seen.contains(&next) {
+                    continue;
+                }
+                if sequenced_modifier(node.kind).is_some()
+                    && seen.contains(&next)
+                    && !factors.contains_key(&next)
+                {
+                    continue;
+                }
+                // A Sequenced Gearshift turns its output end by its modifier: going out through
+                // it, and coming in by it (a modifier of 0 joins nothing: the output stands still).
+                if let (Some(modifier), Some(face)) = (sequenced_modifier(kind), Dir::from_normal(offset)) {
+                    ratio *= split_end(modifier, inputs.get(&pos).copied(), face);
+                }
+                let mut entered = None;
+                if let (Some(modifier), Some(face)) = (
+                    sequenced_modifier(node.kind),
+                    Dir::from_normal(offset).map(Dir::opposite),
+                ) {
+                    match inputs.get(&next).copied() {
+                        Some(input) if input != face => {
+                            if modifier == 0 {
+                                continue;
+                            }
+                            ratio /= f32::from(modifier);
+                        }
+                        Some(_) => {}
+                        None => entered = Some(face),
+                    }
+                }
+                if ratio == 0.0 {
                     continue;
                 }
                 let wanted = factor * ratio;
@@ -685,6 +782,9 @@ pub fn solve(nodes: &BTreeMap<Pos, Node>) -> Solution {
                         factors.insert(next, wanted);
                         seen.insert(next);
                         queue.push_back(next);
+                        if let Some(face) = entered {
+                            inputs.insert(next, face);
+                        }
                     }
                 }
             }

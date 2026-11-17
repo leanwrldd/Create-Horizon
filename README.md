@@ -18,11 +18,11 @@ is not pinned to one Horizon commit.
 | Materials | 18 | 20 | 90% |
 | Logistics | 23 | 52 | 44% |
 | Fluids | 16 | 18 | 89% |
-| Contraptions | 28 | 42 | 67% |
+| Contraptions | 32 | 42 | 76% |
 | Schematics | 0 | 5 | 0% |
 | Curiosities | 0 | 13 | 0% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **172** | **246** | **69.9%** |
+| **All** | **176** | **246** | **71.5%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
@@ -135,6 +135,10 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Storage blocks | Item Vault (merges up to 3 wide and 3 times as long, 20 stacks a block; chutes, funnels and comparators see the whole vault), Creative Crate (endless supply of the item it's clicked with), Smart Observer, Threshold Switch |
 | Engineer's Goggles | `create:goggles`, worn in the head slot (right-click to swap, drawn on the head by its `head` display model) with Create's recipe. With them on, looking at a Create block draws Create's tooltip box right of the crosshair (`GoggleOverlayRenderer`, words from Create's language file): every rotating block's stress impact or capacity at its speed, Speedometer and Stressometer readings, Fluid Tank and boiler status (level, size, water, heat, su given), Spout and Item Drain fluid, Basin contents, Chute fans and item, Deployer mode and item, Analog Lever strength, Steam Whistle pitch, Steam Engine and Powered Shaft capacity, Piston Extension Pole length. Without goggles it still warns "Overstressed" and "Speed Requirement", and hints for an arm with no targets, a bearing to update, a full Deployer, and why a bearing or piston did not assemble. Clicking a Mechanical Arm with the goggles puts them on it. Unplayed: type-checked and unit-tested only |
 | Redstone parts | Redstone Link (frequency set by clicking each half with an item), Analog Lever, Pulse Repeater, Pulse Extender and Pulse Timer (the Wrench on a side steps the delay), Powered Latch and Toggle Latch, Rose Quartz Lamp |
+| Flywheel | A brass wheel on a shaft axis, drawn on the shaft it sits on. It turns with the network and keeps turning after the power goes (each tick it closes 1/64 of the gap to the shaft's speed, as Create's does); no stress of its own. Recipe: 8 brass ingots round a shaft |
+| Sequenced Gearshift | A casing with a shaft out of each end that runs a list of up to five instructions (turn by an angle, turn to move a piston, pulley or gantry, delay, await a redstone pulse, end), each at the input's speed forward or back, normal or double, when redstone starts it; the input end is the one the rotation comes in by, the output turns by the instruction's modifier and stands still in a delay, a wait and when idle. The comparator reads the instruction running. Edited with clicks (Settings, below) |
+| Rotation Speed Controller | A shaft through a casing that, under a large cogwheel across it, drives that cogwheel (and whatever it meshes with) at its target speed, -256 to 256 RPM, as long as its own shaft turns, at any speed. The output costs stress out of the input's generators, as one network (Settings, below) |
+| Contraption Controls | A panel with a button and a dial, facing the player: a click turns it off and on (the button sinks, the dial turns half way round), redstone power turns it off, and an item from `create:contraption_controlled` sets the filter. It keeps its state and filter in Create's keys, but nothing reads them yet: what it switches, the actors of a moving contraption, isn't ported |
 | Display Link, Display Board, Nixie Tubes | Display Link: reads the block it sits on and writes text to a sign, a lectern, a row of Nixie Tubes or a Display Board up to 64 blocks away; click the target with the link in hand, then place it. Sources: Speedometer (RPM), Stressometer (bar, percent, su, capacity, remaining), Cuckoo Clock (time of day, stopwatch), Smart Observer (item count, item list, fluid amount, fluid list), Threshold Switch (fill level), belts, depots and weighted ejectors (item names), Seats (rider's name), a vanilla Target block (redstone power) and Nixie Tubes. Type of information, display option, label and start line are set by clicks (below). Display Board: a flap display on a 30 RPM cogwheel that joins into boards up to 32 wide and tall, shows lines of text on flaps that spin before they settle, and takes a name tag (a line), a dye (its colour), a glow ink sac and an empty hand (clears a line). Nixie Tubes: sixteen colours, two glowing digits showing redstone strength, or text from a name tag or a link along a row of tubes; a dye recolours the whole row |
 | Building blocks | 364 blocks: metal ladders, bars, scaffolding and doors, copper shingles and tiles, glass and windows, 14 stone types in every pattern |
 | Girders, Seats, Copycats | Metal Girders that join into beams and poles (placed, extended, toggled with the Wrench, `update_shape`), the Metal Girder Encased Shaft that carries rotation, 16 Seats a player sits on (a marker entity and `/ride`; a dye recolours), Copycat Step and Panel that take a block as their look (drawn squashed into the shape, not cropped). Unplayed: type-checked and unit-tested only; each module's header lists its differences |
@@ -155,6 +159,32 @@ axe does). An item's assembly progress is a Horizon component (`create:sequenced
 read on a client for the bar and tooltip only if the server sends it (untested). The Track recipe, the `create:track` and
 the sleepers it needs are not ported. Only deploying, pressing, cutting and filling steps run (all of Create's have one
 of these).
+
+Flywheel, Sequenced Gearshift, Rotation Speed Controller and Contraption Controls' known differences from Create
+(`native/api/src/machines/flywheel.rs`, `sequenced_gearshift.rs`, `speed_controller.rs`, `contraption_controls.rs`; the
+rules are `native/kinetics/src/rules/` of the same names, and `Joint::Sequenced` and `Joint::SpeedController` in the
+solver): none has a stress impact (`CStress.setNoImpact`), so the goggles' table needed nothing. Unplayed: type-checked
+and unit-tested only.
+
+- **Flywheel**: the wheel's chase and turn are worked out from the game time and where it stood when the speed last
+  changed, so a client that arrives sees it where it really is (Create's client starts from standing still).
+- **Sequenced Gearshift**: Create sends each instruction's target down the network (`SequenceContext`) so a bearing,
+  piston, pulley or gantry stops at exactly that angle or distance; here nothing downstream hears it, so a turning
+  instruction lasts the ticks it needs, rounded up (Create adds 2 ticks it later trims), and the output may turn up to
+  a tick too far. Create counts an interrupted instruction's progress at the input's speed whatever the modifier; here
+  it is at the output's. The input is the end the network reaches first (a generator's side); an idle or waiting
+  gearshift passes nothing on the other end. Redstone is read each tick but acts only when the signal changes. The
+  Wrench doesn't turn it (see Settings): sneak-place it, or place it again, for another axis. No `TransformableBlock`
+  (it isn't rotated by a moving structure) and no ComputerCraft peripheral.
+- **Rotation Speed Controller**: the output only goes from the controller to the cogwheel (Create's `getConveyedSpeed`
+  also lets a driven cogwheel power the controller's shaft); the cogwheel is one more generator in its network, so a
+  faster motor on the output side wins and two against each other jam. The output side's stress comes out of the
+  input's capacity and, if it is more, stops both sides. The bracket and the axis under a cogwheel are fixed from the
+  server's tick and the placement hook, and Create's `PlacementHelper` (right-click the controller with a large cogwheel)
+  is not here.
+- **Contraption Controls**: nothing reads the block yet; Create's Ponder scene for it plays on a block that does
+  nothing. The filter is set by clicking with an item of `create:contraption_controlled` and cleared with a sneaking
+  empty hand. No waterlogging, no `open` or `virtual` states and no elevator floor display.
 
 Broad gaps across these modules:
 
@@ -239,6 +269,23 @@ stands in for it, written the same way for each:
   (the windmill's direction, the Creative Motor's speed), and the new value is shown on the action bar;
 - sneaking with the Wrench picks the block up, as everywhere else;
 - an **item** in hand sets what it names (a filter), and an empty hand clears it.
+
+Where Create's screen or value box had more to set than one click can:
+
+- **Sequenced Gearshift** (its screen, `SequencedGearshiftScreen`): an empty hand clicked on the block moves a
+  cursor over the program's fields (a sneaking one moves it back) and shows the program on the action bar with the
+  field in brackets: `1: Turn by angle [90°] ->  2: End`. A slot has a type (turn by angle, turn to move a piston or
+  pulley or gantry, delay, await a pulse, end), a value (angle in steps of 45, up to 360; distance 1 to 128 in steps;
+  delay 10 to 600 ticks in steps) and a speed (`>>` double forwards, `->`, `<-`, `<<`). The Wrench steps the field under
+  the cursor: forward on a face pointing the positive way (up, south, east), back on a face pointing the negative way
+  (down, north, west). Slots after the first `End` are skipped; change an `End` to something else to add an
+  instruction (five at most). Editing stops a running sequence, as saving the screen does.
+- **Rotation Speed Controller** (its value box): the Wrench on a side steps the target speed up on a south or east
+  face and down on a north or west one, through -256, -192, -128, -96, -64, -48, -32, -24, -16, -8, -4, -2, -1, 0, 1,
+  2, 4, 8, 16, 24, 32, 48, 64, 96, 128, 192, 256; on the top or the bottom it turns the block. The default is 16.
+- **Contraption Controls** (its filter slot): an item in `create:contraption_controlled` (a drill, saw, deployer, funnel,
+  door, bell, campfire, dispenser, dropper) right-clicked on it sets the filter; a sneaking empty hand clears it; the
+  Wrench turns it a quarter turn. A plain click toggles it, as in Create.
 
 ### Ponder
 
