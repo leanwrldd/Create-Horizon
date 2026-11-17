@@ -9,7 +9,8 @@
 //!
 //! How it works here:
 //! - Placed within 5 blocks of a Chain Conveyor's wheel or chain (at or below the point it works
-//!   at), it attaches to the nearest point by itself. The Wrench on it picks the nearest point
+//!   at), it attaches to the nearest point by itself; one with no point (put there by `setblock`
+//!   or a structure) looks again every 5 seconds. The Wrench on it picks the nearest point
 //!   again. A renamed Name Tag on it sets its address (the tag's name); a Name Tag without a name
 //!   clears it. Goggles on it put the goggles on its head.
 //! - Its inventory is the block's container, so hoppers, funnels and chutes reach it from any
@@ -335,7 +336,18 @@ impl Hooks for Frogports {
         let now = util::game_time(host);
         let mut port = read(event.entity);
         let before = port.clone();
-        let target = target_of(&event.entity.nbt);
+        let mut target = target_of(&event.entity.nbt);
+
+        // A port with no chain point (placed by a command or a structure, not by a player) looks
+        // for the nearest one now and then.
+        let phase = i64::from(pos[0] + pos[1] + pos[2]);
+        if rules::attach_due(target.is_some(), now, phase) {
+            if let Some(found) = chain::nearest_target(&super::chain_conveyor::candidates_near(&*host, pos)) {
+                util::put(&mut event.entity.nbt, TARGET, target_tag(&found));
+                host.block_entity_sync(pos);
+                target = Some(found);
+            }
+        }
 
         for effect in port.tick(now) {
             match effect {

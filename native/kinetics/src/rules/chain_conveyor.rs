@@ -686,6 +686,62 @@ mod tests {
         Package { position, address: address.to_owned(), item, just_flipped: false }
     }
 
+    /// Two joined wheels as the glue runs them each tick: the routing table ages and advertises,
+    /// then the packages move; a Frogport at B registers every 10 ticks. A package for the address
+    /// of B's Frogport put on A's wheel must leave A's wheel on the chain and reach B (the in-game
+    /// report: it stayed in `LoopingPackages` of A).
+    #[test]
+    fn a_package_for_a_port_on_the_other_wheel_takes_the_chain() {
+        for rpm in [16.0, -16.0, 64.0, 4.0] {
+            sim(rpm);
+        }
+    }
+
+    fn sim(rpm: f32) {
+        let ab = [6, 0, 0];
+        let ba = [-6, 0, 0];
+        let mut a: Conveyor<&'static str> = Conveyor::default();
+        let mut b: Conveyor<&'static str> = Conveyor::default();
+        a.connections.insert(ab);
+        b.connections.insert(ba);
+        let mut world_a = World::default();
+        world_a.conveyors.insert(ab);
+        let mut world_b = World::default();
+        world_b.conveyors.insert(ba);
+        a.looping.push(package(0.0, "depot", "box"));
+        let port = Port { position: 0.0, connection: None, filter: "depot".to_owned() };
+        let mut arrived = false;
+        for now in 0..2000 {
+            if now % 10 == 0 {
+                b.routing.receive_port_info("depot", [0, 0, 0]);
+                b.loop_ports.insert([0, 0, -2], port.clone());
+            }
+            a.routing.tick();
+            if a.routing.should_advertise() {
+                a.routing.clone().advertise_to(ab, &mut b.routing);
+                a.routing.changed = false;
+                a.routing.last_update = 0;
+            }
+            b.routing.tick();
+            if b.routing.should_advertise() {
+                b.routing.clone().advertise_to(ba, &mut a.routing);
+                b.routing.changed = false;
+                b.routing.last_update = 0;
+            }
+            let tick_a = a.tick(rpm, &mut world_a);
+            for (connection, boxed) in tick_a.handoffs {
+                assert_eq!(connection, ab);
+                b.add_looping(boxed);
+            }
+            let tick_b = b.tick(rpm, &mut world_b);
+            arrived |= !tick_b.handoffs.is_empty() || !world_b.exported.is_empty();
+            if arrived {
+                break;
+            }
+        }
+        assert!(arrived, "rpm {rpm}: a: {:?} {:?}, a routing {:?}, b: {:?}", a.looping, a.travelling, a.routing, b.routing);
+    }
+
     #[test]
     fn angles_wrap_and_measure_the_short_way() {
         assert_eq!(wrap_angle(370.0), 10.0);

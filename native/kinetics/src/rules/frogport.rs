@@ -24,6 +24,17 @@ pub const ANIMATION_TICKS: i64 = 10;
 /// `lazyTick`'s period.
 pub const LAZY_PERIOD: i64 = 10;
 
+/// How often a Frogport with no chain point looks for one (this port's own: Create sets the point
+/// by a click when the player places the port, so a port placed any other way, by a command or a
+/// structure, or loaded without one, has none and would never work).
+pub const ATTACH_PERIOD: i64 = 100;
+
+/// Whether a Frogport at game time `now` looks for a chain point: it has none, and it is its turn
+/// (`phase` spreads the ports over the period).
+pub fn attach_due(has_target: bool, now: i64, phase: i64) -> bool {
+    !has_target && (now + phase).rem_euclid(ATTACH_PERIOD) == 0
+}
+
 /// `PackagePortAutomationInventoryWrapper.extractItem`: automation (a hopper, a funnel) takes
 /// only packages that match the port's own address: the ones that have arrived.
 pub fn automation_can_extract(is_package: bool, address_matches: Option<bool>) -> bool {
@@ -221,6 +232,17 @@ impl<B: Clone> Port<B> {
 
 #[cfg(test)]
 mod tests {
+    /// The in-game report: a Frogport placed by `setblock` never attached to the chain.
+    #[test]
+    fn a_port_without_a_chain_point_looks_for_one_now_and_then() {
+        assert!(super::attach_due(false, 200, 0));
+        assert!(super::attach_due(false, 203, 97));
+        assert!(!super::attach_due(false, 201, 0));
+        assert!(!super::attach_due(true, 200, 0));
+        let due = (0..300).filter(|now| super::attach_due(false, *now, 7)).count();
+        assert_eq!(due, 3);
+    }
+
     use super::*;
 
     #[test]
