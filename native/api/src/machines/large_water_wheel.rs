@@ -89,7 +89,7 @@ fn flow_at(host: &dyn Host, dimension: &str, at: Pos) -> [f64; 3] {
 
 /// `WaterWheelStructuralBlock.stillValid`, from the structure block at `pos` through any chain of
 /// structure blocks: the large wheel it belongs to, if it is still there.
-fn master_of(host: &dyn Host, pos: Pos) -> Option<Pos> {
+pub(super) fn master_of(host: &dyn Host, pos: Pos) -> Option<Pos> {
     let mut at = pos;
     // The chain is at most two blocks long; the bound only stops a bad loop.
     for _ in 0..4 {

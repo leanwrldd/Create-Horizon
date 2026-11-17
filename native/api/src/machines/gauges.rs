@@ -33,6 +33,9 @@ const HEAD_STRESS: &str = "create:block/gauge/stressometer/head";
 const VALUE: &str = "Value";
 const FROM: &str = "From";
 const SINCE: &str = "Since";
+/// The network's stress and capacity in su (`Network.Stress`, `Network.Capacity` in Create's tag).
+const STRESS: &str = "Stress";
+const CAPACITY: &str = "Capacity";
 /// Ticks after which the dial has settled (an eighth of the way a tick: 0.875^120 is under 1e-7).
 const SETTLED: f32 = 120.0;
 /// `GaugeRenderer`'s `dialPivot`: 5.75 texels.
@@ -119,6 +122,16 @@ impl Hooks for Gauges {
             event.entity.nbt.insert(SINCE.into(), Tag::Long(now));
             changed = true;
         }
+        if event.entity.id == STRESSOMETER {
+            // `StressGaugeBlockEntity.stress` and `capacity`, for the goggles' readout in su.
+            let n = kinetic::networks().network_at(host.dimension(), pos).unwrap_or_default();
+            for (key, value) in [(STRESS, n.stress), (CAPACITY, n.capacity)] {
+                if util::float(&event.entity.nbt, key) != Some(value) {
+                    util::set_float(&mut event.entity.nbt, key, value);
+                    changed = true;
+                }
+            }
+        }
         if changed {
             host.block_entity_sync(pos);
         }
@@ -136,6 +149,9 @@ impl Hooks for Gauges {
         util::set_float(&mut tag, VALUE, util::float(nbt, VALUE).unwrap_or(0.0));
         util::set_float(&mut tag, FROM, util::float(nbt, FROM).unwrap_or(0.0));
         tag.insert(SINCE.into(), Tag::Long(util::long(nbt, SINCE)));
+        for key in [STRESS, CAPACITY] {
+            util::set_float(&mut tag, key, util::float(nbt, key).unwrap_or(0.0));
+        }
         Some(tag)
     }
 

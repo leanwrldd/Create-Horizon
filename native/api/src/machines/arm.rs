@@ -15,7 +15,8 @@
 //!   here to point at.
 //! - There is no value box: the Wrench on the arm steps the distribution method (round robin,
 //!   forced round robin, prefer first target) and names it on the action bar; sneaking picks the
-//!   arm up. Create's Goggles (`goggles`) would set `Goggles`, but the item isn't here.
+//!   arm up. Clicking the arm with Engineer's Goggles puts them on it (`ArmBlock.useItemOn`); the
+//!   client may also swap them onto the player's head, as Horizon predicts an equippable's use.
 //! - The selection is kept on the server per player (Create's lives on the client and is sent
 //!   back by a packet), shown as coloured dust at the corners of the chosen blocks instead of
 //!   outlines (blue to take from, yellow to deposit to), and dropped when the arm leaves the hand.
@@ -344,6 +345,9 @@ fn update_tag(entity: &ModBlockEntity) -> Compound {
             tag.insert(key.into(), value.clone());
         }
     }
+    // The goggles' hint (`ArmBlockEntity.addToTooltip`): no inputs and no outputs chosen.
+    let targets = matches!(util::get(nbt, POINTS), Some(Tag::List(points)) if !points.is_empty());
+    tag.insert("HasTargets".into(), Tag::Byte(i8::from(targets)));
     // Always sent, empty when there is none, so a client drops what it had.
     tag.insert(HELD.into(), util::get(nbt, HELD).cloned().unwrap_or_else(|| Tag::Compound(Compound::new())));
     for key in [PREVIOUS, TARGET] {
@@ -423,8 +427,8 @@ impl Hooks for Arms {
             .map(Some)
     }
 
-    /// `ArmBlock.useItemOn`: a click gives back the stack the arm holds. (Create's Goggles case
-    /// is not here: no Goggles.)
+    /// `ArmBlock.useItemOn`: Engineer's Goggles put the goggles on the arm (the item stays in the
+    /// hand); any other click gives back the stack the arm holds.
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
         let pos = event.pos;
         if host.block(pos) != ID {
@@ -444,6 +448,20 @@ impl Hooks for Arms {
         // The off hand's turn of a click that already gave the stack back.
         if util::click_repeated(host, player.uuid, pos) {
             return Flow::Cancel;
+        }
+        let is_goggles = |stack: &Option<ItemStack>| {
+            stack.as_ref().is_some_and(|s| &*s.item == "create:goggles")
+        };
+        if is_goggles(&main) || (main.is_none() && is_goggles(&off)) {
+            let has = host.mod_block_entity(pos).is_some_and(|e| util::boolean(&e.nbt, GOGGLES));
+            if !has {
+                util::click_taken(host, player.uuid, pos);
+                host.change_mod_block_entity(pos, &mut |e| {
+                    e.nbt.insert(GOGGLES.into(), Tag::Byte(1));
+                });
+                host.block_entity_sync(pos);
+                return Flow::Cancel;
+            }
         }
         let Some(held) = host
             .mod_block_entity(pos)

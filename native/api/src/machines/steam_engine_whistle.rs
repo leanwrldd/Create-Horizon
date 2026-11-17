@@ -18,7 +18,7 @@
 //!   by their block entities' ticks (an extension has an empty block entity for it), not heard
 //!   from neighbour updates (`neighborChanged`, `updateShape`, `queuePitchUpdate`): a change takes
 //!   up to 5 ticks to show in the pitch, and a broken whistle's extensions go within 4 ticks.
-//! - The goggles' pitch readout and the Pipe Organ advancement are not done. The sneak-wrench on
+//! - The Pipe Organ advancement is not done (the goggles show the pitch, `goggles.rs`). The sneak-wrench on
 //!   the upper half of a double extension (`onSneakWrenched`, turning it back to a single) just
 //!   removes the block: the click point isn't known.
 //! - `getCloneItemStack` of an extension (pick block giving a whistle) isn't done; neither is

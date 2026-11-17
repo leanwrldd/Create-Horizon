@@ -2,7 +2,7 @@
 //! `SpeedGaugeBlockEntity`, `StressGaugeBlockEntity` and `GaugeRenderer`.
 //!
 //! Known differences from Create, for the README:
-//! - No goggles tooltip, no comparator output, no dust particles in the dial's colour.
+//! - No comparator output, no dust particles in the dial's colour.
 //! - The dial eases towards its value on the server's clock as Create's does, but without the
 //!   random flutter past 1 (`GaugeBlockEntity.tick`).
 //! - A head is drawn on every face Create could draw one on, whether or not a neighbour hides

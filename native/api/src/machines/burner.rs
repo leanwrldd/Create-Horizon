@@ -13,7 +13,7 @@
 //! - Flint and steel, shovels and soul sand do not wear or spend anything, and an egg thrown at
 //!   the burner (`BlazeBurnerHandler`) and a splash of water on a lit one are not handled (no
 //!   projectile hook).
-//! - Goggles, the train hat and the stock keeper's look are missing; the head always turns to the
+//! - Goggles on the burner (`BlazeBurnerBlock.useItemOn`), the train hat and the stock keeper's look are missing; the head always turns to the
 //!   burner's `facing` rather than to the nearest player, the head's rise over a basin is instant,
 //!   and the flame sprite does not scroll (`BlazeBurnerRenderer.renderShared`).
 //! - Capturing a Blaze works by right-clicking the mob or a spawner that can spawn Blazes (found

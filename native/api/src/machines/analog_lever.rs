@@ -8,7 +8,7 @@
 //!   in a chunk that has just loaded gives 0 until its block entity has ticked once, and
 //!   tells its neighbours then.
 //! - The handle's easing is worked out from the time of the change (saved as `From` and `Since`).
-//! - Goggles don't show "Analog Strength".
+//! - Goggles show "Analog Strength" (`goggles.rs`).
 //! - A click with an item in the hand is taken by the lever too (Create's `useWithoutItem` is
 //!   reached for any held item); sneaking with an item in either hand places it, as in Create.
 

@@ -27,8 +27,7 @@
 //!   (`Items`); the held item is slot 0 (and is saved as `HeldItem` too, as Create does, for
 //!   clients). `Inventory` (the fake player's own inventory) and `Owner` are not saved: there is
 //!   no fake player, and nothing reads the owner.
-//! - No particles (`player.spawnedItemEffects`, `SandPaperItem.spawnParticles`), no goggle
-//!   tooltip or overflow hint (`hint.full_deployer`), no advancements (`DEPLOYER`, `FIST_BUMP`,
+//! - No particles (`player.spawnedItemEffects`, `SandPaperItem.spawnParticles`), no advancements (`DEPLOYER`, `FIST_BUMP`,
 //!   the casings), no comparator and no waterlogging.
 //! - A placed Deployer isn't lined up with a shaft beside it (`prefersConnectionTo`), isn't set
 //!   facing down over a belt or a depot (`AssemblyOperatorBlockItem`), and right-clicking a
@@ -751,6 +750,8 @@ impl Hooks for Deployers {
         tag.insert(FIST_BUMP.into(), Tag::Byte(i8::from(saved.stroke.fist_bump)));
         // Always sent, an empty compound for nothing, so a client that held something drops it.
         tag.insert(HELD_ITEM.into(), held_tag(held_of(entity).as_ref()));
+        // The goggles' hint (`DeployerBlockEntity.addToTooltip`): items wait in the overflow.
+        tag.insert("Overflow".into(), Tag::Byte(i8::from(entity.items.iter().skip(1).any(Option::is_some))));
         Some(tag)
     }
 

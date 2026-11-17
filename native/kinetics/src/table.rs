@@ -36,6 +36,8 @@ pub struct Networks {
     /// Each block with the tick it last reported in.
     nodes: HashMap<&'static str, BTreeMap<Pos, (Node, u64)>>,
     speeds: HashMap<&'static str, BTreeMap<Pos, f32>>,
+    /// The speeds as they would be without overstress (`Solution::theoretical`).
+    theoretical: HashMap<&'static str, BTreeMap<Pos, f32>>,
     /// Blocks the last solve found jammed: each breaks in its next tick.
     breaks: HashMap<&'static str, BTreeSet<Pos>>,
     /// The network each block was in at the last solve, and what each added up to
@@ -77,6 +79,12 @@ impl Networks {
         self.speeds.get(dimension)?.get(&pos).copied()
     }
 
+    /// The speed the block at `pos` would turn at were its network not overstressed, in RPM
+    /// (`KineticBlockEntity.getTheoreticalSpeed`).
+    pub fn theoretical_at(&self, dimension: &str, pos: Pos) -> Option<f32> {
+        self.theoretical.get(dimension)?.get(&pos).copied()
+    }
+
     /// The stress, capacity and overstress of the network the block at `pos` was in at the
     /// last solve: what Create's stressometer reads (`KineticNetwork`).
     pub fn network_at(&self, dimension: &str, pos: Pos) -> Option<Network> {
@@ -98,6 +106,7 @@ impl Networks {
             return;
         }
         self.speeds.clear();
+        self.theoretical.clear();
         self.breaks.clear();
         self.stress.clear();
         for (&dimension, nodes) in &self.nodes {
@@ -106,6 +115,7 @@ impl Networks {
             self.breaks
                 .insert(dimension, solution.breaks.into_iter().collect());
             self.speeds.insert(dimension, solution.speeds);
+            self.theoretical.insert(dimension, solution.theoretical);
             self.stress
                 .insert(dimension, (solution.network_of, solution.networks));
         }

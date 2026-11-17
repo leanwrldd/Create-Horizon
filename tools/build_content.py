@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from zipfile import ZipFile
 
 from gen_content import ROOT, generate, write
+from goggles_assets import import_goggles
 from ponder_assets import import_ponder
 
 
@@ -220,6 +221,7 @@ def main():
                 shutil.copytree(generated / "assets", content / "assets")
                 shutil.copytree(generated / "data", content / "data")
                 models = import_ponder(jar, content)
+                import_goggles(jar, content)
                 import_assets(jar, content, collected, models)
                 subprocess.run([str(Path(tool).resolve()), "horizon-mod", "build"],
                                cwd=content, check=True)

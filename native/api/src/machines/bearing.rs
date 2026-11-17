@@ -18,6 +18,8 @@
 //! - A bearing inside a structure is carried as a rigid block, not as a stabilised
 //!   sub-contraption (`StabilizedBearingMovementBehaviour`).
 //! - The Clockwork Bearing is not here yet.
+//! - The assembly exception is shown on the action bar of the players near and in the goggle
+//!   overlay (`goggles.rs`, `IDisplayAssemblyExceptions`), with or without goggles.
 //!
 //! The Windmill Bearing is the same machine with three differences (`WindmillBearingBlockEntity`):
 //! it makes the rotation itself (`getGeneratedSpeed`: the sails in its structure over
@@ -25,7 +27,6 @@
 //! Wrench toggles on a side of the bearing), it assembles even when nothing turns it (and only
 //! by a hand: a change of speed never assembles or sets it down), and it refuses a structure with
 //! fewer than `minimumWindmillSails` sails. Known differences are listed in `rules::windmill`.
-//! - The assembly exception is shown on the action bar of the players near, not in the goggles.
 
 use create_kinetics::rules::bearing as bearing_rules;
 use create_kinetics::rules::windmill as windmill_rules;

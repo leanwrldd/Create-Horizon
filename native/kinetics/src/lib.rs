@@ -592,6 +592,9 @@ pub struct Network {
 pub struct Solution {
     /// Every block's speed in RPM; 0 for one that stands still.
     pub speeds: BTreeMap<Pos, f32>,
+    /// What each block would turn at were its network not overstressed (`getTheoreticalSpeed`):
+    /// the same as `speeds` except in an overstressed network, where those are 0.
+    pub theoretical: BTreeMap<Pos, f32>,
     /// Blocks that can't turn as their neighbours ask (two speeds at once, the wrong way round,
     /// or past [`MAX_SPEED`]) and break, as Create's do. At most one per network: the caller
     /// removes it and solves again.
@@ -729,6 +732,9 @@ pub fn solve(nodes: &BTreeMap<Pos, Node>) -> Solution {
             .map(|(pos, factor)| nodes[pos].impact * (factor * root_speed).abs())
             .sum();
         network.overstressed = network.stress > network.capacity + 1e-3;
+        for (&pos, &factor) in &factors {
+            solution.theoretical.insert(pos, factor * root_speed);
+        }
         if network.overstressed {
             root_speed = 0.0;
         }
@@ -969,6 +975,9 @@ mod tests {
         assert_eq!(solution.networks[0].capacity, 64.0);
         assert_eq!(solution.networks[0].stress, 128.0);
         assert_eq!(solution.speeds[&[1, 0, 0]], 0.0);
+        // The goggles still count what each block would turn at (`getTheoreticalSpeed`).
+        assert_eq!(solution.theoretical[&[1, 0, 0]], 16.0);
+        assert_eq!(solution.theoretical[&[0, 0, 0]], 16.0);
         assert!(solution.breaks.is_empty());
 
         let mut strong = weak;

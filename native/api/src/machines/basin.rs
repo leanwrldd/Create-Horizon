@@ -20,8 +20,7 @@
 //!   beside and below is a Depot, a Belt, a Basin or a vanilla chest, barrel or hopper (Create asks
 //!   for a `DirectBeltInputBehaviour`, which funnels, tunnels and chutes also have: none exist here
 //!   yet). A Belt gets the item as an item entity dropped on it, a Depot has it put on it.
-//! - No recipe filter (the value box), no output animation, no fluid or item particles, no goggle
-//!   tooltip, no `canSurvive` check against a mixer above, no analog output.
+//! - No recipe filter (the value box), no output animation, no fluid or item particles, no `canSurvive` check against a mixer above, no analog output.
 //! - Fluids are Horizon tanks: water, lava, milk (`neoforge:milk`, as Create's `c:milk` holds it),
 //!   `create:honey`, `create:chocolate` and `create:tea` hold and match. Only water and lava are
 //!   drawn with their own texture; any other fluid is drawn as a tinted box. Buckets of water,

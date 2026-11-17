@@ -358,7 +358,8 @@ impl Hooks for Core {
         if speed_changed {
             set_float(&mut event.entity.nbt, SPEED, speed);
         }
-        let mut sync = speed_changed;
+        let (over, theory) = kinetic::stress_at(host, pos);
+        let mut sync = speed_changed | kinetic::note_stress(&mut event.entity.nbt, over, theory);
         if block == Block::Press {
             sync |= press::tick(host, pos, event.entity, speed, speed_changed);
         }
@@ -384,6 +385,7 @@ impl Hooks for Core {
             SPEED,
             float(&event.entity.nbt, SPEED).unwrap_or(0.0),
         );
+        kinetic::copy_stress(&event.entity.nbt, &mut tag);
         if block == Block::Press {
             press::update_tag(&event.entity.nbt, &mut tag);
         }

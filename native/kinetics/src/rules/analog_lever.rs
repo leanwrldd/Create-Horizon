@@ -5,7 +5,6 @@
 //! Known differences from Create, for the README:
 //! - The handle's easing (`LerpedFloat.chase(state, 0.2, Chaser.EXP)`) is worked out from the time
 //!   of the change (`eased`) instead of ticking on the client.
-//! - Goggles don't show "Analog Strength" yet.
 //! - The lever is not wrenchable, as in Create, and its shapes are vanilla's lever's
 //!   (`BlockBehaviourAccessor.create$getShape(Blocks.LEVER ...)`), written in `tools/content`.
 

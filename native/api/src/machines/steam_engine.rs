@@ -23,7 +23,8 @@
 //! - Placing a Shaft by clicking the engine replaces air and fluids only (not every replaceable
 //!   block), and plays the stone sound. The placement helper's ghost outline isn't shown.
 //! - The steam particles (`SteamJetParticle`) and the hiss at each stroke (`BoilerData.sound`) are
-//!   not done; nor the Powerhouse advancement, the goggles' boiler status, or waterlogging.
+//!   not done; nor the Powerhouse advancement or waterlogging. Goggles on an engine or its Powered
+//!   Shaft show the capacity it provides (`goggles.rs`).
 //! - A Powered Shaft can't take Shafts beside it by clicking (`PoweredShaftBlock.useItemOn`).
 
 use create_kinetics::rules::steam_engine::{self as rules, ENGINE_CAPACITY};
