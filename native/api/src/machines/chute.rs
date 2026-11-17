@@ -31,13 +31,9 @@
 //!   for something to take (Create waits for the inventory to change).
 //! - An extraction takes from one slot, or tops up from the next ones, as `ItemHelper.extract` does,
 //!   but an inventory that isn't an `Items` list (a jukebox, a decorated pot) is not one.
-//! - Smart Chute filter: right-click while sneaking with an item sets it; with the same item again
-//!   it steps the amount through "any", "exactly 1" ... "exactly 64" ("up to N" and "any" are
-//!   the first row of Create's value box, which can't be reached here but by editing the
-//!   block entity's `UpTo` and `FilterAmount`); sneaking with an empty hand clears it. Create's
-//!   filter slot and value box, the displayed filter item are not drawn.
-//!   Goggles show the chute's fans, direction and item (`goggles.rs`). Filter items (`FilterItem`, attribute and list
-//!   filters) don't exist here.
+//! - Smart Chute filter: Create's filter slot (a value box, `machines/value_box.rs`): right-click it with an
+//!   item or an empty hand; hold for the amount while the chute pulls from an inventory.
+//!   Goggles show the chute's fans, direction and item (`goggles.rs`).
 //! - No air particles, no package handling (`PackageEntity`), no waterlogging, no advancements.
 //! - Collision boxes are cut to the block's own cell.
 //! - A chute is not drawn carrying its item except through a window or over a fan's pull; the
@@ -1145,8 +1141,7 @@ impl Hooks for Chutes {
     }
 
     /// The Wrench (`ChuteBlock.onWrenched`), an Industrial Iron Block (`ChuteBlock.useItemOn`),
-    /// a chute clicked on its side with a chute (`ChuteItem.place`), and a filter set on a Smart
-    /// Chute (the stand-in for its filter slot).
+    /// and a chute clicked on its side with a chute (`ChuteItem.place`).
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
         let pos = event.pos;
         let block = host.block(pos);
@@ -1169,7 +1164,6 @@ impl Hooks for Chutes {
                 }
             });
         }
-        let sneaking = host.acting_player().is_some_and(|p| p.sneaking);
         if item == INDUSTRIAL_IRON && block == CHUTE {
             let shape = shape_of(host, pos);
             if matches!(shape, Some(Shape::Normal | Shape::Window)) {
@@ -1179,17 +1173,10 @@ impl Hooks for Chutes {
             }
             return Flow::Continue;
         }
-        if block == SMART_CHUTE && sneaking {
-            if let Some(line) = inv::click(host, pos, Some(event.stack)) {
-                inv::tell(host, &line);
-            }
-            return Flow::Cancel;
-        }
         Flow::Continue
     }
 
-    /// `AbstractChuteBlock.useItemOn` with an empty hand: the item comes back to the player; a
-    /// Smart Chute's filter is cleared by sneaking.
+    /// `AbstractChuteBlock.useItemOn` with an empty hand: the item comes back to the player.
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
         let pos = event.pos;
         let block = host.block(pos);
@@ -1208,14 +1195,6 @@ impl Hooks for Chutes {
         }
         if player.sneaking && host.player_equipment(uuid, EquipmentSlot::OffHand).is_some() {
             return Flow::Continue;
-        }
-        if block == SMART_CHUTE && player.sneaking {
-            if util::first_click(host, uuid, pos)
-                && let Some(line) = inv::click(host, pos, None)
-            {
-                inv::tell(host, &line);
-            }
-            return Flow::Cancel;
         }
         let Some(entity) = host.mod_block_entity(pos) else {
             return Flow::Continue;

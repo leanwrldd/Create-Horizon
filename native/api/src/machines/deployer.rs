@@ -17,9 +17,8 @@
 //! Known differences from Create:
 //! - Deployers on contraptions (`DeployerMovementBehaviour`, `DeployerMovingInteraction`) are a
 //!   later slice, like the drill's and the saw's.
-//! - No filter slot: the stand-in of the Brass Funnel (`chute_inv`): right-click the Deployer
-//!   while sneaking, anywhere but the hand, with an item to make that item the filter, or with an
-//!   empty hand to clear it. The filter is the one `FilteringBehaviour.test` uses (same item):
+//! - The filter slot is Create's value box (`machines/value_box.rs`, on the sides the shaft doesn't cross). The
+//!   filter is the one `FilteringBehaviour.test` uses (a Filter item filters by what it holds, any other item by itself):
 //!   only a matching item goes in by a hopper or a funnel, and a held item that doesn't match is
 //!   moved to the overflow. The rule that a matching held item can't be extracted
 //!   (`DeployerItemHandler.extractItem`) is not applied (Horizon has no hook for extraction).
@@ -895,14 +894,6 @@ impl Hooks for Deployers {
             rules::is_hand,
         );
         if !on_hand {
-            if player.sneaking {
-                if util::first_click(host, player.uuid, pos)
-                    && let Some(line) = inv::click(host, pos, held.as_ref())
-                {
-                    inv::tell(host, &line);
-                }
-                return Flow::Cancel;
-            }
             return Flow::Continue;
         }
         // A player sneaking with something in hand uses the item, not the block.

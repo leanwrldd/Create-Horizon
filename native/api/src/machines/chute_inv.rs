@@ -14,8 +14,7 @@
 //! - Nothing can ask a container whether it would take a stack without putting it in, so a
 //!   transfer into a container is made for real at the moment it is tried: the "simulate" steps of
 //!   Create's chutes and funnels happen for belts, depots and chutes only.
-//! - The filter is an item set by clicking, not Create's filter slot and value box: see
-//!   [`click`].
+//! - The filter is Create's filter slot (a value box, `value_box.rs`); this file keeps what it saves.
 
 use create_kinetics::rules::chute::{self as rules, Amount, Mode, Plan, Slot};
 use create_kinetics::{Dir, Pos};
@@ -95,54 +94,6 @@ pub fn write_filter(nbt: &mut Compound, filter: &Filter) {
     nbt.insert(FILTER.into(), tag);
     nbt.insert(FILTER_AMOUNT.into(), Tag::Int(filter.amount.count));
     nbt.insert(UP_TO.into(), Tag::Byte(i8::from(filter.amount.up_to)));
-}
-
-/// What a player's click does to the filter of the block entity at `pos`, standing in for
-/// putting an item in Create's filter slot and setting its value box:
-/// - with an item: it becomes the filter (one of it); clicking again with the item that is
-///   already the filter steps the amount through [`rules::AMOUNT_STEPS`];
-/// - with an empty hand, sneaking: the filter is cleared.
-///
-/// Answers the line to show the player, or `None` for a block entity that isn't there.
-pub fn click(host: &mut dyn Host, pos: Pos, hand: Option<&ItemStack>) -> Option<String> {
-    let entity = host.mod_block_entity(pos)?;
-    let before = filter_of(&entity.nbt);
-    let after = match hand {
-        None => Filter { item: None, amount: Amount::default() },
-        Some(stack) => {
-            let mut one = stack.clone();
-            one.count = 1;
-            if before.item.as_ref().is_some_and(|have| util::same_item(have, &one)) {
-                let max = host.max_stack_size(&one.item).unwrap_or(64) as i32;
-                Filter { item: before.item.clone(), amount: rules::next_amount(before.amount, max) }
-            } else {
-                // `FilteringBehaviour.setFilter`: a new item keeps the amount if it fits.
-                let max = host.max_stack_size(&one.item).unwrap_or(64) as i32;
-                let mut amount = before.amount;
-                if !amount.up_to {
-                    amount.count = amount.count.min(max);
-                }
-                Filter { item: Some(one), amount }
-            }
-        }
-    };
-    if after != before {
-        host.change_mod_block_entity(pos, &mut |entity| write_filter(&mut entity.nbt, &after));
-        host.block_entity_sync(pos);
-    }
-    Some(match &after.item {
-        None => "Filter cleared".to_owned(),
-        Some(stack) => {
-            let how = if after.amount.up_to && after.amount.count >= 64 {
-                "any amount".to_owned()
-            } else if after.amount.up_to {
-                format!("up to {}", after.amount.count)
-            } else {
-                format!("exactly {}", after.amount.count)
-            };
-            format!("Filter: {} ({how})", stack.item)
-        }
-    })
 }
 
 /// Tells the acting player the line, on the action bar.

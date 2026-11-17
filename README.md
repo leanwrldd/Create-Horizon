@@ -47,7 +47,7 @@ python tools/progress.py
 | Water Wheel | Generates rotation from nearby flowing water |
 
 Also: Andesite Alloy, recipes, loot tables and a creative tab. Right-click with the Wrench to turn a kinetic block
-to its next axis or step a Creative Motor through 16, 32, 64, 128, 256 RPM and the same in reverse.
+to its next axis. A Creative Motor's speed is its value box (hold the right button on it, see Settings).
 Sneak-right-click to remove a kinetic block and recover it in Survival.
 
 Network rules follow Create's `RotationPropagator`: the fastest generator sets a network's speed, a block asked for
@@ -133,17 +133,17 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Mechanical Saw | Sideways: breaks blocks and fells whole trees (Create's `TreeCutter`). Upright: cuts items dropped on it or carried in by belts with `create:cutting` and stonecutting recipes, and hands results on |
 | Belts II | Compacting with the press over a basin; the press over a belt and a depot; belt hand-off; depot output slots and hoppers; belt casings and dye |
 | Belts III | Sloped, vertical and sideways belts with their models, scroll, shapes and casings; items riding slopes; players, mobs and minecarts carried by a turning belt (pushed, not moved) |
-| Chutes, Funnels | Chute and Smart Chute (items fall, fans push them up, hoppers and belts feed them); Andesite and Brass Funnels taking from and putting into the block behind, and on belts and depots as belt funnels; filters set by sneak-clicking with an item |
-| Andesite and Brass Tunnels | A casing over a belt block (it puts a casing on the belt if there is none) that takes the shape of what is beside the belt: straight, T, cross, or a window between tunnels and funnels (the Wrench closes and opens a window). Flaps swing as items pass. The Andesite Tunnel splits one item off a stack to each side output (belts, depots, funnels). The Brass Tunnel takes whole stacks and gives them out by its mode (split, forced split, round robin, forced round robin, prefer nearest, randomize, synchronize inputs) across the group of tunnels side by side, with a filter on each side; an empty hand takes back what the group holds. Sneak-click the top steps the mode, sneak-click a side with an item sets that side's filter. Unplayed: type-checked and unit-tested only |
+| Chutes, Funnels | Chute and Smart Chute (items fall, fans push them up, hoppers and belts feed them); Andesite and Brass Funnels taking from and putting into the block behind, and on belts and depots as belt funnels; filters in Create's filter slot (a value box) |
+| Andesite and Brass Tunnels | A casing over a belt block (it puts a casing on the belt if there is none) that takes the shape of what is beside the belt: straight, T, cross, or a window between tunnels and funnels (the Wrench closes and opens a window). Flaps swing as items pass. The Andesite Tunnel splits one item off a stack to each side output (belts, depots, funnels). The Brass Tunnel takes whole stacks and gives them out by its mode (split, forced split, round robin, forced round robin, prefer nearest, randomize, synchronize inputs) across the group of tunnels side by side, with a filter on each side; an empty hand takes back what the group holds. The distribution mode is the value box on top, each open side has a filter slot. Unplayed: type-checked and unit-tested only |
 | Steam | The boiler on a Fluid Tank, heated by Blaze Burners and fed water by pipes, with its gauge; the Steam Engine turning a Powered Shaft; the Steam Whistle and its extensions, pitched by size |
 | Hose Pulley | Lowers a hose by RPM / 512 blocks a tick (4 su per RPM) until it meets a solid block, and drains the body of fluid at its end (breadth first through connected sources, a bucket at a time, from the top, the farthest first, up to 128 blocks away) or fills the space there with a bucket of what a pipe pushes in (lowest and nearest cell first). A body of 10,000 or more blocks of water or lava is infinite: never drained, and it swallows fills. Pipes and pumps reach it on its pipe side like a tank (1,500 mB inside). Honey and chocolate are placed and drained as their liquid blocks. The goggles show the infinite-supply hint. Known differences: the searches aren't saved over a reload, no fluid ticks are scheduled after a drain or fill, it doesn't turn to a shaft or pipe beside it when placed, the coil doesn't scroll. Unplayed |
 | Spout, Item Drain | The Spout fills items on a belt or depot below it from its tank (`create:filling` recipes, buckets, bottles, potions), and the blocks Create gives a `BlockSpoutingBehaviour` two below it: dirt, coarse dirt and rooted dirt become mud (250 mB of water), farmland gains a moisture step (100 mB, to 7), a water cauldron a level (250 mB, to 3), an empty cauldron fills with water (250 mB) or lava (1000 mB). The Item Drain empties items brought by belt, funnel, chute, hopper or hand into its tank; a pulling belt funnel on top takes what it lets out. **Potions:** a potion bottle (regular, splash or lingering) is 250 mB of Create's potion fluid, which the drain makes and the Spout puts back into a glass bottle, and the three recipes that take a potion (Night Vision, Harming or Strength with cinder flour make glowstone dust, gunpowder and redstone) work. Create 6.0.10 has no Spout behaviour for a basin or a campfire (and the Tinkers' Construct casting needs that mod). **Differences:** a hopper or dropper is let in at the side or the top (Create's item handler is on the four sides only) and can't take from the drain; the potion and bottle type are in the fluid's id (`create:potion[bottle=regular,potion=minecraft:night_vision]`) because a tank holds no components, so a potion with custom effects, colour or name can't be drained, and the fluid is drawn as water tinted with the potion's colour and named by the potion; no splash particles; a Spout reloaded between starting a block fill and its end fills nothing, as in Create |
-| Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter (sneak-click with an item); a fluid pipe encased with a copper casing |
+| Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter slot (a value box); a fluid pipe encased with a copper casing |
 | Small kinetics | Weighted Ejector (throws items and entities along Create's arc to a target picked with the item), Turntable, Cuckoo Clock and Mysterious Cuckoo Clock, Large Water Wheel, Wooden and Metal Brackets on shafts, cogwheels and pipes |
 | Deployer | Uses its held item on the block or entity two in front (USE), or attacks and mines (PUNCH, toggled with the Wrench); over a belt or depot it applies Create's 167 deploying and 7 item-application recipes, polishes with Sand Paper in its hand, and does the deploying steps of a sequenced assembly; the hand and pole are drawn moving |
 | Sand Paper, Red Sand Paper | Hold the right mouse button for 32 ticks with Rose Quartz in the other hand, or lying on the floor where you look: it becomes Polished Rose Quartz (`create:sandpaper_polishing`) and the paper wears by one of 8. The Deployer does the same on belts and depots. Polished Rose Quartz is what the Electron Tube and the Rose Quartz Lamp need, which opens the brass tier's crafting. Unplayed: type-checked and unit-tested only |
 | Sequenced assembly | An item in the middle of an assembly is its transitional item (Incomplete Precision Mechanism, Unprocessed Obsidian Sheet) with a progress bar and a tooltip that lists the next steps. The Deployer, Mechanical Press, Mechanical Saw and Spout each do the step of their kind on belts and depots (and the press and saw on the ground and the saw blade), in the recipe's order, looping as many times as it says; the last step's item is one of the recipe's results by weight. In: the Precision Mechanism (gold sheet, cogwheel, large cogwheel and iron nugget, five times, which the Mechanical Arm needs) and the Sturdy Sheet (obsidian dust, lava from a Spout, two presses). The Track's is left out (no Track yet). Unplayed |
-| Mechanical Arm | Picks up from inputs and puts down into outputs selected by clicking blocks with the arm in hand (within 5 blocks): belts, depots, ejectors, funnels, chutes, basins, Blaze Burners, deployers, millstones, crushing wheels, the upright saw, campfires, composter, jukebox and respawn anchor; round robin, forced round robin or prefer-first (Wrench steps it); redstone locks it; a record in a jukebox point makes it dance. As in Create, chests and vaults are reached through a funnel. Unplayed |
+| Mechanical Arm | Picks up from inputs and puts down into outputs selected by clicking blocks with the arm in hand (within 5 blocks): belts, depots, ejectors, funnels, chutes, basins, Blaze Burners, deployers, millstones, crushing wheels, the upright saw, campfires, composter, jukebox and respawn anchor; round robin, forced round robin or prefer-first (its value box); redstone locks it; a record in a jukebox point makes it dance. As in Create, chests and vaults are reached through a funnel. Unplayed |
 | Mechanical Crafter | Wrench-join crafters into a grid (click the edge of a face), turn the pointing with the Wrench on the front, items in by hand, funnel, chute, Mechanical Arm, Deployer or hopper (one item to each crafter in reading order), a Crafter Slot Cover to leave a hole. A full grid, or a redstone pulse, passes the items along the arrows to the last crafter, which crafts (crafting-table recipes and Create's `create:mechanical_crafting`) and hands the result to the belt, depot, chest or basin it points at, or throws everything out. The items and the result are drawn moving along. Vanilla shaped and shapeless crafting recipes are baked into the content (Horizon gives a mod none to read), so a data pack's changes to them aren't seen; no connected textures. Unplayed |
 | Storage blocks | Item Vault (merges up to 3 wide and 3 times as long, 20 stacks a block; chutes, funnels and comparators see the whole vault), Creative Crate (endless supply of the item it's clicked with), Smart Observer, Threshold Switch |
 | Engineer's Goggles | `create:goggles`, worn in the head slot (right-click to swap, drawn on the head by its `head` display model) with Create's recipe. With them on, looking at a Create block draws Create's tooltip box right of the crosshair (`GoggleOverlayRenderer`, words from Create's language file): every rotating block's stress impact or capacity at its speed, Speedometer and Stressometer readings, Fluid Tank and boiler status (level, size, water, heat, su given), Spout and Item Drain fluid, Basin contents, Chute fans and item, Deployer mode and item, Analog Lever strength, Steam Whistle pitch, Steam Engine and Powered Shaft capacity, Piston Extension Pole length. Without goggles it still warns "Overstressed" and "Speed Requirement", and hints for an arm with no targets, a bearing to update, a full Deployer, and why a bearing or piston did not assemble. Clicking a Mechanical Arm with the goggles puts them on it. Unplayed: type-checked and unit-tested only |
@@ -224,7 +224,7 @@ Broad gaps across these modules:
   connected top texture on Brass Tunnels in a group and no flap sound. The belt tells clients an item is
   held up at a tunnel (`at_tunnel`) instead of letting them work it out.
 - A mod can't list another block's slots, so chutes and funnels read a container's saved items; the Smart Chute
-  and Brass Funnel have no filter slot (sneak-click with an item instead).
+  and Brass Funnel have a filter slot (a value box, see Settings).
 
 ### Contraptions
 
@@ -406,11 +406,50 @@ type-checked and unit-tested only, none of it has been played.
 
 ### Settings
 
-Create's value boxes (the scroll value, the option boxes) aren't ported yet. Where a block has one, a click
-stands in for it, written the same way for each:
+Create's value boxes (the small boxes on a block that you set a filter, a number or an option on) are ported once
+for every block (`native/api/src/machines/value_box*.rs`; the boxes of each block, their positions, ranges and
+option lists are `native/kinetics/src/rules/value_box*.rs`, ported from `ValueBoxTransform`,
+`ValueSettingsBehaviour`, `ValueSettingsInputHandler`, `ValueSettingsScreen`, `ScrollValueBehaviour`,
+`ScrollOptionBehaviour` and `FilteringBehaviour` of Create 6.0.10). Look at a block with boxes and its boxes show
+(a number, an option's name, a filter's amount); the one under the crosshair is outlined, with its label and a hint
+at the bottom of the screen.
+
+- **Filter slot** (Smart Chute, Brass Funnel and Brass Belt Funnel, each open side of a Brass Tunnel, Mechanical Saw
+  (the recipe filter), Deployer, Smart Observer, Stockpile Switch, Smart Fluid Pipe): right-click it with an item to
+  set that item as the filter, with an empty hand to clear it. A List or Attribute Filter is taken from your hand
+  (survival) and the old one handed back. The filter item is drawn on the slot. Where the block shows an amount (a
+  Smart Chute that pulls from an inventory, a Brass Funnel that extracts or pushes) the slot waits to tell a short
+  click from a hold: tap it for the above, or click and hold the right button for the amount.
+- **Scroll value and option** (Creative Motor's and Rotation Speed Controller's speed, Brass Tunnel's distribution
+  method, Mechanical Arm's selection mode): click and hold the right button on the box (a tap does nothing). The
+  value board opens: move the pointer along the bar (the mouse wheel steps it, Shift for the marked steps) and let go
+  of the button to set it; Escape leaves it as it was. The speed boards have a row for each direction (⟳ and ⟲),
+  the filter's amount board has "Up to" and "Exactly".
+- Sneaking, or being in adventure or spectator mode, leaves a box alone, as in Create. The Wrench on a box does
+  nothing; elsewhere on the block it does what it always did.
+
+Differences from Create (a real in-game check of the boxes is still to do):
+
+- The board is flat rectangles, not Create's brass-framed textures; an option is its name, not its icon; the box's
+  outline is four lines and its number or name is camera-facing text (Horizon draws no outline texture and no text
+  lying on a block). The pointer can't be put on the current value when the board opens (Horizon has no call for
+  it): the current value is marked on the bar and stays selected until the pointer moves.
+- Create's client cancels the right click while a hold is in progress; here the server takes a click on a box that has
+  a board at once and the client says at the release whether it was a short click, or sends the board's setting. A
+  synthetic click from the agent tools doesn't start a hold, so a board needs a real mouse. The hit point is worked out
+  from the player's eye ray and the block's collision boxes.
+- No clipboard copy of settings and no Ctrl bulk edit (`BulkScrollValueBehaviour`).
+- The Brass Funnel has a filter slot only (Create 6.0.10 has no "mode" box on it), the Mechanical Arm one option box
+  (the selection mode; no range), and a Stockpile Switch's thresholds, the Sequenced Gearshift's program and the
+  Display Link's configuration are screens in Create, not value boxes: they keep the stand-ins below.
+- The Creative Motor's speed is saved as `ScrollValue` as Create's; its sign doesn't follow the motor's facing
+  (`convertToDirection` is not ported), so the arrows say which way the value turns, not which way the shaft does. An
+  older `GeneratedSpeed` is still read.
+
+Still stand-ins (no value box ported yet), written the same way for each:
 
 - the **Wrench** on the block steps the number (the chassis' range, 1 to 16 and round) or toggles the option
-  (the windmill's direction, the Creative Motor's speed), and the new value is shown on the action bar;
+  (the windmill's direction), and the new value is shown on the action bar;
 - sneaking with the Wrench picks the block up, as everywhere else;
 - an **item** in hand sets what it names (a filter), and an empty hand clears it;
 - **Filter items** (`create:filter`, `create:attribute_filter`) have no screen. With the filter in the main hand,
@@ -431,9 +470,8 @@ stands in for it, written the same way for each:
   other hand it steps the orientation (along Z/X for the plane, orthogonal/diagonal for the cross). The action bar
   shows the mirror: `Mirror Once (Along Z) at 10 64 10`. A plain right-click on a block puts the mirror beside it;
   one in the air switches it off;
-- the **Brass Funnel**'s filter is also cleared by sneaking with nothing in either hand (as a Smart Chute's is).
 
-Where Create's screen or value box had more to set than one click can:
+Where Create's screen or a value box not yet ported had more to set than one click can:
 
 - **Sequenced Gearshift** (its screen, `SequencedGearshiftScreen`): an empty hand clicked on the block moves a
   cursor over the program's fields (a sneaking one moves it back) and shows the program on the action bar with the
@@ -443,9 +481,6 @@ Where Create's screen or value box had more to set than one click can:
   the cursor: forward on a face pointing the positive way (up, south, east), back on a face pointing the negative way
   (down, north, west). Slots after the first `End` are skipped; change an `End` to something else to add an
   instruction (five at most). Editing stops a running sequence, as saving the screen does.
-- **Rotation Speed Controller** (its value box): the Wrench on a side steps the target speed up on a south or east
-  face and down on a north or west one, through -256, -192, -128, -96, -64, -48, -32, -24, -16, -8, -4, -2, -1, 0, 1,
-  2, 4, 8, 16, 24, 32, 48, 64, 96, 128, 192, 256; on the top or the bottom it turns the block. The default is 16.
 - **Contraption Controls** (its filter slot): an item in `create:contraption_controlled` (a drill, saw, deployer, funnel,
   door, bell, campfire, dispenser, dropper) right-clicked on it sets the filter; a sneaking empty hand clears it; the
   Wrench turns it a quarter turn. A plain click toggles it, as in Create.
@@ -503,9 +538,8 @@ item icons.
   game. The Spout, Item Drain, valves, smart pipes, redstone parts and small kinetic blocks were (build
   `8d883ba`); the double-acting empty-hand clicks and the Rose Quartz Lamp comparator reading found there
   are fixed since but not re-tested. Their
-  filters and settings use click stand-ins until Create's value boxes are ported, and redstone is polled
+  filters and settings use value boxes (see Settings; not tried in game) or click stand-ins where one isn't ported, and redstone is polled
   every tick rather than heard.
-- The Creative Motor's speed is set with the Wrench, not Create's scroll-value box.
 - A network only includes loaded, ticking blocks: the part of a line in an unloaded chunk drops out.
 - A speed change takes one tick to reach each block, and is not eased.
 - The vertical gearbox item and waterlogging are missing.

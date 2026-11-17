@@ -12,15 +12,15 @@
 //!   (turn on at 128, off at 64), then quarter-to-half, half-to-three-quarters and
 //!   three-quarters-to-full of what the block holds (whole stacks of items, whole buckets of
 //!   fluid), then "on with anything, off when empty"; the action bar says where it is and how
-//!   full the block is. A Redstone Torch inverts the signal (the screen's flip button). Sneak
-//!   with an item to set the filter (the same item again, or sneaking with an empty hand, clears
-//!   it; a bucket of a fluid filters that fluid). The Wrench turns the switch, as Create's does,
+//!   full the block is. A Redstone Torch inverts the signal (the screen's flip button). The filter
+//!   is Create's filter slot (a value box, `machines/value_box.rs`; a bucket of a fluid filters that
+//!   fluid). The Wrench turns the switch, as Create's does,
 //!   and sneaking with it picks the switch up. The saved keys are Create's (`OnAboveAmount`,
 //!   `OffBelowAmount`, `Inverted`, `CurrentAmount`, `CurrentMinAmount`, `CurrentMaxAmount`,
 //!   `Powered`, `PoweredAfterDelay`, `Filter`); the thresholds are saved as ints, not floats.
 //! - Not read: a belt or a depot (Create reads them as one-slot inventories), the rope pulley's
 //!   depth (`ThresholdSwitchObservable`), and the storage mods Create has compatibility with.
-//!   There are no filter items and no Display Link.
+//!   There is no Display Link.
 //! - It looks at its block every 10 ticks (`setLazyTickRate(10)`) as Create does, and straight
 //!   away when it is placed; the signal changes two ticks after the state does
 //!   (`scheduleBlockTick`), counted in the block entity's tick, not by the level's scheduler.
@@ -391,8 +391,7 @@ impl Hooks for Switches {
     }
 
     /// `ThresholdSwitchBlock.useItemOn`, where Create opens its screen for any item but the
-    /// Wrench: here it steps the thresholds, the Redstone Torch inverts the signal and a
-    /// sneaking click sets or clears the filter.
+    /// Wrench: here it steps the thresholds and the Redstone Torch inverts the signal.
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
         let pos = event.pos;
         if host.block(pos) != SWITCH {
@@ -407,16 +406,6 @@ impl Hooks for Switches {
         let held = host.player_equipment(player.uuid, EquipmentSlot::MainHand);
         if held.as_ref().is_some_and(|stack| &*stack.item == util::WRENCH) {
             return Flow::Continue;
-        }
-        if player.sneaking {
-            // The off hand's item counts when the main hand is empty: it is what would be placed.
-            let hand = held.or_else(|| host.player_equipment(player.uuid, EquipmentSlot::OffHand));
-            if util::first_click(&*host, player.uuid, pos)
-                && let Some(line) = target::click_filter(host, pos, hand.as_ref())
-            {
-                inv::tell(host, &line);
-            }
-            return Flow::Cancel;
         }
         // A click reaches `right_click_block` for each hand, and a step must happen once.
         if !util::first_click(&*host, player.uuid, pos) {

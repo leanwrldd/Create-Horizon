@@ -412,18 +412,6 @@ pub fn entity_at(host: &dyn Host, pos: Pos) -> Option<ModBlockEntity> {
     host.mod_block_entity(pos).filter(|e| is_tunnel(&e.id))
 }
 
-/// `Direction` ids to names, for the action bar.
-pub fn side_name(side: Dir) -> &'static str {
-    match side {
-        Dir::North => "north",
-        Dir::South => "south",
-        Dir::West => "west",
-        Dir::East => "east",
-        Dir::Up => "top",
-        Dir::Down => "bottom",
-    }
-}
-
 struct Shared;
 
 impl Hooks for Shared {}

@@ -4,10 +4,8 @@
 //! placement and the filter test are `create_kinetics::rules::smart_fluid_pipe`.
 //!
 //! Known differences from Create: see `rules/smart_fluid_pipe.rs`. Also:
-//! - The filter is set as the Brass Funnel's and the Smart Chute's is (`chute_inv`), not in Create's
-//!   filter slot and value box: sneak-right-click with an item sets the filter to it (the same item
-//!   again changes nothing), an empty hand clears it (`FilteringBehaviour.onShortInteract`). The item shows no fluid slot on the pipe. Its
-//!   fluid is what `GenericItemEmptying` finds in it (buckets, the honey bottle, Builder's Tea,
+//! - The filter is Create's filter slot (a value box, `machines/value_box.rs`; the item is drawn on the pipe,
+//!   not a fluid). Its fluid is what `GenericItemEmptying` finds in it (buckets, the honey bottle, Builder's Tea,
 //!   a bottle of water, an emptying recipe); an item that holds none lets nothing through.
 //! - A pump re-reads the filter every second (`pump.rs`), where Create's pipe tells the network as
 //!   soon as the filter changes (`onFilterChanged`: `FluidPropagator.propagateChangedPipe`).
@@ -17,12 +15,11 @@
 //!   (`IWrenchable.getRotatedBlockState`: it has a horizontal `facing`).
 //! - The Encased Fluid Pipe is in `smart_fluid_pipe_encased.rs`.
 
-use create_kinetics::rules::chute::Amount;
 use create_kinetics::rules::smart_fluid_pipe::{self as rules, Face};
 use create_kinetics::{Axis, Dir};
 use horizon_client::mod_api::{
-    BlockEntityEvent, BlockStateId, Compound, EquipmentSlot, Flow, Hooks, Host, ItemStack, LevelHost,
-    PlaceBlockEvent, RightClickBlockEvent, StateForPlacementEvent, Tag, UseItemOnEvent,
+    BlockEntityEvent, BlockStateId, Compound, Flow, Hooks, Host, ItemStack, LevelHost,
+    PlaceBlockEvent, StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
 use super::chute_inv::{self as inv, Filter};
@@ -47,20 +44,13 @@ fn clockwise(facing: Dir) -> Dir {
     }
 }
 
-/// What a filter click does to the filter of the pipe at `pos` (`FilteringBehaviour.onShortInteract`):
-/// `hand` sets it, an empty hand clears it; the same item again changes nothing. Answers the line
-/// to tell the player.
-fn click(host: &mut dyn Host, pos: [i32; 3], hand: Option<&ItemStack>) -> Option<String> {
-    let entity = host.mod_block_entity(pos).filter(|e| e.id == SMART_FLUID_PIPE)?;
+/// Sets the filter of the pipe at `pos` (`FilteringBehaviour.setFilter`, from the filter slot's value box,
+/// `value_box.rs`): `after` is the item, `None` clears it. Also saves the fluid it stands for.
+pub(super) fn set_filter(host: &mut dyn Host, pos: [i32; 3], after: Option<ItemStack>) {
+    let Some(entity) = host.mod_block_entity(pos).filter(|e| e.id == SMART_FLUID_PIPE) else {
+        return;
+    };
     let before = inv::filter_of(&entity.nbt).item;
-    let after = rules::short_interact(
-        hand.map(|stack| {
-            let mut one = stack.clone();
-            one.count = 1;
-            one
-        })
-        .as_ref(),
-    );
     // `GenericItemEmptying` of the filter: the fluid it stands for, none for an item that holds none.
     // A Filter item stands for the fluids its items hold (`filter.rs`): the pipe asks it per fluid.
     let fluid: Option<Option<String>> = after.as_ref().map(|stack| {
@@ -70,17 +60,10 @@ fn click(host: &mut dyn Host, pos: [i32; 3], hand: Option<&ItemStack>) -> Option
             spout_fill::empty_item(&*host, stack).map(|emptied| emptied.fluid)
         }
     });
-    let line = match (&after, &fluid) {
-        (None, _) => "Fluid filter cleared".to_owned(),
-        (Some(stack), _) if super::filter::is_filter_item(&stack.item) => {
-            format!("Fluid filter: {}", stack.item)
-        }
-        (Some(stack), Some(Some(fluid))) => format!("Fluid filter: {} ({fluid})", stack.item),
-        (Some(stack), _) => format!("Fluid filter: {} (holds no fluid: nothing passes)", stack.item),
-    };
     if after != before {
         host.change_mod_block_entity(pos, &mut |entity| {
-            inv::write_filter(&mut entity.nbt, &Filter { item: after.clone(), amount: Amount::default() });
+            let amount = inv::filter_of(&entity.nbt).amount;
+            inv::write_filter(&mut entity.nbt, &Filter { item: after.clone(), amount });
             match &fluid {
                 Some(fluid) => {
                     let tag = Tag::String(fluid.as_deref().unwrap_or("").into());
@@ -93,7 +76,6 @@ fn click(host: &mut dyn Host, pos: [i32; 3], hand: Option<&ItemStack>) -> Option
         });
         host.block_entity_sync(pos);
     }
-    Some(line)
 }
 
 impl Hooks for SmartPipes {
@@ -152,7 +134,7 @@ impl Hooks for SmartPipes {
     }
 
     /// The Wrench (`IWrenchable.getRotatedBlockState`: a click on the top or bottom turns the
-    /// pipe's `facing` clockwise) and, sneaking with any other item, the filter.
+    /// pipe's `facing` clockwise).
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
         let pos = event.pos;
         if host.block(pos) != SMART_FLUID_PIPE {
@@ -168,37 +150,6 @@ impl Hooks for SmartPipes {
                 }
             });
         }
-        if !host.acting_player().is_some_and(|p| p.sneaking)
-            || !rules::can_short_interact(&event.stack.item)
-        {
-            return Flow::Continue;
-        }
-        if let Some(line) = click(host, pos, Some(event.stack)) {
-            inv::tell(host, &line);
-        }
-        Flow::Cancel
-    }
-
-    /// An empty hand sneaking clears the filter.
-    fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
-        let pos = event.pos;
-        if host.block(pos) != SMART_FLUID_PIPE {
-            return Flow::Continue;
-        }
-        let Some(player) = host.acting_player() else {
-            return Flow::Continue;
-        };
-        if !player.sneaking || player.game_mode == util::SPECTATOR {
-            return Flow::Continue;
-        }
-        if host.player_equipment(player.uuid, EquipmentSlot::MainHand).is_some() {
-            return Flow::Continue;
-        }
-        if util::first_click(host, player.uuid, pos)
-            && let Some(line) = click(host, pos, None)
-        {
-            inv::tell(host, &line);
-        }
-        Flow::Cancel
+        Flow::Continue
     }
 }

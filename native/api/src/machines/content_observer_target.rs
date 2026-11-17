@@ -14,10 +14,8 @@
 //!   stack.
 //! - A fluid is read through `Host::fluid_tanks` (Create's tanks, the basin, a cauldron...), from
 //!   any side.
-//! - The filter is an item set by sneak-clicking, not Create's filter slot: an item sets it
-//!   (`FilteringBehaviour.setFilter`, one of it), the same item again clears it, and an empty
-//!   hand clears it. A bucket or bottle of a fluid is a filter for that fluid
-//!   (`FilterItemStack.test` with `GenericItemEmptying`); there are no filter items.
+//! - The filter is Create's filter slot (a value box, `machines/value_box.rs`). A bucket or bottle of a fluid is
+//!   a filter for that fluid (`FilterItemStack.test` with `GenericItemEmptying`).
 //! - When placed, the block turns to the first thing it can read in the way the player looks
 //!   (`getStateForPlacement` reads the block entities around): that is done just after the
 //!   placement, so the block first appears as it would with nothing to read.
@@ -213,34 +211,6 @@ pub fn passes_fluid(filter: &Filter, fluid: &str) -> bool {
         }
         Some(item) => fluid_rules::emptied(&item.item).is_some_and(|c| c.fluid == fluid),
     }
-}
-
-/// What a click on the filter does (`FilteringBehaviour.onShortInteract`, the stand-in): an item
-/// is set as the filter, the same item again or an empty hand clears it. The line to tell the
-/// player, `None` for a block entity that isn't there.
-pub fn click_filter(host: &mut dyn Host, pos: Pos, hand: Option<&ItemStack>) -> Option<String> {
-    let entity = host.mod_block_entity(pos)?;
-    let before = inv::filter_of(&entity.nbt);
-    let after = match hand {
-        Some(stack) => {
-            let mut one = stack.clone();
-            one.count = 1;
-            if before.item.as_ref().is_some_and(|have| util::same_item(have, &one)) {
-                None
-            } else {
-                Some(one)
-            }
-        }
-        None => None,
-    };
-    let filter = Filter { item: after.clone(), amount: Amount::default() };
-    if filter != before {
-        host.change_mod_block_entity(pos, &mut |e| inv::write_filter(&mut e.nbt, &filter));
-    }
-    Some(match after {
-        Some(stack) => format!("Filter: {}", stack.item),
-        None => "Filter cleared".to_owned(),
-    })
 }
 
 // --- reading what the block holds --------------------------------------------------------------------

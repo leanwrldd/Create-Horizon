@@ -48,7 +48,7 @@ use horizon_client::mod_api::{
     BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
     BlockEntityTicksEvent, BlockEntityUpdateTagEvent, BlockStateId, Compound, DestroyBlockEvent,
     EquipmentSlot, Flow, Hooks, Host, ItemStack, LevelHost, ModBlockEntity, RightClickBlockEvent,
-    StandaloneModelsEvent, StateForPlacementEvent, Tag, Text, UseItemOnEvent,
+    StandaloneModelsEvent, StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
 use super::arm_world::{self, ArmWorld};
@@ -356,12 +356,6 @@ fn update_tag(entity: &ModBlockEntity) -> Compound {
     tag
 }
 
-fn say(host: &mut dyn Host, line: String) {
-    if let Some(player) = host.acting_player() {
-        host.action_bar(player.uuid, Text::literal(line));
-    }
-}
-
 impl Hooks for Arms {
     fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
         event.models.push(MODEL_COG.to_owned());
@@ -483,23 +477,14 @@ impl Hooks for Arms {
         Flow::Cancel
     }
 
-    /// The Wrench steps the distribution method (Create's value box); sneaking picks the arm up.
+    /// The Wrench only picks the arm up when sneaking (`IWrenchable`; the distribution method is the value box,
+    /// `value_box.rs`).
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
         let pos = event.pos;
         if &*event.stack.item != util::WRENCH || host.block(pos) != ID {
             return Flow::Continue;
         }
-        util::wrench(host, pos, |host| {
-            let Some(entity) = host.mod_block_entity(pos) else {
-                return;
-            };
-            let next = SelectionMode::from_ordinal(int(&entity.nbt, SCROLL)).next();
-            host.change_mod_block_entity(pos, &mut |e| {
-                e.nbt.insert(SCROLL.into(), Tag::Int(next.ordinal()));
-            });
-            host.block_entity_sync(pos);
-            say(host, format!("Distribution Method: {}", next.title()));
-        })
+        util::wrench(host, pos, |_| {})
     }
 
     /// `ArmBlockEntity.destroy`: what it holds drops.

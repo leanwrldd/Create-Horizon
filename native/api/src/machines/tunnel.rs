@@ -12,11 +12,9 @@
 //!   tunnel is placed), not on each neighbour update. A tunnel closed with the Wrench stays
 //!   closed until its neighbours change what it could be (Create reopens it whenever a block
 //!   beside the belt changes).
-//! - Create's value boxes are stand-ins. Brass Tunnel: sneak-click the top (hand empty or full)
-//!   to step the distribution mode of the whole group (Create scrolls the mode on the top);
-//!   sneak-click a side with an item to set that side's filter, with the same item again or an
-//!   empty hand to clear it. Filters are one item each (no amount, no filter items). The Wrench
-//!   closes and opens a window as in Create; sneaking with it picks the tunnel up.
+//! - The distribution mode and the filter of each open side are Create's value boxes (`machines/value_box.rs`);
+//!   a filter is one item (no amount). The Wrench closes and opens a window as in Create; sneaking with it picks
+//!   the tunnel up.
 //! - An empty-hand click on a Brass Tunnel takes the stacks of its group, as Create's does. There
 //!   is no goggle tooltip (the group's held stacks aren't sent to clients), no item handler (a hopper or funnel can't insert into a tunnel, and a
 //!   Smart Observer or comparator doesn't see what it holds), no Display Link support, and no
@@ -30,12 +28,12 @@
 
 use create_kinetics::rules::tunnel as rules;
 use create_kinetics::rules::tunnel_brass::Mode;
-use create_kinetics::{Axis, Dir, Pos};
+use create_kinetics::{Axis, Pos};
 use horizon_client::mod_api::{
     BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockEntityUpdateTagEvent, BlockStateId, Compound, DestroyBlockEvent, EquipmentSlot, Flow, Hooks,
-    Host, ItemStack, LevelHost, ModBlockEntity, PlaceBlockEvent, RightClickBlockEvent, StandaloneModelsEvent,
-    StateForPlacementEvent, Tag, Text, UseItemOnEvent,
+    Host, LevelHost, ModBlockEntity, PlaceBlockEvent, RightClickBlockEvent, StandaloneModelsEvent,
+    StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
 use super::tunnel_cross as cross;
@@ -60,12 +58,6 @@ pub fn hooks() -> Box<dyn Hooks> {
 
 fn salt(pos: Pos) -> i64 {
     (i64::from(pos[0]) * 31 + i64::from(pos[1]) * 17 + i64::from(pos[2]) * 7).rem_euclid(1000)
-}
-
-fn tell(host: &mut dyn Host, line: String) {
-    if let Some(player) = host.acting_player() {
-        host.action_bar(player.uuid, Text::literal(line));
-    }
 }
 
 // --- keeping the shape and the sides ----------------------------------------------------------
@@ -175,48 +167,6 @@ fn draw(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
     if !swinging {
         draw.keep();
     }
-}
-
-// --- clicking -----------------------------------------------------------------------------------
-
-/// The distribution mode stepped for the whole group: the stand-in for scrolling the mode.
-fn step_mode(host: &mut dyn Host, pos: Pos) {
-    let Some(entity) = world::entity_at(&*host, pos) else {
-        return;
-    };
-    let mode = world::mode_of(&entity.nbt).next();
-    distribute::set_mode_group(host, pos, mode);
-    host.block_entity_sync(pos);
-    tell(host, format!("Distribution Method: {}", mode.label()));
-}
-
-/// A filter set or cleared on a side of a Brass Tunnel (`SidedFilteringBehaviour`'s slot). A
-/// side the tunnel doesn't open on has none.
-fn click_filter(host: &mut dyn Host, pos: Pos, side: Dir, hand: Option<&ItemStack>) -> bool {
-    let Some(entity) = world::entity_at(&*host, pos) else {
-        return false;
-    };
-    if !world::dirs_of(&entity.nbt, world::SIDES).contains(&side) {
-        return false;
-    }
-    let current = world::filter_item(&entity.nbt, side);
-    // The same item again takes the filter off.
-    let new = hand
-        .filter(|hand| !current.as_ref().is_some_and(|have| util::same_item(have, &one(hand))))
-        .map(one);
-    host.change_mod_block_entity(pos, &mut |e| world::set_filter(&mut e.nbt, side, new.as_ref()));
-    let line = match &new {
-        Some(item) => format!("Filter on the {} side: {}", world::side_name(side), item.item),
-        None => format!("Filter on the {} side cleared", world::side_name(side)),
-    };
-    tell(host, line);
-    true
-}
-
-fn one(stack: &ItemStack) -> ItemStack {
-    let mut one = stack.clone();
-    one.count = 1;
-    one
 }
 
 // --- the hooks ----------------------------------------------------------------------------------
@@ -332,9 +282,7 @@ impl Hooks for Tunnels {
         Flow::Continue
     }
 
-    /// The Wrench (`BeltTunnelBlock.onWrenched`, `IWrenchable.onSneakWrenched`), and a Brass
-    /// Tunnel's settings held in a hand: sneak-click the top to step the mode, a side to set its
-    /// filter.
+    /// The Wrench (`BeltTunnelBlock.onWrenched`, `IWrenchable.onSneakWrenched`).
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
         let pos = event.pos;
         let Some(view) = world::view(&*host, pos) else {
@@ -347,28 +295,11 @@ impl Hooks for Tunnels {
                 }
             });
         }
-        let Some(player) = host.acting_player() else {
-            return Flow::Continue;
-        };
-        if !view.brass || !player.sneaking || player.game_mode == util::SPECTATOR {
-            return Flow::Continue;
-        }
-        if !util::first_click(&*host, player.uuid, pos) {
-            return Flow::Cancel;
-        }
-        match Dir::from_normal(event.face) {
-            Some(side) if side.axis() != Axis::Y => {
-                if !click_filter(host, pos, side, Some(event.stack)) {
-                    step_mode(host, pos);
-                }
-            }
-            _ => step_mode(host, pos),
-        }
-        Flow::Cancel
+        Flow::Continue
     }
 
-    /// With an empty hand: sneaking clears a side's filter or steps the mode, otherwise the
-    /// stacks the group is distributing come back to the player (`BrassTunnelBlock.useWithoutItem`).
+    /// With an empty hand the stacks the group is distributing come back to the player
+    /// (`BrassTunnelBlock.useWithoutItem`).
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
         let pos = event.pos;
         if host.block(pos) != BRASS {
@@ -386,20 +317,6 @@ impl Hooks for Tunnels {
         }
         if player.sneaking && host.player_equipment(uuid, EquipmentSlot::OffHand).is_some() {
             return Flow::Continue;
-        }
-        if player.sneaking {
-            if !util::first_click(&*host, uuid, pos) {
-                return Flow::Cancel;
-            }
-            match Dir::from_normal(event.face) {
-                Some(side)
-                    if side.axis() != Axis::Y
-                        && world::entity_at(&*host, pos)
-                            .is_some_and(|e| world::filter_item(&e.nbt, side).is_some())
-                        && click_filter(host, pos, side, None) => {}
-                _ => step_mode(host, pos),
-            }
-            return Flow::Cancel;
         }
         if distribute::grab_group(host, pos, true).is_empty() {
             return Flow::Continue;

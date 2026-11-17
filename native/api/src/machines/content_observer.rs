@@ -8,10 +8,8 @@
 //! `content_observer_target.rs`.
 //!
 //! Known differences from Create:
-//! - There is no filter slot with its value box. As a stand-in, sneak-right-click the observer
-//!   with an item to set it as the filter, with the same item again or with an empty hand to
-//!   clear it. A bucket or bottle of a fluid is a filter for that fluid. There are no filter
-//!   items. The block entity keeps Create's keys (`Filter`, `FilterAmount`, `UpTo`, `TurnOff`).
+//! - The filter slot is Create's value box (`machines/value_box.rs`). A bucket or bottle of a fluid is a filter
+//!   for that fluid. The block entity keeps Create's keys (`Filter`, `FilterAmount`, `UpTo`, `TurnOff`).
 //! - An inventory is looked at every other tick (Create waits for its contents to change,
 //!   `VersionedInventoryTrackerBehaviour`), a belt or depot every tick. A belt that isn't turning
 //!   is not read (the belt module's `edit_items` skips it).
@@ -32,8 +30,8 @@ use create_kinetics::rules::content_observer::{self as rules, BLOCK_DELAY, DEFAU
 use create_kinetics::{Dir, Pos};
 use horizon_client::mod_api::{
     BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent, BlockSignalEvent, BlockStateId,
-    Compound, EquipmentSlot, Flow, Hooks, Host, IsSignalSourceEvent, LevelHost, PlaceBlockEvent,
-    RightClickBlockEvent, StateForPlacementEvent, Tag, UseItemOnEvent,
+    Compound, Flow, Hooks, Host, IsSignalSourceEvent, LevelHost, PlaceBlockEvent,
+    StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
 use super::chute_inv::Filter;
@@ -187,8 +185,7 @@ impl Hooks for Observers {
         }
     }
 
-    /// The Wrench turns the observer (`DirectedDirectionalBlock.getRotatedBlockState`); sneaking
-    /// with an item sets the filter, as the stand-in for the filter slot.
+    /// The Wrench turns the observer (`DirectedDirectionalBlock.getRotatedBlockState`).
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
         let pos = event.pos;
         if host.block(pos) != OBSERVER {
@@ -202,37 +199,7 @@ impl Hooks for Observers {
                 }
             });
         }
-        if host.acting_player().is_some_and(|p| p.sneaking && p.game_mode != util::SPECTATOR) {
-            if let Some(line) = target::click_filter(host, pos, Some(event.stack)) {
-                super::chute_inv::tell(host, &line);
-            }
-            return Flow::Cancel;
-        }
         Flow::Continue
-    }
-
-    /// Sneaking with an empty hand clears the filter.
-    fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
-        let pos = event.pos;
-        if host.block(pos) != OBSERVER {
-            return Flow::Continue;
-        }
-        let Some(player) = host.acting_player() else {
-            return Flow::Continue;
-        };
-        if !player.sneaking
-            || player.game_mode == util::SPECTATOR
-            || host.player_equipment(player.uuid, EquipmentSlot::MainHand).is_some()
-            || host.player_equipment(player.uuid, EquipmentSlot::OffHand).is_some()
-        {
-            return Flow::Continue;
-        }
-        if util::first_click(host, player.uuid, pos)
-            && let Some(line) = target::click_filter(host, pos, None)
-        {
-            super::chute_inv::tell(host, &line);
-        }
-        Flow::Cancel
     }
 
     /// `SmartObserverBlock.getSignal`: 15 on every side but the one it looks at, while lit; never

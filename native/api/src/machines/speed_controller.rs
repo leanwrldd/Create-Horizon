@@ -7,11 +7,9 @@
 //! (`create_kinetics::solve` makes the cogwheel a generator); its header lists the known differences.
 //! The ones that live here:
 //!
-//! - **The target speed, Create's scroll value box, is the Wrench's.** On a side of the block it steps
-//!   the target forward on a face pointing the positive way (south, east) and back on a negative
-//!   one (north, west) through `speed_controller::TARGETS` (0, then 1, 2, 4, 8, 16, 24, ... 256, and the
-//!   same negative), and shows it on the action bar. On the top or the bottom it turns the block about
-//!   the vertical axis as Create's Wrench does. Sneaking picks it up.
+//! - **The target speed is Create's scroll value box** (`machines/value_box.rs`): hold the right button on a side
+//!   of the block, slide the board to the speed and let go. The Wrench turns the block about the vertical axis.
+//!   Sneaking with it picks the block up.
 //! - The bracket under the cogwheel is polled by the server each tick and sent (Create's client checks on
 //!   its lazy tick and when the block above changes).
 //! - The block under a large cogwheel is turned across it when placed, in `place_block` rather than in
@@ -20,11 +18,11 @@
 //!   the ComputerCraft peripheral aren't here.
 
 use create_kinetics::rules::speed_controller::{self as rules, DEFAULT_SPEED};
-use create_kinetics::{Axis, Dir, Kind, Node, Pos, looking};
+use create_kinetics::{Axis, Kind, Node, Pos, looking};
 use horizon_client::mod_api::{
     BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
     BlockEntityTicksEvent, BlockEntityUpdateTagEvent, BlockStateId, Compound, Flow, Hooks, Host,
-    LevelHost, PlaceBlockEvent, StandaloneModelsEvent, StateForPlacementEvent, Tag, Text,
+    LevelHost, PlaceBlockEvent, StandaloneModelsEvent, StateForPlacementEvent, Tag,
     UseItemOnEvent,
 };
 
@@ -200,34 +198,22 @@ impl Hooks for Controller {
         }
     }
 
-    /// The Wrench: the target speed on the sides, a quarter turn on the top and the bottom.
+    /// The Wrench turns the block about the vertical axis (`HorizontalAxisKineticBlock`); the target speed is
+    /// the value box (`value_box.rs`).
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
         let pos = event.pos;
         if &*event.stack.item != util::WRENCH || host.block(pos) != ID {
             return Flow::Continue;
         }
-        let Some(face) = Dir::from_normal(event.face) else { return Flow::Continue };
         let Some(player) = host.acting_player() else { return Flow::Continue };
         if !util::first_click(host, player.uuid, pos) {
             return Flow::Cancel;
         }
         util::wrench(host, pos, |host| {
-            if face.axis() == Axis::Y {
-                if let Some(axis) = axis_at(host, pos) {
-                    let next = if axis == Axis::X { Axis::Z } else { Axis::X };
-                    host.set_block_property(pos, "axis", next.name());
-                }
-                return;
+            if let Some(axis) = axis_at(host, pos) {
+                let next = if axis == Axis::X { Axis::Z } else { Axis::X };
+                host.set_block_property(pos, "axis", next.name());
             }
-            let mut target = DEFAULT_SPEED;
-            host.change_mod_block_entity(pos, &mut |entity| {
-                target = rules::step_target(target_of(&entity.nbt), face.sign() > 0);
-                if util::int(&entity.nbt, SCROLL_VALUE) != target || !util::has(&entity.nbt, SCROLL_VALUE) {
-                    entity.nbt.insert(SCROLL_VALUE.into(), Tag::Int(target));
-                }
-            });
-            host.block_entity_sync(pos);
-            host.action_bar(player.uuid, Text::literal(format!("Targeted Speed in RPM: {target}")));
         })
     }
 }

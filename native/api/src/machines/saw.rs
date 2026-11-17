@@ -10,8 +10,9 @@
 //!
 //! Known differences from Create:
 //! - Stationary saws only: the saw on a contraption (`SawMovementBehaviour`) is a later slice.
-//! - The recipe filter slot (`SawFilterSlot`) is out of scope: a stack with several recipes
-//!   cycles through them, as an unfiltered saw does.
+//! - The recipe filter slot (`SawFilterSlot`, a value box, `machines/value_box.rs`) keeps the recipes whose first
+//!   result the filter accepts (`RecipeConditions.outputMatchesFilter`); a stack with several recipes left
+//!   cycles through them.
 //! - Stonecutting recipes are baked into `create:cutting` recipes of 50 ticks
 //!   (`_saw_recipes_gen.py`): `Host` cannot list the game's stonecutting recipes. A data pack that
 //!   changes stonecutting is not seen. The wood recipes Create writes at load time
@@ -292,10 +293,12 @@ struct Candidate {
 /// The recipes that cut `input`, in the order the game holds them (`getRecipes`): `create:cutting`
 /// recipes whose first ingredient takes it, left out when not for automation and when an item
 /// they make is not in the game.
-fn recipes_for(host: &dyn Host, input: &ItemStack) -> Vec<Candidate> {
+fn recipes_for(host: &dyn Host, input: &ItemStack, filter: &super::chute_inv::Filter) -> Vec<Candidate> {
     // `SequencedAssemblyRecipe.getRecipe(level, item, CUTTING, CuttingRecipe.class)`: when the
     // item is in an assembly whose next step is a cut, that is the only recipe.
-    if let Some(step) = sequenced::find(host, input, Machine::Cutting, &|_| true) {
+    if let Some(step) = sequenced::find(host, input, Machine::Cutting, &|_| true)
+        && step.recipe.results.first().is_none_or(|out| filter.test(host, &out.stack))
+    {
         return vec![Candidate { processing: step.recipe.clone(), step: Some(step) }];
     }
     let mut found = Vec::new();
@@ -327,14 +330,19 @@ fn recipes_for(host: &dyn Host, input: &ItemStack) -> Vec<Candidate> {
         if parsed.results.is_empty() || parsed.results.len() != wanted {
             continue;
         }
+        // `RecipeConditions.outputMatchesFilter`: the recipe filter slot (a value box) picks the recipe by what
+        // it makes.
+        if !parsed.results.first().is_none_or(|out| filter.test(host, &out.stack)) {
+            continue;
+        }
         found.push(Candidate { processing: parsed, step: None });
     }
     found
 }
 
 /// `SawBlockEntity.start`: a cut begins for the item in slot 0.
-fn start(host: &dyn Host, input: &ItemStack, cut: &mut Cut, index: &mut usize) {
-    let found = recipes_for(host, input);
+fn start(host: &dyn Host, input: &ItemStack, filter: &super::chute_inv::Filter, cut: &mut Cut, index: &mut usize) {
+    let found = recipes_for(host, input, filter);
     if found.is_empty() {
         cut.begin(rules::NO_RECIPE_TIME);
         return;
@@ -346,11 +354,11 @@ fn start(host: &dyn Host, input: &ItemStack, cut: &mut Cut, index: &mut usize) {
 
 /// `SawBlockEntity.applyRecipe`: the input is replaced by the recipe's results, one roll for each
 /// item of the stack.
-fn apply(host: &mut dyn Host, slots: &mut [Option<ItemStack>], index: &mut usize) {
+fn apply(host: &mut dyn Host, slots: &mut [Option<ItemStack>], filter: &super::chute_inv::Filter, index: &mut usize) {
     let Some(input) = slots[0].clone() else {
         return;
     };
-    let found = recipes_for(host, &input);
+    let found = recipes_for(host, &input, filter);
     if found.is_empty() {
         return;
     }
@@ -487,6 +495,7 @@ fn process(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, rpm: f32,
     }
     let before = read_cut(entity);
     let mut cut = before;
+    let filter = super::chute_inv::filter_of(&entity.nbt);
     let mut index = util::int(&entity.nbt, RECIPE_INDEX).max(0) as usize;
     let index_before = index;
     let occupied = slots.iter().any(Option::is_some);
@@ -498,12 +507,12 @@ fn process(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, rpm: f32,
         Step::Idle | Step::Counting => {}
         Step::Start => {
             if let Some(input) = &slots[0] {
-                start(host, input, &mut cut, &mut index);
+                start(host, input, &filter, &mut cut, &mut index);
             }
             sync = true;
         }
         Step::Apply => {
-            apply(host, &mut slots, &mut index);
+            apply(host, &mut slots, &filter, &mut index);
             sync = true;
         }
         Step::Leave => {

@@ -34,7 +34,7 @@ use horizon_client::mod_api::{
     BlockEntityTicksEvent, BlockEntityUpdateTagEvent, BlockStateId, Compound, Direction,
     EquipmentSlot, Flow, Hooks, Host, LevelHost, ModContainer, PlaceBlockEvent,
     RightClickBlockEvent, ServerTickEvent, ServerTickPhase, StandaloneModelsEvent,
-    StateForPlacementEvent, Tag, Text, UseItemOnEvent,
+    StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
 pub fn hooks() -> Box<dyn Hooks> {
@@ -57,15 +57,14 @@ pub(crate) fn networks() -> MutexGuard<'static, Networks> {
 /// The block entity's speed in RPM, saved and sent to clients.
 const SPEED: &str = "Speed";
 /// The speed a Creative Motor makes, saved with it.
+/// `CreativeMotorBlockEntity` saved its speed as the scroll value (`ScrollValueBehaviour.write`); the older
+/// `GeneratedSpeed` of this port is still read.
+const SCROLL_VALUE: &str = "ScrollValue";
 const GENERATED: &str = "GeneratedSpeed";
 /// Create's default for a Creative Motor.
 const MOTOR_DEFAULT: f32 = 16.0;
 /// Stress units a Creative Motor gives per RPM (Create's `creativeMotor` capacity).
 const MOTOR_CAPACITY: f32 = 16384.0;
-/// What a wrench steps a Creative Motor through, standing in for Create's scroll value.
-const MOTOR_SPEEDS: [f32; 10] = [
-    16.0, 32.0, 64.0, 128.0, 256.0, -16.0, -32.0, -64.0, -128.0, -256.0,
-];
 const WRENCH: &str = "create:wrench";
 /// Ticks a Hand Crank keeps turning, counting down from each click.
 const IN_USE: &str = "InUse";
@@ -230,7 +229,9 @@ impl Hooks for Core {
         let mut nbt = Compound::new();
         set_float(&mut nbt, SPEED, 0.0);
         match block {
-            Block::Motor => set_float(&mut nbt, GENERATED, MOTOR_DEFAULT),
+            Block::Motor => {
+                nbt.insert(SCROLL_VALUE.into(), Tag::Int(MOTOR_DEFAULT as i32));
+            }
             Block::HandCrank => {
                 nbt.insert(IN_USE.into(), Tag::Int(0));
                 nbt.insert(BACKWARDS.into(), Tag::Byte(0));
@@ -323,7 +324,11 @@ impl Hooks for Core {
         };
         match kind {
             Kind::Motor(_) => {
-                node.generated = float(&event.entity.nbt, GENERATED).unwrap_or(MOTOR_DEFAULT);
+                node.generated = if util::has(&event.entity.nbt, SCROLL_VALUE) {
+                    int(&event.entity.nbt, SCROLL_VALUE) as f32
+                } else {
+                    float(&event.entity.nbt, GENERATED).unwrap_or(MOTOR_DEFAULT)
+                };
                 node.capacity = MOTOR_CAPACITY;
             }
             Kind::Crank(facing) => {
@@ -476,6 +481,10 @@ impl Hooks for Core {
 
     /// Turning a Hand Crank, with anything in hand or nothing, as Create's `HandCrankBlock.use`.
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
+        // A value box takes the click before the block does (`ValueSettingsInputHandler`).
+        if let Flow::Cancel = machines::value_box::right_click(host, event) {
+            return Flow::Cancel;
+        }
         if let Flow::Cancel = depot::right_click(host, event.pos, event.face) {
             return Flow::Cancel;
         }
@@ -557,19 +566,7 @@ impl Hooks for Core {
             return Flow::Continue;
         };
         if block == Block::Motor {
-            let mut speed = MOTOR_DEFAULT;
-            host.change_mod_block_entity(pos, &mut |entity| {
-                let now = float(&entity.nbt, GENERATED).unwrap_or(MOTOR_DEFAULT);
-                let index = MOTOR_SPEEDS.iter().position(|s| *s == now);
-                speed = MOTOR_SPEEDS[index.map_or(0, |i| (i + 1) % MOTOR_SPEEDS.len())];
-                set_float(&mut entity.nbt, GENERATED, speed);
-            });
-            if let Some(player) = host.acting_player() {
-                host.tell(
-                    player.uuid,
-                    Text::literal(format!("Creative Motor: {speed} RPM")),
-                );
-            }
+            // The speed is the value box (`machines/value_box.rs`); Create's Wrench only turns a motor.
         } else if block == Block::Press {
             // A quarter turn clockwise seen from above, as Create's wrench turns a horizontal
             // block clicked on its top (`IWrenchable.getRotatedBlockState`); here on any face.

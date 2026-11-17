@@ -21,10 +21,9 @@
 //! - Putting items into a container is done for real when asked (see `chute_inv`), so Create's
 //!   "exactly N" belt funnels put in what fits instead of nothing when it can't all go in.
 //! - An inventory is an `Items` list (see `chute_inv`); a chute behind a funnel is not one.
-//! - Brass filter: right-click while sneaking with an item sets it; with the same item again it
-//!   steps the amount through "any", "exactly 1" ... "exactly 64"; sneaking with an empty hand
-//!   clears it. Create's filter slot, value box and the displayed item are not drawn, and there
-//!   are no filter items. Andesite funnels move one item at a time and take anything.
+//! - Brass filter: Create's filter slot (a value box, `machines/value_box.rs`): right-click it with an item,
+//!   an empty hand clears it, hold for the amount where the funnel extracts. Andesite funnels move one item
+//!   at a time and take anything.
 //! - The flaps are drawn (swinging out and settling as `FlapStuffs` moves them) but make no
 //!   sound (`AllSoundEvents.FUNNEL_FLAP`); no advancements, no Smart Observer, no contraption
 //!   movement behaviour (`FunnelMovementBehaviour`), no waterlogging.
@@ -37,8 +36,8 @@ use create_kinetics::rules::funnel::{self as rules, Activity, Kind, Reaction, Sh
 use create_kinetics::{Dir, Pos};
 use horizon_client::mod_api::{
     BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
-    BlockEntityUpdateTagEvent, BlockStateId, Compound, EquipmentSlot, Flow, Hooks, Host, ItemStack,
-    LevelHost, ModBlockEntity, PlaceBlockEvent, RightClickBlockEvent, StandaloneModelsEvent,
+    BlockEntityUpdateTagEvent, BlockStateId, Compound, Flow, Hooks, Host, ItemStack,
+    LevelHost, ModBlockEntity, PlaceBlockEvent, StandaloneModelsEvent,
     StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
@@ -767,30 +766,7 @@ impl Hooks for Funnels {
         }
     }
 
-    /// A brass funnel's filter is cleared by sneaking with an empty hand (the stand-in for taking the item out of its
-    /// filter slot), as a Smart Chute's is (`chute.rs`).
-    fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
-        let pos = event.pos;
-        let brass = is_brass(&host.block(pos));
-        let Some(player) = host.acting_player() else {
-            return Flow::Continue;
-        };
-        let uuid = player.uuid;
-        // Any item in either hand is another handler's (the filter set, the Wrench, a placement).
-        let main_empty = host.player_equipment(uuid, EquipmentSlot::MainHand).is_none();
-        let off_empty = host.player_equipment(uuid, EquipmentSlot::OffHand).is_none();
-        if player.game_mode == util::SPECTATOR || !rules::clears_filter(brass, player.sneaking, main_empty, off_empty) {
-            return Flow::Continue;
-        }
-        if util::first_click(host, uuid, pos)
-            && let Some(line) = inv::click(host, pos, None)
-        {
-            inv::tell(host, &line);
-        }
-        Flow::Cancel
-    }
-
-    /// A filter set on a brass funnel (the stand-in for its filter slot), the Wrench
+    /// The Wrench
     /// (`FunnelBlock.onWrenched`, `BeltFunnelBlock.onWrenched`), and an item put into the funnel's
     /// inventory by hand (`FunnelBlock.useItemOn`).
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
@@ -810,13 +786,6 @@ impl Hooks for Funnels {
                     host.set_block_property(pos, "extracting", bool_name(!v.extracting));
                 }
             });
-        }
-        let sneaking = host.acting_player().is_some_and(|p| p.sneaking);
-        if v.brass && sneaking && item != MECHANICAL_ARM {
-            if let Some(line) = inv::click(host, pos, Some(event.stack)) {
-                inv::tell(host, &line);
-            }
-            return Flow::Cancel;
         }
         // Hand insertion: through the funnel's open face, if it takes things in.
         let open = Dir::from_normal(event.face) == Some(v.facing);
