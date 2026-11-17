@@ -19,6 +19,7 @@
     "create:secondary_linear_chassis",
     "create:radial_chassis",
     "create:clipboard",
+    "create:clockwork_bearing",
     "create:clutch",
     "create:content_observer",
     "create:contraption_controls",

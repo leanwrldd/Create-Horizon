@@ -678,11 +678,18 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 /// The structure of the controller at `pos`, from the cache or read from its NBT.
 pub fn live(dimension: &str, pos: Pos, nbt: &Compound) -> Option<Arc<Live>> {
+    live_with(dimension, pos, nbt, CONTRAPTION)
+}
+
+/// [`live`] for a controller with a second structure (the Clockwork Bearing's minute hand): `pos`
+/// is the key it is cached under (any position that is not another controller's) and `key` the
+/// name the structure has in the NBT.
+pub fn live_with(dimension: &str, pos: Pos, nbt: &Compound, key_in_nbt: &str) -> Option<Arc<Live>> {
     let key = (dimension.to_owned(), pos);
     if let Some(known) = lock(&LIVE).get(&key) {
         return Some(known.clone());
     }
-    let Some(Tag::Compound(saved)) = util::get(nbt, CONTRAPTION) else {
+    let Some(Tag::Compound(saved)) = util::get(nbt, key_in_nbt) else {
         return None;
     };
     let live = Arc::new(Live::new(Moving::from_nbt(saved)?));
@@ -768,6 +775,11 @@ static PARSED: LazyLock<Mutex<HashMap<Pos, (String, Option<Arc<Parsed>>)>>> =
 
 /// The structure in a controller's NBT, parsed once per version of the block entity.
 pub fn parsed(pos: Pos, entity: &ModBlockEntity) -> Option<Arc<Parsed>> {
+    parsed_with(pos, entity, CONTRAPTION)
+}
+
+/// [`parsed`] for a second structure of one controller (see [`live_with`]).
+pub fn parsed_with(pos: Pos, entity: &ModBlockEntity, key_in_nbt: &str) -> Option<Arc<Parsed>> {
     if !util::boolean(&entity.nbt, RUNNING) {
         return None;
     }
@@ -778,7 +790,7 @@ pub fn parsed(pos: Pos, entity: &ModBlockEntity) -> Option<Arc<Parsed>> {
             return parsed.clone();
         }
     }
-    let parsed = match util::get(&entity.nbt, CONTRAPTION) {
+    let parsed = match util::get(&entity.nbt, key_in_nbt) {
         Some(Tag::Compound(saved)) => Moving::from_nbt(saved).map(|moving| {
             Arc::new(Parsed {
                 extent: moving.extent(),

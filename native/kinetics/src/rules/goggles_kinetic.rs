@@ -33,7 +33,7 @@ pub fn impact(block: &str) -> f32 {
         "cuckoo_clock" | "mysterious_cuckoo_clock" => 1.0,
         // `TURNTABLE`, `MILLSTONE`, `MECHANICAL_MIXER`, `MECHANICAL_PUMP`, `MECHANICAL_BEARING`,
         // `MECHANICAL_DRILL`, `MECHANICAL_SAW`, `DEPLOYER`, and `mechanicalPiston(type)`.
-        "turntable" | "millstone" | "mechanical_mixer" | "mechanical_pump" | "mechanical_bearing"
+        "turntable" | "millstone" | "mechanical_mixer" | "mechanical_pump" | "mechanical_bearing" | "clockwork_bearing"
         | "mechanical_drill" | "mechanical_saw" | "deployer" | "mechanical_piston"
         | "sticky_mechanical_piston" => 4.0,
         // `ROPE_PULLEY`, `ELEVATOR_PULLEY` (the gantry sets none) and `HOSE_PULLEY`.

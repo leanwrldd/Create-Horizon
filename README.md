@@ -315,6 +315,7 @@ movement) calls `visitNewPosition`. Known differences from Create:
 | Block | Behaviour |
 |---|---|
 | Sticker | Each rise of the redstone signal toggles it; extended, it glues the block in front of it to a structure that moves (the structure takes that block along, and the block takes the Sticker if it is the one gathered: Contraption.moveBlock, BlockMovementChecksImpl); retracted, nothing is supported on its face. The head slides out and in. The Wrench turns it. Unplayed. Differences: the signal is polled by the block entity, no hit sound or glue particles, no slime bounce on an upright Sticker |
+| Clockwork Bearing | An empty hand assembles it: the block in front of it and what holds to it is the hour hand, and past that hand's line (the first cell in line with no block of it) a second, unglued structure is the minute hand. Turning, they show the day time (the hour hand a 12-hour dial, 24-hour or minute-hand-first with a sneaking empty-hand click that steps the setting), each chasing the time at no more than the bearing's speed; an empty hand again, the Wrench, a broken bearing or no rotation sets both down unturned. 4 su per RPM. Unplayed. Differences: no actors on a hand, the day time on a client is the game time plus an offset renewed every 5 seconds, a dimension other than the Overworld runs its dial 24 times faster |
 ### Curiosities (equipment)
 
 Each module's header (`native/api/src/machines/<name>.rs`) lists its differences from Create in full.

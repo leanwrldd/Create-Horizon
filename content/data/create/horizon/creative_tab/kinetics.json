@@ -40,6 +40,7 @@
     "create:chute",
     "create:smart_chute",
     "create:clipboard",
+    "create:clockwork_bearing",
     "create:clutch",
     "create:content_observer",
     "create:contraption_controls",
