@@ -5,6 +5,9 @@
 //! recipes, moving them across the blade and out of the far side. The rules are
 //! `create_kinetics::rules::{saw, saw_tree, drill}`; this is the glue.
 //!
+//! `SawBlockEntity.getRecipes` asks the sequenced assembly's next cutting step first
+//! (`machines/sequenced.rs`), then the recipes below.
+//!
 //! Known differences from Create:
 //! - Stationary saws only: the saw on a contraption (`SawMovementBehaviour`) is a later slice.
 //! - The recipe filter slot (`SawFilterSlot`) is out of scope: a stack with several recipes
@@ -34,6 +37,7 @@ use std::collections::HashMap;
 use create_kinetics::rules::drill as drill_rules;
 use create_kinetics::rules::saw::{self as rules, Cut, SLOTS, Step, TOP_SCAN};
 use create_kinetics::rules::saw_tree::{self as tree, Class, World};
+use create_kinetics::rules::sequenced::Machine;
 use create_kinetics::{Dir, Kind, Node, Pos, looking};
 use horizon_client::mod_api::{
     BlockEntityContainerEvent, BlockEntityDraw, BlockEntityEvent, BlockEntitySubmitEvent,
@@ -44,6 +48,7 @@ use horizon_client::mod_api::{
 };
 
 use super::drill::{self, Tool};
+use super::sequenced;
 use crate::{belt, kinetic, recipes, util};
 
 const ID: &str = "create:mechanical_saw";
@@ -258,10 +263,22 @@ fn new_entity() -> Compound {
     nbt
 }
 
+/// A recipe that cuts an item: a `create:cutting` recipe, or the cutting step of a sequenced
+/// assembly (whose results are the item's next form, not the recipe's own).
+struct Candidate {
+    processing: recipes::Processing,
+    step: Option<sequenced::Step>,
+}
+
 /// The recipes that cut `input`, in the order the game holds them (`getRecipes`): `create:cutting`
 /// recipes whose first ingredient takes it, left out when not for automation and when an item
 /// they make is not in the game.
-fn recipes_for(host: &dyn Host, input: &ItemStack) -> Vec<recipes::Processing> {
+fn recipes_for(host: &dyn Host, input: &ItemStack) -> Vec<Candidate> {
+    // `SequencedAssemblyRecipe.getRecipe(level, item, CUTTING, CuttingRecipe.class)`: when the
+    // item is in an assembly whose next step is a cut, that is the only recipe.
+    if let Some(step) = sequenced::find(host, input, Machine::Cutting, &|_| true) {
+        return vec![Candidate { processing: step.recipe.clone(), step: Some(step) }];
+    }
     let mut found = Vec::new();
     for recipe in host.recipes_of_type(RECIPE_TYPE) {
         if recipe.json.get("ignore_in_automation").and_then(|v| v.as_bool()) == Some(true) {
@@ -291,7 +308,7 @@ fn recipes_for(host: &dyn Host, input: &ItemStack) -> Vec<recipes::Processing> {
         if parsed.results.is_empty() || parsed.results.len() != wanted {
             continue;
         }
-        found.push(parsed);
+        found.push(Candidate { processing: parsed, step: None });
     }
     found
 }
@@ -304,7 +321,7 @@ fn start(host: &dyn Host, input: &ItemStack, cut: &mut Cut, index: &mut usize) {
         return;
     }
     *index = rules::next_recipe(*index, found.len());
-    let time = found[*index].processing_time;
+    let time = found[*index].processing.processing_time;
     cut.begin(rules::start_time(Some(time), input.count));
 }
 
@@ -323,7 +340,11 @@ fn apply(host: &mut dyn Host, slots: &mut [Option<ItemStack>], index: &mut usize
     let dimension = host.dimension();
     let mut list: Vec<ItemStack> = Vec::new();
     for _ in 0..input.count {
-        for made in recipes::roll(host, dimension, &recipe.results) {
+        let rolled = match &recipe.step {
+            Some(step) => step.roll(host),
+            None => recipes::roll(host, dimension, &recipe.processing.results),
+        };
+        for made in rolled {
             util::merge(host, &mut list, made);
         }
     }

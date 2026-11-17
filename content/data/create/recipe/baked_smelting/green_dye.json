@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:cactus"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:green_dye"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

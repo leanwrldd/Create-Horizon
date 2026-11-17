@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:sea_pickle"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:lime_dye"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

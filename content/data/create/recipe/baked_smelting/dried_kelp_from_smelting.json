@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:kelp"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:dried_kelp"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

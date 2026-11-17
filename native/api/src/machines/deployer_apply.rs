@@ -5,11 +5,13 @@
 //! make an Andesite Casing). The Deployer's own stroke is `deployer.rs`; what it does in the
 //! world is `deployer_use.rs`.
 //!
+//! `getRecipe` asks, in Create's order: the sandpaper polishing recipe when the hand holds a
+//! `SandPaperItem` (`create:sandpaper_polishing`), the sequenced assembly's next deploying step
+//! (`SequencedAssemblyRecipe.getRecipe`, priority 100, `sequenced.rs`), then the `create:deploying`
+//! and `create:item_application` recipes (priority 50).
+//!
 //! Known differences from Create:
-//! - Sequenced assembly (`SequencedAssemblyRecipe`, priority 100 in `getRecipe`) and the
-//!   sandpaper polishing recipe (`SandPaperItem`) are not ported: neither the items nor the
-//!   assembly line exist here yet. A `DeployerRecipeSearchEvent` (another mod adding a recipe) has
-//!   no equivalent.
+//! - A `DeployerRecipeSearchEvent` (another mod adding a recipe) has no equivalent.
 //! - A recipe lookup is remembered by the two item ids (`stack`, `held`), so a recipe whose
 //!   ingredients ask for components isn't told apart; none of Create's do. It is dropped when the
 //!   number of recipes changes.
@@ -26,9 +28,13 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use create_kinetics::rules::deployer as rules;
 use create_kinetics::rules::drill;
+use create_kinetics::rules::sandpaper;
+use create_kinetics::rules::sequenced::Machine;
 use horizon_client::mod_api::serde_json::Value;
 use horizon_client::mod_api::{Flow, Hooks, Host, Ingredient, ItemStack, RightClickBlockEvent};
 
+use super::sand_paper::POLISHING;
+use super::sequenced;
 use crate::recipes::{self, Processing};
 use crate::util;
 
@@ -56,7 +62,9 @@ static CACHE: Mutex<Option<Cache>> = Mutex::new(None);
 
 fn cache(host: &dyn Host) -> MutexGuard<'static, Option<Cache>> {
     let mut guard = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
-    let count = host.recipes_of_type(DEPLOYING).len() + host.recipes_of_type(ITEM_APPLICATION).len();
+    let count = host.recipes_of_type(DEPLOYING).len()
+        + host.recipes_of_type(ITEM_APPLICATION).len()
+        + host.recipes_of_type(POLISHING).len();
     if guard.as_ref().is_none_or(|c| c.recipes != count) {
         *guard = Some(Cache { recipes: count, deploying: HashMap::new(), manual: HashMap::new() });
     }
@@ -77,9 +85,27 @@ fn ingredients(host: &dyn Host, json: &Value) -> Option<(Ingredient, Ingredient)
 /// one (both are priority 50 and a later one is only taken if its priority is higher), leaving
 /// out those whose id ends in `_manual_only` (`AllRecipeTypes.CAN_BE_AUTOMATED`).
 fn search(host: &dyn Host, stack: &ItemStack, held: &ItemStack) -> Found {
-    for kind in [DEPLOYING, ITEM_APPLICATION] {
+    // `heldItemMainhand.getItem() instanceof SandPaperItem`: the polishing recipes come first.
+    let sand_paper = sandpaper::is_sand_paper(&held.item);
+    let kinds: &[&'static str] = if sand_paper {
+        &[POLISHING, DEPLOYING, ITEM_APPLICATION]
+    } else {
+        &[DEPLOYING, ITEM_APPLICATION]
+    };
+    for &kind in kinds {
         for recipe in host.recipes_of_type(kind) {
             if recipe.id.ends_with("_manual_only") {
+                continue;
+            }
+            if kind == POLISHING {
+                // `SandPaperPolishingRecipe.matches`: its one ingredient.
+                let first = recipe.json.get("ingredients").and_then(|i| i.get(0));
+                let takes = first
+                    .and_then(|i| host.recipe_ingredient(&recipes::modern_ingredient(i)))
+                    .is_some_and(|i| i.test(stack));
+                if takes {
+                    return Some((kind, recipe.id.clone()));
+                }
                 continue;
             }
             let Some((processed, tool)) = ingredients(host, &recipe.json) else {
@@ -91,6 +117,15 @@ fn search(host: &dyn Host, stack: &ItemStack, held: &ItemStack) -> Found {
         }
     }
     None
+}
+
+/// `SequencedAssemblyRecipe.getRecipe(.., DEPLOYING, DeployerApplicationRecipe.class)`: the
+/// assembly's next step if it is a deploying one that the held item fits (`matches`: the second
+/// ingredient). The sandpaper's polishing outranks it.
+fn sequenced_step(host: &dyn Host, stack: &ItemStack, held: &ItemStack) -> Option<sequenced::Step> {
+    sequenced::find(host, stack, Machine::Deploying, &|step| {
+        step.recipe.ingredients.get(1).is_some_and(|tool| tool.test(held))
+    })
 }
 
 fn lookup(host: &dyn Host, stack: &ItemStack, held: &ItemStack) -> Found {
@@ -107,7 +142,7 @@ fn lookup(host: &dyn Host, stack: &ItemStack, held: &ItemStack) -> Found {
 
 /// Whether the Deployer holding `held` has a recipe for `stack` (`getRecipe(stack) != null`).
 pub(super) fn has_recipe(host: &dyn Host, stack: &ItemStack, held: &ItemStack) -> bool {
-    lookup(host, stack, held).is_some()
+    sequenced_step(host, stack, held).is_some() || lookup(host, stack, held).is_some()
 }
 
 /// What applying a recipe to one item made.
@@ -115,12 +150,24 @@ pub(super) struct Applied {
     pub results: Vec<ItemStack>,
     /// `ItemApplicationRecipe.shouldKeepHeldItem` (`keep_held_item`).
     pub keep_held: bool,
+    /// The recipe was a `SandPaperPolishingRecipe`: the Deployer sands (`BeltDeployerCallbacks`).
+    pub polishing: bool,
 }
 
 /// `RecipeApplier.applyRecipeOn(level, stack.copyWithCount(1), recipe, true)` for the recipe
 /// `getRecipe` finds: one roll of its results, equal stacks merged. `None` where there is none.
 pub(super) fn apply(host: &mut dyn Host, stack: &ItemStack, held: &ItemStack) -> Option<Applied> {
-    let (kind, id) = lookup(&*host, stack, held)?;
+    let found = lookup(&*host, stack, held);
+    let polishing = found.as_ref().is_some_and(|(kind, _)| *kind == POLISHING);
+    if !polishing && let Some(step) = sequenced_step(&*host, stack, held) {
+        // `RecipeApplier.applyRecipeOn`: one roll of the step, equal stacks merged.
+        let mut results = Vec::new();
+        for out in step.roll(host) {
+            util::merge(&*host, &mut results, out);
+        }
+        return Some(Applied { results, keep_held: step.keep_held, polishing: false });
+    }
+    let (kind, id) = found?;
     let (processing, keep_held) = resolve(&*host, kind, &id)?;
     let dimension = host.dimension();
     let rolled = recipes::roll(host, dimension, &processing.results);
@@ -128,7 +175,7 @@ pub(super) fn apply(host: &mut dyn Host, stack: &ItemStack, held: &ItemStack) ->
     for out in rolled {
         util::merge(&*host, &mut results, out);
     }
-    Some(Applied { results, keep_held })
+    Some(Applied { results, keep_held, polishing: kind == POLISHING })
 }
 
 fn resolve(host: &dyn Host, kind: &str, id: &str) -> Option<(Processing, bool)> {

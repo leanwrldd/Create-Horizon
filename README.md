@@ -113,7 +113,7 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Transmission | Andesite and Brass Encased Shafts and Cogwheels (casing on a shaft, wrench to toggle ends), Clutch, Gearshift, Encased Chain Drive, Adjustable Chain Gearshift, Speedometer, Stressometer |
 | Millstone | Mills items with Create's 47 milling recipes; hoppers in and out, right-click to collect |
 | Crushing Wheels | Two wheels make a controller that crushes items (55 crushing recipes, milling as fallback) and hurts mobs |
-| Encased Fan, Nozzle | Air current that pushes and pulls items, mobs and players; washing and haunting (34 recipes) with Create's catalysts; damage and effects on entities |
+| Encased Fan, Nozzle | Air current that pushes and pulls items, mobs and players; washing and haunting (34 recipes) with Create's catalysts; smoking and blasting from copies of vanilla's 9 smoking, 73 smelting and 25 blasting recipes (lava burns every item that nothing smelts and that is not fire resistant, as Create's does); damage and effects on entities. Unplayed |
 | Basin, Mechanical Mixer | Basin with item slots, fluid tanks and spout output; mixer with Create's mixing recipes and heat requirements |
 | Blaze Burner | Fuel, Blaze Cakes, heat levels, capturing a Blaze, the lit burner |
 | Materials | 44 items (ingots, sheets, nuggets, crushed ores, foods, Precision Mechanism...), zinc ore with world generation, storage blocks, the five casings |
@@ -127,7 +127,9 @@ the top. [MODULES.md](MODULES.md) explains the layout.
 | Spout, Item Drain | The Spout fills items on a belt or depot below it from its tank (`create:filling` recipes, buckets, bottles); the Item Drain empties items brought by belt, funnel or hand into its tank |
 | Valves, Smart and Encased Pipes | Fluid Valve opened by rotation; copper and dyed valve handles turn it by hand; Smart Fluid Pipe with a fluid filter (sneak-click with an item); a fluid pipe encased with a copper casing |
 | Small kinetics | Weighted Ejector (throws items and entities along Create's arc to a target picked with the item), Turntable, Cuckoo Clock and Mysterious Cuckoo Clock, Large Water Wheel, Wooden and Metal Brackets on shafts, cogwheels and pipes |
-| Deployer | Uses its held item on the block or entity two in front (USE), or attacks and mines (PUNCH, toggled with the Wrench); over a belt or depot it applies Create's 167 deploying and 7 item-application recipes; the hand and pole are drawn moving |
+| Deployer | Uses its held item on the block or entity two in front (USE), or attacks and mines (PUNCH, toggled with the Wrench); over a belt or depot it applies Create's 167 deploying and 7 item-application recipes, polishes with Sand Paper in its hand, and does the deploying steps of a sequenced assembly; the hand and pole are drawn moving |
+| Sand Paper, Red Sand Paper | Hold the right mouse button for 32 ticks with Rose Quartz in the other hand, or lying on the floor where you look: it becomes Polished Rose Quartz (`create:sandpaper_polishing`) and the paper wears by one of 8. The Deployer does the same on belts and depots. Polished Rose Quartz is what the Electron Tube and the Rose Quartz Lamp need, which opens the brass tier's crafting. Unplayed: type-checked and unit-tested only |
+| Sequenced assembly | An item in the middle of an assembly is its transitional item (Incomplete Precision Mechanism, Unprocessed Obsidian Sheet) with a progress bar and a tooltip that lists the next steps. The Deployer, Mechanical Press, Mechanical Saw and Spout each do the step of their kind on belts and depots (and the press and saw on the ground and the saw blade), in the recipe's order, looping as many times as it says; the last step's item is one of the recipe's results by weight. In: the Precision Mechanism (gold sheet, cogwheel, large cogwheel and iron nugget, five times, which the Mechanical Arm needs) and the Sturdy Sheet (obsidian dust, lava from a Spout, two presses). The Track's is left out (no Track yet). Unplayed |
 | Mechanical Arm | Picks up from inputs and puts down into outputs selected by clicking blocks with the arm in hand (within 5 blocks): belts, depots, ejectors, funnels, chutes, basins, Blaze Burners, deployers, millstones, crushing wheels, the upright saw, campfires, composter, jukebox and respawn anchor; round robin, forced round robin or prefer-first (Wrench steps it); redstone locks it; a record in a jukebox point makes it dance. As in Create, chests and vaults are reached through a funnel. Unplayed |
 | Mechanical Crafter | Wrench-join crafters into a grid (click the edge of a face), turn the pointing with the Wrench on the front, items in by hand, funnel, chute, Mechanical Arm, Deployer or hopper (one item to each crafter in reading order), a Crafter Slot Cover to leave a hole. A full grid, or a redstone pulse, passes the items along the arrows to the last crafter, which crafts (crafting-table recipes and Create's `create:mechanical_crafting`) and hands the result to the belt, depot, chest or basin it points at, or throws everything out. The items and the result are drawn moving along. Vanilla shaped and shapeless crafting recipes are baked into the content (Horizon gives a mod none to read), so a data pack's changes to them aren't seen; no connected textures. Unplayed |
 | Storage blocks | Item Vault (merges up to 3 wide and 3 times as long, 20 stacks a block; chutes, funnels and comparators see the whole vault), Creative Crate (endless supply of the item it's clicked with), Smart Observer, Threshold Switch |
@@ -141,12 +143,29 @@ Goggles' known differences from Create (`native/api/src/machines/goggles.rs`, `n
 
 Display Link clicks, in place of Create's screen (`display_link.rs`): right-click steps the type of information among those the block it reads offers; the Wrench on the face the link looks out of steps the line it starts writing at, on any other face the source's option (display mode, time format, number format); a name tag sets the label; sneak-right-click with an empty hand clears it; the Wrench sneaking picks it up. The Display Link, Display Board and Nixie Tubes have not been played: type-checked and unit-tested only. Known differences from Create: only the sources of blocks this port has (no boiler, scoreboard, death count, enchanting power, tunnel, train, elevator, package or factory gauge sources); text is plain and the flaps' colours are one per line; a Display Link reading a redstone or nixie source and a Display Board's joins are polled (a few ticks, up to half a second for joins) rather than driven by block updates; the lines a link wrote first on a sign or lectern are remembered in memory, not saved; a Nixie Tube has no waterlogging and a cube hit box; a Display Board placed against another does not take its facing; the flap spin and its sounds are worked out from the game time the text changed (the same on every client) and are not Create's per-client random.
 
+Sand Paper and sequenced assembly's known differences from Create (`native/api/src/machines/sand_paper.rs`,
+`sequenced.rs`; the rules are `native/kinetics/src/rules/sandpaper.rs` and `sequenced.rs`): Create takes the item to
+polish into the paper when the use starts (`SAND_PAPER_POLISHING`) and gives it back if the use is let go; Horizon
+can't change the held stack from a use hook, so nothing is taken until the 32 ticks are over, when the item is looked
+for again (the other hand, or on the floor where you look) and polished if it is still there, so letting go early
+costs nothing and the paper doesn't show what it polishes. The use starts only with something to polish, but a client
+shows the eating pose for the click until the server's answer. No item particles; the paper's sound is played on
+Create's schedule from the use tick; it does not scrape oxidised copper or take wax off (`useOn`; a Deployer with an
+axe does). An item's assembly progress is a Horizon component (`create:sequenced_assembly`: recipe id, step, progress),
+read on a client for the bar and tooltip only if the server sends it (untested). The Track recipe, the `create:track` and
+the sleepers it needs are not ported. Only deploying, pressing, cutting and filling steps run (all of Create's have one
+of these).
+
 Broad gaps across these modules:
 
-- No vanilla crafting, smelting, smoking or blasting recipe can be read by a mod, so the fan doesn't smoke
-  or blast items and the mixer doesn't do shapeless crafting. (The Mechanical Crafter bakes the shaped
-  and shapeless crafting recipes of the prepared game data, 1,202 of them, as `create:crafter_baked_*`
-  recipes: `tools/content/_crafter_recipes_gen.py`.)
+- No vanilla crafting, smelting, smoking or blasting recipe can be read by a mod, so the mixer doesn't do
+  shapeless crafting. (The Mechanical Crafter bakes the shaped and shapeless crafting recipes of the
+  prepared game data, 1,202 of them, as `create:crafter_baked_*` recipes:
+  `tools/content/_crafter_recipes_gen.py`; the fan bakes the smelting, smoking and blasting ones as
+  `create:baked_smelting`, `create:baked_smoking` and `create:baked_blasting`, and the items immune to
+  fire as the tag `create:fan_fire_resistant`: `tools/content/_fan_cooking_gen.py`. These copies are
+  temporary: drop them when the project moves to the new mod API's `recipe_for`. A data pack's changes
+  to vanilla's recipes are not seen until then.)
 - Copper shingles and tiles don't weather or wax, metal scaffolding has no collision, sliding doors swing
   like vanilla doors, and no connected textures are drawn.
 - Redstone and neighbour changes are polled each tick rather than heard.

@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:basalt"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:smooth_basalt"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

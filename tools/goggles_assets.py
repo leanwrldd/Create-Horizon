@@ -26,8 +26,10 @@ PREFIXES = (
     "create.tooltip.",
     "create.boiler.",
     "create.hint.",
+    # `SequencedAssemblyRecipe.addToTooltip` and `IAssemblyRecipe.getDescriptionForAssembly`.
+    "create.recipe.assembly.",
 )
-KEYS = ("create.gui.assembly.exception",)
+KEYS = ("create.gui.assembly.exception", "create.recipe.sequenced_assembly")
 
 
 def import_goggles(jar: ZipFile, content: Path):
@@ -37,7 +39,7 @@ def import_goggles(jar: ZipFile, content: Path):
               if key.startswith(PREFIXES) or key in KEYS}
     missing = [key for key in (
         "create.gui.goggles.kinetic_stats", "create.tooltip.stressImpact",
-        "create.boiler.status", "create.hint.empty_bearing",
+        "create.boiler.status", "create.hint.empty_bearing", "create.recipe.assembly.next",
     ) if key not in chosen]
     if missing:
         raise SystemExit(f"Create's language file lacks {missing}")

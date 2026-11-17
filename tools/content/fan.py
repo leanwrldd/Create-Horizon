@@ -1,6 +1,7 @@
 """Declarations for the Encased Fan and the Nozzle (module `fan`): the blocks, their names, loot,
-crafting, the tags the fan reads, Create's splashing and haunting recipes, and the damage types
-of lava-heated and smoky air.
+crafting, the tags the fan reads, Create's splashing and haunting recipes, vanilla's smelting,
+smoking and blasting recipes copied for smoking and blasting, and the damage types of lava-heated
+and smoky air.
 
 Values from Create `mc1.21.1/dev` at 4148fd8: `AllBlocks.ENCASED_FAN` and `NOZZLE`,
 `data/create/recipe/crafting/kinetics/{encased_fan,nozzle}.json`, `data/create/tags/` and
@@ -100,6 +101,21 @@ def _fan_recipes():
 RECIPES.update({key: value for key, value in _fan_recipes().items()
                 if not key.startswith("splashing/industrial_iron")})
 
+def _cooking():
+    spec = importlib.util.spec_from_file_location(
+        "create_content_fan_cooking_table", Path(__file__).with_name("_fan_cooking.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# Vanilla's smelting, smoking and blasting recipes, copied from the prepared game data as
+# `create:baked_*` recipes (`_fan_cooking_gen.py`): Horizon gives a mod no way to read them, and
+# the fan's smoking and blasting (`SmokingType`, `BlastingType`) ask for them. TEMPORARY: drop
+# these, the file and the tag below when the project moves to the new mod API's `recipe_for`.
+_COOKING = _cooking()
+RECIPES.update(_COOKING.COOKING)
+
 # `RuntimeDataGenerator.washingRecipes`: Create writes a splashing recipe from each concrete
 # powder to its concrete at load time, so its datagen output has none. Vanilla's 16 colours.
 _COLOURS = ("white", "orange", "magenta", "light_blue", "yellow", "lime", "pink", "gray",
@@ -136,6 +152,10 @@ TAGS = {
     "create:block/fan_processing_catalysts/haunting": [
         "create:lit_blaze_burner", "minecraft:soul_fire", "minecraft:soul_campfire",
     ],
+    # What `BlastingType.canProcess` spares: Create 1.21.1's `DataComponents.FIRE_RESISTANT` became
+    # `minecraft:damage_resistant` against `#minecraft:is_fire`, baked from the game's items
+    # (`_fan_cooking_gen.py`). TEMPORARY, as `_COOKING`.
+    "create:item/fan_fire_resistant": _COOKING.FIRE_RESISTANT,
     # `AllBlocks.NOZZLE`: `.tag(AllBlockTags.BRITTLE.tag)`.
     "create:block/brittle": ["create:nozzle"],
     # The convention tags the recipes above name (NeoForge's `c:` tags, with vanilla's members).

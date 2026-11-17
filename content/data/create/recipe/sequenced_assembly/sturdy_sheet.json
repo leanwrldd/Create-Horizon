@@ -1,0 +1,60 @@
+{
+  "ingredient": {
+    "tag": "c:dusts/obsidian"
+  },
+  "results": [
+    {
+      "id": "create:sturdy_sheet"
+    }
+  ],
+  "sequence": [
+    {
+      "ingredients": [
+        {
+          "item": "create:unprocessed_obsidian_sheet"
+        },
+        {
+          "amount": 500,
+          "fluid": "minecraft:lava",
+          "type": "neoforge:single"
+        }
+      ],
+      "results": [
+        {
+          "id": "create:unprocessed_obsidian_sheet"
+        }
+      ],
+      "type": "create:filling"
+    },
+    {
+      "ingredients": [
+        {
+          "item": "create:unprocessed_obsidian_sheet"
+        }
+      ],
+      "results": [
+        {
+          "id": "create:unprocessed_obsidian_sheet"
+        }
+      ],
+      "type": "create:pressing"
+    },
+    {
+      "ingredients": [
+        {
+          "item": "create:unprocessed_obsidian_sheet"
+        }
+      ],
+      "results": [
+        {
+          "id": "create:unprocessed_obsidian_sheet"
+        }
+      ],
+      "type": "create:pressing"
+    }
+  ],
+  "transitional_item": {
+    "id": "create:unprocessed_obsidian_sheet"
+  },
+  "type": "create:sequenced_assembly"
+}

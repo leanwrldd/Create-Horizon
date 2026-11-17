@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:deepslate_bricks"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:cracked_deepslate_bricks"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

@@ -57,3 +57,9 @@ screen_mouse_button_pressed_pre
 screen_mouse_button_released_pre
 screen_mouse_scrolled_pre
 client_tick_post
+component_types
+item_bar
+use_duration
+use_animation
+living_entity_use_item_tick
+living_entity_use_item_finish

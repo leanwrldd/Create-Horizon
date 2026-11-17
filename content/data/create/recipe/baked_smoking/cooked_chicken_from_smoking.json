@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:chicken"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:cooked_chicken"
+    }
+  ],
+  "type": "create:baked_smoking"
+}

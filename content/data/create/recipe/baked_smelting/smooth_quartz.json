@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:quartz_block"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:smooth_quartz"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

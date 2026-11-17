@@ -416,4 +416,43 @@ impl Hooks for Create {
             module.client_tick_post(host, event);
         }
     }
+
+    fn component_types(&self, event: &mut ComponentTypesEvent<'_>) {
+        for module in &self.modules {
+            module.component_types(event);
+        }
+    }
+
+    fn item_bar(&self, host: &dyn Host, event: &mut ItemBarEvent<'_>) {
+        for module in &self.modules {
+            module.item_bar(host, event);
+        }
+    }
+
+    fn use_duration(&self, host: &dyn Host, event: &mut UseDurationEvent<'_>) {
+        for module in &self.modules {
+            module.use_duration(host, event);
+        }
+    }
+
+    fn use_animation(&self, host: &dyn Host, event: &mut UseAnimationEvent<'_>) {
+        for module in &self.modules {
+            module.use_animation(host, event);
+        }
+    }
+
+    fn living_entity_use_item_tick(&self, host: &mut dyn Host, event: &mut LivingEntityUseItemTickEvent<'_>) -> Flow {
+        for module in &self.modules {
+            if let Flow::Cancel = module.living_entity_use_item_tick(host, event) {
+                return Flow::Cancel;
+            }
+        }
+        Flow::Continue
+    }
+
+    fn living_entity_use_item_finish(&self, host: &mut dyn Host, event: &mut LivingEntityUseItemFinishEvent<'_>) {
+        for module in &self.modules {
+            module.living_entity_use_item_finish(host, event);
+        }
+    }
 }

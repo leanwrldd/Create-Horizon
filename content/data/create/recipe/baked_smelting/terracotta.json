@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:clay"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:terracotta"
+    }
+  ],
+  "type": "create:baked_smelting"
+}

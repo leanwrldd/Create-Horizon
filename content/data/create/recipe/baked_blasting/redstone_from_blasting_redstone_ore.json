@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    "minecraft:redstone_ore"
+  ],
+  "processing_time": 200,
+  "results": [
+    {
+      "id": "minecraft:redstone"
+    }
+  ],
+  "type": "create:baked_blasting"
+}
