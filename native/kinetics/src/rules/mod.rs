@@ -28,6 +28,7 @@ pub mod chute;
 pub mod click;
 pub mod clipboard;
 pub mod clockwork;
+pub mod collider_obb;
 pub mod content_observer;
 pub mod content_observer_target;
 pub mod contraption;
