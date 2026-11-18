@@ -59,24 +59,24 @@ for name in names:
     args = ", ".join(part.split(":")[0].strip() for part in parts)
     signature = f"    fn {name}(&self, {', '.join(parts)})" + (f" -> {returns}" if returns else "")
     fallback = "()" if returns is None else "Flow::Continue" if returns == "Flow" else "None"
-    call = f"guarded(\"{name}\", {fallback}, || module.{name}({args}))"
+    call = f"guarded(\"{name}\", index, {fallback}, || module.{name}({args}))"
     if returns is None:
-        body = [f"        for module in &self.modules {{", f"            {call};", "        }"]
+        body = [f"        for (index, module) in self.modules.iter().enumerate() {{", f"            {call};", "        }"]
     elif returns == "Flow":
-        body = [f"        for module in &self.modules {{",
+        body = [f"        for (index, module) in self.modules.iter().enumerate() {{",
                 f"            if let Flow::Cancel = {call} {{",
                 "                return Flow::Cancel;", "            }", "        }",
                 "        Flow::Continue"]
     elif name == "block_entity_update_tag":
         # The value boxes' saved values (filters, scroll values) go to the client with every block's tag: a
         # module needn't send them (`machines/value_box.rs`, `decorate`).
-        body = [f"        for module in &self.modules {{",
+        body = [f"        for (index, module) in self.modules.iter().enumerate() {{",
                 f"            if let Some(mut answer) = {call} {{",
                 "                crate::machines::value_box::decorate(&event.entity.id, &event.entity.nbt, &mut answer);",
                 "                return Some(answer);", "            }", "        }",
                 "        None"]
     elif returns.startswith("Option<"):
-        body = [f"        for module in &self.modules {{",
+        body = [f"        for (index, module) in self.modules.iter().enumerate() {{",
                 f"            if let Some(answer) = {call} {{",
                 "                return Some(answer);", "            }", "        }",
                 "        None"]

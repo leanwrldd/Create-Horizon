@@ -36,7 +36,7 @@ fn face(direction: Direction) -> usize {
 fn container_of(block: &str) -> Option<mod_api::ModContainer> {
     let mut adapter = Adapter::None;
     let mut event = BlockEntityContainerEvent { block };
-    let old = guarded("block_entity_container", None, || create().block_entity_container(&mut adapter, &mut event))?;
+    let old = guarded("block_entity_container", usize::MAX, None, || create().block_entity_container(&mut adapter, &mut event))?;
     Some(mod_api::ModContainer {
         slots: old.slots,
         faces: old.faces,
@@ -49,7 +49,7 @@ fn container_of(block: &str) -> Option<mod_api::ModContainer> {
 fn tanks_of(block: &str) -> Option<mod_api::ModFluidTanks> {
     let mut adapter = Adapter::None;
     let mut event = BlockEntityFluidsEvent { block };
-    let old = guarded("block_entity_fluids", None, || create().block_entity_fluids(&mut adapter, &mut event))?;
+    let old = guarded("block_entity_fluids", usize::MAX, None, || create().block_entity_fluids(&mut adapter, &mut event))?;
     let mut tanks = mod_api::ModFluidTanks::default();
     tanks.tanks = old.tanks;
     tanks.faces = old.faces;
@@ -61,7 +61,7 @@ fn tanks_of(block: &str) -> Option<mod_api::ModFluidTanks> {
 fn serves_fluids_from_code(block: &str) -> bool {
     let mut adapter = Adapter::None;
     let mut event = CustomBlockFluidsEvent { block, custom: false };
-    guarded("custom_block_fluids", (), || create().custom_block_fluids(&mut adapter, &mut event));
+    guarded("custom_block_fluids", usize::MAX, (), || create().custom_block_fluids(&mut adapter, &mut event));
     event.custom
 }
 
@@ -135,7 +135,7 @@ impl CreateItems {
         };
         let mut adapter = Adapter::Base(host);
         !matches!(
-            guarded("container_accepts", Flow::Continue, || create().container_accepts(&mut adapter, &mut event)),
+            guarded("container_accepts", usize::MAX, Flow::Continue, || create().container_accepts(&mut adapter, &mut event)),
             Flow::Cancel
         )
     }
@@ -239,19 +239,19 @@ impl CustomFluids {
     fn tanks(&self, host: &dyn mod_api::Host) -> Vec<NativeFluidTankView> {
         let mut adapter = Adapter::Base(host);
         let mut event = CustomFluidTanksEvent { pos: self.at.pos, side: self.at.side };
-        guarded("custom_fluid_tanks", None, || create().custom_fluid_tanks(&mut adapter, &mut event)).unwrap_or_default()
+        guarded("custom_fluid_tanks", usize::MAX, None, || create().custom_fluid_tanks(&mut adapter, &mut event)).unwrap_or_default()
     }
 
     fn fill(&self, host: &mut dyn ServerHost, resource: &NativeFluidStack, action: NativeFluidAction) -> i32 {
         let mut adapter = Adapter::Server(host);
         let mut event = CustomFluidFillEvent { pos: self.at.pos, side: self.at.side, resource, action };
-        guarded("custom_fluid_fill", None, || create().custom_fluid_fill(&mut adapter, &mut event)).unwrap_or(0)
+        guarded("custom_fluid_fill", usize::MAX, None, || create().custom_fluid_fill(&mut adapter, &mut event)).unwrap_or(0)
     }
 
     fn drain(&self, host: &mut dyn ServerHost, request: &NativeFluidDrain, action: NativeFluidAction) -> Option<NativeFluidStack> {
         let mut adapter = Adapter::Server(host);
         let mut event = CustomFluidDrainEvent { pos: self.at.pos, side: self.at.side, request, action };
-        guarded("custom_fluid_drain", None, || create().custom_fluid_drain(&mut adapter, &mut event))
+        guarded("custom_fluid_drain", usize::MAX, None, || create().custom_fluid_drain(&mut adapter, &mut event))
     }
 }
 

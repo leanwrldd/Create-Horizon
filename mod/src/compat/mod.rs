@@ -21,6 +21,8 @@ mod types;
 include!("types_names.rs");
 
 pub mod adapter;
+mod host_services;
+pub use host_services::register_particles;
 pub mod events;
 pub mod items;
 pub mod client;
@@ -32,22 +34,31 @@ use std::collections::BTreeSet;
 use std::sync::{Mutex, PoisonError};
 
 /// Runs one module's hook so that a compatibility gap that panics (the old `Host` offered the server's services
-/// everywhere; the adapter has none to give a client hook) costs that module's work for the tick, not the game.
-/// The first panic of each hook is logged; `fallback` is what the hook answers instead.
-pub fn guarded<R>(hook: &'static str, fallback: R, call: impl FnOnce() -> R) -> R {
-    static SEEN: Mutex<BTreeSet<&'static str>> = Mutex::new(BTreeSet::new());
+/// everywhere; the adapter has none to give a client hook) costs that module's work, not the game.
+///
+/// A caught panic is not cheap: the game's panic hook runs first and captures a backtrace (seconds on Windows), so a
+/// hook that panics every tick froze the client at 0.1 frames a second. The first panic of a (hook, module) pair is
+/// logged and the pair is skipped from then on (`fallback` is what it answers); other modules keep their hook.
+/// `module` is the module's index in `forward::Create::modules`.
+pub fn guarded<R>(hook: &'static str, module: usize, fallback: R, call: impl FnOnce() -> R) -> R {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static ANY_BROKEN: AtomicBool = AtomicBool::new(false);
+    static BROKEN: Mutex<BTreeSet<(&'static str, usize)>> = Mutex::new(BTreeSet::new());
+    // Nothing has panicked yet: one atomic read per call.
+    if ANY_BROKEN.load(Ordering::Relaxed) && BROKEN.lock().unwrap_or_else(PoisonError::into_inner).contains(&(hook, module)) {
+        return fallback;
+    }
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)) {
         Ok(answer) => answer,
         Err(payload) => {
-            let mut seen = SEEN.lock().unwrap_or_else(PoisonError::into_inner);
-            if seen.insert(hook) {
-                let message = payload
-                    .downcast_ref::<&str>()
-                    .map(|text| (*text).to_owned())
-                    .or_else(|| payload.downcast_ref::<String>().cloned())
-                    .unwrap_or_default();
-                eprintln!("create: hook {hook} panicked in a module and was skipped: {message}");
-            }
+            BROKEN.lock().unwrap_or_else(PoisonError::into_inner).insert((hook, module));
+            ANY_BROKEN.store(true, Ordering::Relaxed);
+            let message = payload
+                .downcast_ref::<&str>()
+                .map(|text| (*text).to_owned())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_default();
+            eprintln!("create: hook {hook} of module #{module} panicked and is skipped from now on: {message}");
             fallback
         }
     }

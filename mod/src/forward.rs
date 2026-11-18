@@ -13,14 +13,14 @@ pub struct Create {
 
 impl Hooks for Create {
     fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
-        for module in &self.modules {
-            guarded("standalone_models", (), || module.standalone_models(event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("standalone_models", index, (), || module.standalone_models(event));
         }
     }
 
     fn block_entity(&self, host: &mut dyn Host, event: &mut BlockEntityEvent<'_>) -> Option<(String, Compound)> {
-        for module in &self.modules {
-            if let Some(answer) = guarded("block_entity", None, || module.block_entity(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(answer) = guarded("block_entity", index, None, || module.block_entity(host, event)) {
                 return Some(answer);
             }
         }
@@ -28,20 +28,20 @@ impl Hooks for Create {
     }
 
     fn block_entity_ticks(&self, host: &dyn Host, event: &mut BlockEntityTicksEvent<'_>) {
-        for module in &self.modules {
-            guarded("block_entity_ticks", (), || module.block_entity_ticks(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("block_entity_ticks", index, (), || module.block_entity_ticks(host, event));
         }
     }
 
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
-        for module in &self.modules {
-            guarded("block_entity_tick", (), || module.block_entity_tick(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("block_entity_tick", index, (), || module.block_entity_tick(host, event));
         }
     }
 
     fn block_entity_update_tag(&self, event: &mut BlockEntityUpdateTagEvent<'_>) -> Option<Compound> {
-        for module in &self.modules {
-            if let Some(mut answer) = guarded("block_entity_update_tag", None, || module.block_entity_update_tag(event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(mut answer) = guarded("block_entity_update_tag", index, None, || module.block_entity_update_tag(event)) {
                 crate::machines::value_box::decorate(&event.entity.id, &event.entity.nbt, &mut answer);
                 return Some(answer);
             }
@@ -50,20 +50,20 @@ impl Hooks for Create {
     }
 
     fn block_entity_submit(&self, host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
-        for module in &self.modules {
-            guarded("block_entity_submit", (), || module.block_entity_submit(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("block_entity_submit", index, (), || module.block_entity_submit(host, event));
         }
     }
 
     fn block_entity_render_bounding_box(&self, host: &dyn Host, event: &mut BlockEntityRenderBoundingBoxEvent<'_>) {
-        for module in &self.modules {
-            guarded("block_entity_render_bounding_box", (), || module.block_entity_render_bounding_box(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("block_entity_render_bounding_box", index, (), || module.block_entity_render_bounding_box(host, event));
         }
     }
 
     fn block_entity_container(&self, host: &dyn Host, event: &mut BlockEntityContainerEvent<'_>) -> Option<ModContainer> {
-        for module in &self.modules {
-            if let Some(answer) = guarded("block_entity_container", None, || module.block_entity_container(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(answer) = guarded("block_entity_container", index, None, || module.block_entity_container(host, event)) {
                 return Some(answer);
             }
         }
@@ -71,8 +71,8 @@ impl Hooks for Create {
     }
 
     fn block_entity_fluids(&self, host: &dyn Host, event: &mut BlockEntityFluidsEvent<'_>) -> Option<ModFluidTanks> {
-        for module in &self.modules {
-            if let Some(answer) = guarded("block_entity_fluids", None, || module.block_entity_fluids(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(answer) = guarded("block_entity_fluids", index, None, || module.block_entity_fluids(host, event)) {
                 return Some(answer);
             }
         }
@@ -80,8 +80,8 @@ impl Hooks for Create {
     }
 
     fn block_entity_accepts_fluid(&self, host: &dyn Host, event: &mut BlockEntityAcceptsFluidEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("block_entity_accepts_fluid", Flow::Continue, || module.block_entity_accepts_fluid(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("block_entity_accepts_fluid", index, Flow::Continue, || module.block_entity_accepts_fluid(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -89,8 +89,8 @@ impl Hooks for Create {
     }
 
     fn container_accepts(&self, host: &dyn Host, event: &mut ContainerAcceptsEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("container_accepts", Flow::Continue, || module.container_accepts(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("container_accepts", index, Flow::Continue, || module.container_accepts(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -98,8 +98,8 @@ impl Hooks for Create {
     }
 
     fn destroy_block(&self, host: &mut dyn Host, event: &mut DestroyBlockEvent) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("destroy_block", Flow::Continue, || module.destroy_block(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("destroy_block", index, Flow::Continue, || module.destroy_block(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -107,14 +107,14 @@ impl Hooks for Create {
     }
 
     fn place_block(&self, host: &mut dyn Host, event: &mut PlaceBlockEvent<'_>) {
-        for module in &self.modules {
-            guarded("place_block", (), || module.place_block(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("place_block", index, (), || module.place_block(host, event));
         }
     }
 
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("right_click_block", Flow::Continue, || module.right_click_block(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("right_click_block", index, Flow::Continue, || module.right_click_block(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -122,8 +122,8 @@ impl Hooks for Create {
     }
 
     fn left_click_block(&self, host: &mut dyn Host, event: &mut LeftClickBlockEvent) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("left_click_block", Flow::Continue, || module.left_click_block(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("left_click_block", index, Flow::Continue, || module.left_click_block(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -131,8 +131,8 @@ impl Hooks for Create {
     }
 
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("use_item_on", Flow::Continue, || module.use_item_on(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("use_item_on", index, Flow::Continue, || module.use_item_on(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -140,8 +140,8 @@ impl Hooks for Create {
     }
 
     fn use_item(&self, host: &mut dyn Host, event: &mut UseItemEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("use_item", Flow::Continue, || module.use_item(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("use_item", index, Flow::Continue, || module.use_item(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -149,8 +149,8 @@ impl Hooks for Create {
     }
 
     fn interact_entity(&self, host: &mut dyn Host, event: &mut InteractEntityEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("interact_entity", Flow::Continue, || module.interact_entity(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("interact_entity", index, Flow::Continue, || module.interact_entity(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -158,8 +158,8 @@ impl Hooks for Create {
     }
 
     fn state_for_placement(&self, level: &dyn LevelHost, event: &mut StateForPlacementEvent<'_>) -> Option<Option<BlockStateId>> {
-        for module in &self.modules {
-            if let Some(answer) = guarded("state_for_placement", None, || module.state_for_placement(level, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(answer) = guarded("state_for_placement", index, None, || module.state_for_placement(level, event)) {
                 return Some(answer);
             }
         }
@@ -167,8 +167,8 @@ impl Hooks for Create {
     }
 
     fn can_survive(&self, level: &dyn LevelHost, event: &mut CanSurviveEvent) -> Option<bool> {
-        for module in &self.modules {
-            if let Some(answer) = guarded("can_survive", None, || module.can_survive(level, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(answer) = guarded("can_survive", index, None, || module.can_survive(level, event)) {
                 return Some(answer);
             }
         }
@@ -176,8 +176,8 @@ impl Hooks for Create {
     }
 
     fn update_shape(&self, level: &mut dyn LevelTicksHost, event: &mut UpdateShapeEvent) -> Option<BlockStateId> {
-        for module in &self.modules {
-            if let Some(answer) = guarded("update_shape", None, || module.update_shape(level, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(answer) = guarded("update_shape", index, None, || module.update_shape(level, event)) {
                 return Some(answer);
             }
         }
@@ -185,20 +185,20 @@ impl Hooks for Create {
     }
 
     fn neighbor_changed(&self, level: &dyn LevelHost, event: &mut NeighborChangedEvent) {
-        for module in &self.modules {
-            guarded("neighbor_changed", (), || module.neighbor_changed(level, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("neighbor_changed", index, (), || module.neighbor_changed(level, event));
         }
     }
 
     fn block_changed(&self, level: &dyn LevelHost, event: &mut BlockChangedEvent) {
-        for module in &self.modules {
-            guarded("block_changed", (), || module.block_changed(level, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("block_changed", index, (), || module.block_changed(level, event));
         }
     }
 
     fn tick_block(&self, level: &mut dyn LevelWriteHost, event: &mut TickBlockEvent) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("tick_block", Flow::Continue, || module.tick_block(level, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("tick_block", index, Flow::Continue, || module.tick_block(level, event)) {
                 return Flow::Cancel;
             }
         }
@@ -206,116 +206,116 @@ impl Hooks for Create {
     }
 
     fn block_signal(&self, level: &dyn LevelHost, event: &mut BlockSignalEvent) {
-        for module in &self.modules {
-            guarded("block_signal", (), || module.block_signal(level, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("block_signal", index, (), || module.block_signal(level, event));
         }
     }
 
     fn is_signal_source(&self, level: &dyn LevelHost, event: &mut IsSignalSourceEvent) {
-        for module in &self.modules {
-            guarded("is_signal_source", (), || module.is_signal_source(level, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("is_signal_source", index, (), || module.is_signal_source(level, event));
         }
     }
 
     fn has_analog_output(&self, level: &dyn LevelHost, event: &mut HasAnalogOutputEvent) {
-        for module in &self.modules {
-            guarded("has_analog_output", (), || module.has_analog_output(level, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("has_analog_output", index, (), || module.has_analog_output(level, event));
         }
     }
 
     fn analog_output(&self, level: &dyn LevelHost, event: &mut AnalogOutputEvent) {
-        for module in &self.modules {
-            guarded("analog_output", (), || module.analog_output(level, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("analog_output", index, (), || module.analog_output(level, event));
         }
     }
 
     fn block_entity_inside(&self, event: &mut BlockEntityInsideEvent<'_>) {
-        for module in &self.modules {
-            guarded("block_entity_inside", (), || module.block_entity_inside(event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("block_entity_inside", index, (), || module.block_entity_inside(event));
         }
     }
 
     fn block_step_on(&self, event: &mut BlockStepOnEvent<'_>) {
-        for module in &self.modules {
-            guarded("block_step_on", (), || module.block_step_on(event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("block_step_on", index, (), || module.block_step_on(event));
         }
     }
 
     fn server_tick(&self, host: &mut dyn Host, event: &mut ServerTickEvent<'_>) {
-        for module in &self.modules {
-            guarded("server_tick", (), || module.server_tick(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("server_tick", index, (), || module.server_tick(host, event));
         }
     }
 
     fn level_tick_post(&self, host: &mut dyn Host, event: &mut LevelTickPostEvent<'_>) {
-        for module in &self.modules {
-            guarded("level_tick_post", (), || module.level_tick_post(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("level_tick_post", index, (), || module.level_tick_post(host, event));
         }
     }
 
     fn player_tick(&self, host: &mut dyn Host, event: &mut PlayerTickEvent) {
-        for module in &self.modules {
-            guarded("player_tick", (), || module.player_tick(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("player_tick", index, (), || module.player_tick(host, event));
         }
     }
 
     fn inventory_tick(&self, host: &mut dyn Host, event: &mut InventoryTickEvent) {
-        for module in &self.modules {
-            guarded("inventory_tick", (), || module.inventory_tick(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("inventory_tick", index, (), || module.inventory_tick(host, event));
         }
     }
 
     fn tooltip(&self, host: &dyn Host, event: &mut TooltipEvent<'_>) {
-        for module in &self.modules {
-            guarded("tooltip", (), || module.tooltip(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("tooltip", index, (), || module.tooltip(host, event));
         }
     }
 
     fn hud(&self, host: &mut dyn Host, event: &mut HudEvent<'_>) {
-        for module in &self.modules {
-            guarded("hud", (), || module.hud(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("hud", index, (), || module.hud(host, event));
         }
     }
 
     fn menu_clicked(&self, host: &mut dyn Host, event: &mut MenuClickedEvent) {
-        for module in &self.modules {
-            guarded("menu_clicked", (), || module.menu_clicked(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("menu_clicked", index, (), || module.menu_clicked(host, event));
         }
     }
 
     fn menu_closed(&self, host: &mut dyn Host, event: &mut MenuClosedEvent) {
-        for module in &self.modules {
-            guarded("menu_closed", (), || module.menu_closed(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("menu_closed", index, (), || module.menu_closed(host, event));
         }
     }
 
     fn item_model_property(&self, host: &dyn Host, event: &mut ItemModelPropertyEvent<'_>) {
-        for module in &self.modules {
-            guarded("item_model_property", (), || module.item_model_property(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("item_model_property", index, (), || module.item_model_property(host, event));
         }
     }
 
     fn loot_drops(&self, host: &mut dyn Host, event: &mut LootDropsEvent<'_>) {
-        for module in &self.modules {
-            guarded("loot_drops", (), || module.loot_drops(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("loot_drops", index, (), || module.loot_drops(host, event));
         }
     }
 
     fn net_from_server(&self, host: &mut dyn Host, event: &mut NetFromServerEvent<'_>) {
-        for module in &self.modules {
-            guarded("net_from_server", (), || module.net_from_server(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("net_from_server", index, (), || module.net_from_server(host, event));
         }
     }
 
     fn custom_block_fluids(&self, host: &dyn Host, event: &mut CustomBlockFluidsEvent<'_>) {
-        for module in &self.modules {
-            guarded("custom_block_fluids", (), || module.custom_block_fluids(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("custom_block_fluids", index, (), || module.custom_block_fluids(host, event));
         }
     }
 
     fn custom_fluid_tanks(&self, host: &dyn Host, event: &mut CustomFluidTanksEvent) -> Option<Vec<NativeFluidTankView>> {
-        for module in &self.modules {
-            if let Some(answer) = guarded("custom_fluid_tanks", None, || module.custom_fluid_tanks(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(answer) = guarded("custom_fluid_tanks", index, None, || module.custom_fluid_tanks(host, event)) {
                 return Some(answer);
             }
         }
@@ -323,8 +323,8 @@ impl Hooks for Create {
     }
 
     fn custom_fluid_fill(&self, host: &mut dyn Host, event: &mut CustomFluidFillEvent<'_>) -> Option<i32> {
-        for module in &self.modules {
-            if let Some(answer) = guarded("custom_fluid_fill", None, || module.custom_fluid_fill(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(answer) = guarded("custom_fluid_fill", index, None, || module.custom_fluid_fill(host, event)) {
                 return Some(answer);
             }
         }
@@ -332,8 +332,8 @@ impl Hooks for Create {
     }
 
     fn custom_fluid_drain(&self, host: &mut dyn Host, event: &mut CustomFluidDrainEvent<'_>) -> Option<NativeFluidStack> {
-        for module in &self.modules {
-            if let Some(answer) = guarded("custom_fluid_drain", None, || module.custom_fluid_drain(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Some(answer) = guarded("custom_fluid_drain", index, None, || module.custom_fluid_drain(host, event)) {
                 return Some(answer);
             }
         }
@@ -341,14 +341,14 @@ impl Hooks for Create {
     }
 
     fn key(&self, host: &mut dyn Host, event: &mut KeyEvent<'_>) {
-        for module in &self.modules {
-            guarded("key", (), || module.key(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("key", index, (), || module.key(host, event));
         }
     }
 
     fn tooltip_render_pre(&self, host: &mut dyn Host, event: &mut TooltipRenderPreEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("tooltip_render_pre", Flow::Continue, || module.tooltip_render_pre(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("tooltip_render_pre", index, Flow::Continue, || module.tooltip_render_pre(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -356,20 +356,20 @@ impl Hooks for Create {
     }
 
     fn screen_render_post(&self, host: &dyn Host, event: &mut ScreenRenderPostEvent<'_>) {
-        for module in &self.modules {
-            guarded("screen_render_post", (), || module.screen_render_post(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("screen_render_post", index, (), || module.screen_render_post(host, event));
         }
     }
 
     fn screen_closing(&self, host: &dyn Host, event: &mut ScreenClosingEvent<'_>) {
-        for module in &self.modules {
-            guarded("screen_closing", (), || module.screen_closing(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("screen_closing", index, (), || module.screen_closing(host, event));
         }
     }
 
     fn screen_key_pressed_pre(&self, host: &dyn Host, event: &mut ScreenKeyPressedPreEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("screen_key_pressed_pre", Flow::Continue, || module.screen_key_pressed_pre(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("screen_key_pressed_pre", index, Flow::Continue, || module.screen_key_pressed_pre(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -377,8 +377,8 @@ impl Hooks for Create {
     }
 
     fn screen_char_typed_pre(&self, host: &dyn Host, event: &mut ScreenCharTypedPreEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("screen_char_typed_pre", Flow::Continue, || module.screen_char_typed_pre(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("screen_char_typed_pre", index, Flow::Continue, || module.screen_char_typed_pre(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -386,8 +386,8 @@ impl Hooks for Create {
     }
 
     fn screen_mouse_button_pressed_pre(&self, host: &dyn Host, event: &mut ScreenMouseButtonPressedPreEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("screen_mouse_button_pressed_pre", Flow::Continue, || module.screen_mouse_button_pressed_pre(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("screen_mouse_button_pressed_pre", index, Flow::Continue, || module.screen_mouse_button_pressed_pre(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -395,8 +395,8 @@ impl Hooks for Create {
     }
 
     fn screen_mouse_button_released_pre(&self, host: &dyn Host, event: &mut ScreenMouseButtonReleasedPreEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("screen_mouse_button_released_pre", Flow::Continue, || module.screen_mouse_button_released_pre(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("screen_mouse_button_released_pre", index, Flow::Continue, || module.screen_mouse_button_released_pre(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -404,8 +404,8 @@ impl Hooks for Create {
     }
 
     fn screen_mouse_scrolled_pre(&self, host: &dyn Host, event: &mut ScreenMouseScrolledPreEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("screen_mouse_scrolled_pre", Flow::Continue, || module.screen_mouse_scrolled_pre(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("screen_mouse_scrolled_pre", index, Flow::Continue, || module.screen_mouse_scrolled_pre(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -413,38 +413,38 @@ impl Hooks for Create {
     }
 
     fn client_tick_post(&self, host: &mut dyn Host, event: &mut ClientTickPostEvent) {
-        for module in &self.modules {
-            guarded("client_tick_post", (), || module.client_tick_post(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("client_tick_post", index, (), || module.client_tick_post(host, event));
         }
     }
 
     fn component_types(&self, event: &mut ComponentTypesEvent<'_>) {
-        for module in &self.modules {
-            guarded("component_types", (), || module.component_types(event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("component_types", index, (), || module.component_types(event));
         }
     }
 
     fn item_bar(&self, host: &dyn Host, event: &mut ItemBarEvent<'_>) {
-        for module in &self.modules {
-            guarded("item_bar", (), || module.item_bar(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("item_bar", index, (), || module.item_bar(host, event));
         }
     }
 
     fn use_duration(&self, host: &dyn Host, event: &mut UseDurationEvent<'_>) {
-        for module in &self.modules {
-            guarded("use_duration", (), || module.use_duration(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("use_duration", index, (), || module.use_duration(host, event));
         }
     }
 
     fn use_animation(&self, host: &dyn Host, event: &mut UseAnimationEvent<'_>) {
-        for module in &self.modules {
-            guarded("use_animation", (), || module.use_animation(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("use_animation", index, (), || module.use_animation(host, event));
         }
     }
 
     fn living_entity_use_item_tick(&self, host: &mut dyn Host, event: &mut LivingEntityUseItemTickEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("living_entity_use_item_tick", Flow::Continue, || module.living_entity_use_item_tick(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("living_entity_use_item_tick", index, Flow::Continue, || module.living_entity_use_item_tick(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -452,38 +452,38 @@ impl Hooks for Create {
     }
 
     fn living_entity_use_item_finish(&self, host: &mut dyn Host, event: &mut LivingEntityUseItemFinishEvent<'_>) {
-        for module in &self.modules {
-            guarded("living_entity_use_item_finish", (), || module.living_entity_use_item_finish(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("living_entity_use_item_finish", index, (), || module.living_entity_use_item_finish(host, event));
         }
     }
 
     fn entity_tick_listened(&self, host: &mut dyn Host, event: &mut EntityTickListenedEvent) {
-        for module in &self.modules {
-            guarded("entity_tick_listened", (), || module.entity_tick_listened(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("entity_tick_listened", index, (), || module.entity_tick_listened(host, event));
         }
     }
 
     fn entity_tick_post(&self, host: &mut dyn Host, event: &mut EntityTickPostEvent<'_>) {
-        for module in &self.modules {
-            guarded("entity_tick_post", (), || module.entity_tick_post(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("entity_tick_post", index, (), || module.entity_tick_post(host, event));
         }
     }
 
     fn menu_input_closed(&self, host: &mut dyn Host, event: &mut MenuInputClosedEvent<'_>) {
-        for module in &self.modules {
-            guarded("menu_input_closed", (), || module.menu_input_closed(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("menu_input_closed", index, (), || module.menu_input_closed(host, event));
         }
     }
 
     fn register_commands(&self, host: &mut dyn Host, event: &mut RegisterCommandsEvent<'_>) {
-        for module in &self.modules {
-            guarded("register_commands", (), || module.register_commands(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("register_commands", index, (), || module.register_commands(host, event));
         }
     }
 
     fn perform_command(&self, host: &mut dyn Host, event: &mut PerformCommandEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("perform_command", Flow::Continue, || module.perform_command(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("perform_command", index, Flow::Continue, || module.perform_command(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -491,26 +491,26 @@ impl Hooks for Create {
     }
 
     fn movement_input(&self, host: &dyn Host, event: &mut MovementInputEvent) {
-        for module in &self.modules {
-            guarded("movement_input", (), || module.movement_input(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("movement_input", index, (), || module.movement_input(host, event));
         }
     }
 
     fn net_from_client(&self, host: &mut dyn Host, event: &mut NetFromClientEvent<'_>) {
-        for module in &self.modules {
-            guarded("net_from_client", (), || module.net_from_client(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("net_from_client", index, (), || module.net_from_client(host, event));
         }
     }
 
     fn living_breathe(&self, event: &mut LivingBreatheEvent<'_>) {
-        for module in &self.modules {
-            guarded("living_breathe", (), || module.living_breathe(event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("living_breathe", index, (), || module.living_breathe(event));
         }
     }
 
     fn living_incoming_damage_v3(&self, event: &mut LivingIncomingDamageV3Event<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("living_incoming_damage_v3", Flow::Continue, || module.living_incoming_damage_v3(event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("living_incoming_damage_v3", index, Flow::Continue, || module.living_incoming_damage_v3(event)) {
                 return Flow::Cancel;
             }
         }
@@ -518,8 +518,8 @@ impl Hooks for Create {
     }
 
     fn living_knockback(&self, event: &mut LivingKnockbackEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("living_knockback", Flow::Continue, || module.living_knockback(event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("living_knockback", index, Flow::Continue, || module.living_knockback(event)) {
                 return Flow::Cancel;
             }
         }
@@ -527,14 +527,14 @@ impl Hooks for Create {
     }
 
     fn hears_projectile_impacts(&self, host: &dyn Host, event: &mut HearsProjectileImpactsEvent) {
-        for module in &self.modules {
-            guarded("hears_projectile_impacts", (), || module.hears_projectile_impacts(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("hears_projectile_impacts", index, (), || module.hears_projectile_impacts(host, event));
         }
     }
 
     fn projectile_impact(&self, host: &mut dyn Host, event: &mut ProjectileImpactEvent<'_>) -> Flow {
-        for module in &self.modules {
-            if let Flow::Cancel = guarded("projectile_impact", Flow::Continue, || module.projectile_impact(host, event)) {
+        for (index, module) in self.modules.iter().enumerate() {
+            if let Flow::Cancel = guarded("projectile_impact", index, Flow::Continue, || module.projectile_impact(host, event)) {
                 return Flow::Cancel;
             }
         }
@@ -542,14 +542,14 @@ impl Hooks for Create {
     }
 
     fn world_primitives(&self, host: &dyn Host, event: &mut WorldPrimitivesEvent<'_>) {
-        for module in &self.modules {
-            guarded("world_primitives", (), || module.world_primitives(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("world_primitives", index, (), || module.world_primitives(host, event));
         }
     }
 
     fn release_using(&self, host: &mut dyn Host, event: &mut ReleaseUsingEvent<'_>) {
-        for module in &self.modules {
-            guarded("release_using", (), || module.release_using(host, event));
+        for (index, module) in self.modules.iter().enumerate() {
+            guarded("release_using", index, (), || module.release_using(host, event));
         }
     }
 }

@@ -643,6 +643,10 @@ impl mod_api::Hooks for Mod {
             r.register_raw_recipe_serializer(id, id);
         }
         compat::world::register_net(r);
+        // Particle keys are issued at registration only; the glue's `send_particles` needs them later.
+        compat::register_particles(r);
+        // Item slots and fluid tanks are declared per block entity below (`compat::containers::register_entity`),
+        // with the handler that asks `container_accepts`.
         for &id in parts_gen::BLOCKS {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
             let key = r.block_key(full);
