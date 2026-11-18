@@ -696,6 +696,78 @@ impl mod_api::Hooks for Mod {
         compat::events::block_step_on(event)
     }
 
+    fn render_gui_post(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::RenderGuiPostEvent<'_>) {
+        compat::client::render_gui_post(host, event)
+    }
+
+    fn render_tooltip_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::RenderTooltipPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::render_tooltip_pre(host, event)
+    }
+
+    fn input_key(&self, host: &mut dyn mod_api::ClientHost, event: &mut mod_api::InputKeyEvent<'_>) {
+        compat::client::input_key(host, event)
+    }
+
+    fn mouse_button_post(&self, host: &mut dyn mod_api::ClientHost, event: &mut mod_api::MouseButtonPostEvent) {
+        compat::client::mouse_button_post(host, event)
+    }
+
+    fn movement_input(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::MovementInputEvent) {
+        compat::client::movement_input(host, event)
+    }
+
+    fn screen_render_post(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::ScreenRenderPostEvent<'_>) {
+        compat::client::screen_render_post(host, event)
+    }
+
+    fn screen_closing(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::ScreenClosingEvent<'_>) {
+        compat::client::screen_closing(host, event)
+    }
+
+    fn screen_key_pressed_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenKeyPressedPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_key_pressed_pre(host, event)
+    }
+
+    fn screen_char_typed_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenCharTypedPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_char_typed_pre(host, event)
+    }
+
+    fn screen_mouse_button_pressed_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenMouseButtonPressedPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_mouse_button_pressed_pre(host, event)
+    }
+
+    fn screen_mouse_button_released_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenMouseButtonReleasedPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_mouse_button_released_pre(host, event)
+    }
+
+    fn screen_mouse_scrolled_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenMouseScrolledPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_mouse_scrolled_pre(host, event)
+    }
+
     fn living_entity_use_item_tick(
         &self,
         host: mod_api::HostSide<'_>,

@@ -604,17 +604,36 @@ pub struct KeyCode(pub u32);
 
 // --- client-only stand-ins (their hooks have no match yet) ----------------------------------------------
 
-/// The old HUD batch. Only the `Host` drawing methods (`fill`, `text`, `item`, ...) take one, and every one of those
-/// is a gap here, so it carries nothing.
+/// The old HUD batch. It owns nothing: it wraps the new API's `DrawContext` for one hook call (`render_gui_post`, a
+/// screen hook, a tooltip hook) and keeps the old readable size. Only the `Host` drawing methods (`fill`, `text`,
+/// `item`, ...) draw on it, through `draw()`.
 #[derive(Default)]
 pub struct HudBatch {
     pub scale: f32,
     pub width: f32,
     pub height: f32,
+    /// Unused: the old batch collected vertices, this one draws at once. `len()` of it is still a mark for
+    /// `scale_since`.
     pub vertices: Vec<[f32; 8]>,
+    // As `BlockEntityDraw`: the old handle had no lifetime, so the borrowed context is held as a pointer. A batch is
+    // made by `compat::client` for one hook call and dropped before it returns.
+    draw: Option<std::ptr::NonNull<dyn DrawContext>>,
 }
 
 impl HudBatch {
+    /// # Safety
+    /// The result must not outlive the borrow of `draw`.
+    pub(crate) unsafe fn new(draw: &mut dyn DrawContext) -> Self {
+        let [width, height] = draw.size();
+        // SAFETY: only the trait object's lifetime bound is erased; the caller keeps the borrow alive.
+        let draw: &mut (dyn DrawContext + 'static) = unsafe { std::mem::transmute(draw) };
+        Self { scale: 1.0, width, height, vertices: Vec::new(), draw: Some(std::ptr::NonNull::from(draw)) }
+    }
+    /// The context behind this batch; None for a default (empty) batch, which draws nothing.
+    pub(crate) fn draw(&mut self) -> Option<&mut dyn DrawContext> {
+        // SAFETY: see `new`.
+        self.draw.map(|mut draw| unsafe { draw.as_mut() })
+    }
     pub fn scale_since(&mut self, _mark: usize, _x: f32, _y: f32, _sx: f32, _sy: f32) {}
 }
 
