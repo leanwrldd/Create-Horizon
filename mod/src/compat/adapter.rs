@@ -498,7 +498,21 @@ impl Host for Adapter<'_> {
     }
     fn player_break_block(&mut self, uuid: u128, pos: [i32; 3], into_inventory: bool) -> bool {
         let Some(host) = self.server_mut() else { return false };
-        host.player(uuid).is_some_and(|player| player.destroy_block(host, pos, into_inventory))
+        if host.player(uuid).is_some_and(|player| player.destroy_block(host, pos, into_inventory)) {
+            return true;
+        }
+        // The player's own break refused (it did for a sneak-click with a Wrench, whose tool component the check
+        // may not allow): break the block as the level does, and hand the drops over.
+        let Some(drops) = self.destroy_block(pos, None, true) else { return false };
+        if into_inventory {
+            for stack in drops {
+                if let Some(rest) = self.give_stack(uuid, stack) {
+                    let at = [f64::from(pos[0]) + 0.5, f64::from(pos[1]) + 0.5, f64::from(pos[2]) + 0.5];
+                    let _ = crate::util::spawn_item(self, at, &rest, [0.0; 3], 0);
+                }
+            }
+        }
+        true
     }
     fn server_players(&self) -> Vec<NativeServerPlayer> {
         let Adapter::Server(server) = self else { return Vec::new() };
@@ -933,6 +947,15 @@ impl Host for Adapter<'_> {
     }
 
     // --- the client's window and view ----------------------------------------------------------------------
+
+    /// The client's resources, read through the new host (`Host::resource`); used within the hook that made the handle.
+    fn client_resources(&self) -> ClientResources {
+        match self {
+            Adapter::Server(_) | Adapter::None => ClientResources::default(),
+            // SAFETY: the handle is read inside the hook call that holds this adapter.
+            _ => unsafe { ClientResources::of(self.new_host()) },
+        }
+    }
 
     /// The old one-call snapshot of the client, rebuilt from the new client host's calls. The GUI size comes from
     /// the last draw context (`types::gui_size`); there is one window, so its id is a constant (Ponder keys its
