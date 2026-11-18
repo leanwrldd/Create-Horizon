@@ -684,10 +684,14 @@ impl mod_api::Hooks for Mod {
     }
 
     fn client_tick_post(&self, host: &mut dyn mod_api::ClientHost, _: &mut mod_api::ClientTickPostEvent) {
+        machines::cog_placement::client_tick(&*host);
         compat::events::client_tick_post(host)
     }
 
-    fn right_click_block(&self, host: mod_api::HostSide<'_>, event: &mut mod_api::RightClickBlockEvent<'_>) -> mod_api::Flow {
+    fn right_click_block(&self, mut host: mod_api::HostSide<'_>, event: &mut mod_api::RightClickBlockEvent<'_>) -> mod_api::Flow {
+        if let mod_api::Flow::Cancel = machines::cog_placement::right_click_block(&mut host, event) {
+            return mod_api::Flow::Cancel;
+        }
         compat::events::right_click_block(host, event)
     }
 
@@ -704,7 +708,12 @@ impl mod_api::Hooks for Mod {
     }
 
     fn render_gui_post(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::RenderGuiPostEvent<'_>) {
+        machines::cog_placement::render_gui_post(host, event);
         compat::client::render_gui_post(host, event)
+    }
+
+    fn submit_custom_geometry(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::SubmitCustomGeometryEvent<'_>) {
+        machines::cog_placement::submit_custom_geometry(host, event)
     }
 
     fn render_tooltip_pre(
