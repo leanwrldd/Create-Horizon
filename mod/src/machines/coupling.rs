@@ -110,6 +110,10 @@ fn write(saved: &[Saved]) -> Compound {
 }
 
 fn load(host: &mut dyn Host) -> Vec<Saved> {
+    // A client has no level attachment to read (the new API gives it no `ServerHost`): nothing to load there.
+    if host.window() {
+        return Vec::new();
+    }
     match COUPLINGS.get_existing(host.new_server(), Holder::Level) {
         Ok(Some(nbt)) => read(&nbt),
         _ => Vec::new(),
@@ -117,6 +121,9 @@ fn load(host: &mut dyn Host) -> Vec<Saved> {
 }
 
 fn store(host: &mut dyn Host, saved: &[Saved]) {
+    if host.window() {
+        return;
+    }
     let _ = COUPLINGS.set(host.new_server(), Holder::Level, write(saved));
 }
 

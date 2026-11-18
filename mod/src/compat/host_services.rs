@@ -267,10 +267,10 @@ pub fn register_containers(r: &mut dyn mod_api::Registrar) {
     let hooks = crate::create();
     for &id in crate::parts_gen::BLOCK_ENTITIES {
         let full = format!("create:{id}");
-        let container = guarded("block_entity_container", None, || {
+        let container = guarded("block_entity_container", usize::MAX, None, || {
             hooks.block_entity_container(&Adapter::None, &mut BlockEntityContainerEvent { block: &full })
         });
-        let tanks = guarded("block_entity_fluids", None, || {
+        let tanks = guarded("block_entity_fluids", usize::MAX, None, || {
             hooks.block_entity_fluids(&Adapter::None, &mut BlockEntityFluidsEvent { block: &full })
         });
         if container.is_none() && tanks.is_none() {

@@ -112,6 +112,9 @@ static SNAPSHOT: LazyLock<Mutex<HashMap<String, Arc<GlueSet>>>> = LazyLock::new(
 
 /// The level's glue, read from its attachment.
 pub fn load(host: &mut dyn Host) -> GlueSet {
+    if host.window() {
+        return GlueSet::default();
+    }
     match GLUE.get_existing(host.new_server(), Holder::Level) {
         Ok(Some(nbt)) => boxes_from_nbt(&nbt),
         _ => GlueSet::default(),
@@ -119,6 +122,9 @@ pub fn load(host: &mut dyn Host) -> GlueSet {
 }
 
 fn store(host: &mut dyn Host, set: &GlueSet) {
+    if host.window() {
+        return;
+    }
     let _ = GLUE.set(host.new_server(), Holder::Level, boxes_to_nbt(set));
     lock(&SNAPSHOT).insert(host.dimension().to_owned(), Arc::new(set.clone()));
 }
