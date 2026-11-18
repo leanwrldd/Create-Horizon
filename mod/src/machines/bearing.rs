@@ -110,6 +110,31 @@ fn angle_at(angle: f32, time: i64, rpm: f32, now: f64) -> f32 {
     ((f64::from(angle) + turned) % 360.0) as f32
 }
 
+/// Where the structure is at game time `t` and a tick before (`solid`): it turns about the facing's
+/// axis through the anchor cell's centre, its angle following the snapshot and the speed.
+pub(crate) fn solid_sample(
+    host: &dyn Host,
+    pos: Pos,
+    entity: &ModBlockEntity,
+    _anchor: Pos,
+    t: f64,
+) -> Option<crate::solid::Sample> {
+    if !is_bearing(&entity.id) {
+        return None;
+    }
+    let state = saved(entity);
+    if !state.running {
+        return None;
+    }
+    let facing = util::facing(host, pos, "facing")?;
+    let moved = psi_motion::moving_rpm(entity, kinetic::speed(entity));
+    Some(crate::solid::Sample::Turn {
+        axis: facing.axis(),
+        now: angle_at(state.angle, state.time, moved, t),
+        prev: angle_at(state.angle, state.time, moved, t - 1.0),
+    })
+}
+
 fn new_entity(windmill: bool) -> Compound {
     let mut nbt = kinetic::new_entity();
     if windmill {

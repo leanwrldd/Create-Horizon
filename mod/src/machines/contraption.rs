@@ -282,6 +282,13 @@ impl Moving {
             .map(|state| {
                 let mut entry = Compound::new();
                 entry.insert("Name".into(), string(&state.name));
+                // A client can't ask the game for a state's collision shape: the server's answer
+                // rides in the palette (`solid::shapes`).
+                if for_client {
+                    if let Some(boxes) = crate::solid::shapes::lookup(state) {
+                        entry.insert("Shape".into(), crate::solid::shapes::to_tag(&boxes));
+                    }
+                }
                 if !state.props.is_empty() {
                     let mut props = Compound::new();
                     for (key, value) in &state.props {
@@ -702,6 +709,8 @@ pub fn forget_live(dimension: &str, pos: Pos) {
     let key = (dimension.to_owned(), pos);
     lock(&LIVE).remove(&key);
     lock(&QUIET).remove(&key);
+    // The structure is set down: it is no longer solid (`solid`).
+    crate::solid::registry::forget(crate::solid::registry::Side::Server, dimension, pos);
 }
 
 /// How many ticks in a row the controller has had no speed. A reload or a changed network leaves

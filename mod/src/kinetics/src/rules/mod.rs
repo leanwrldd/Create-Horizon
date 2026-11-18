@@ -121,6 +121,7 @@ pub mod seat;
 pub mod sequenced;
 pub mod sequenced_gearshift;
 pub mod smart_fluid_pipe;
+pub mod solid;
 pub mod speed_controller;
 pub mod spout;
 pub mod spout_blocks;

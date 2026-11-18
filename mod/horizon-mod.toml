@@ -13,3 +13,15 @@ capabilities = ["registries"]
 game = "26.3"
 horizon = "0b14f8acfd97fa2c750e42795249dcc981178ca4"
 mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
+
+# The local player is collided with moving structures just before its tick's state is sent to the server (Create's
+# ContraptionCollider.collideEntities for the client's player, which runs after the player moved): src/solid/client.rs.
+# The client moves its own player and nothing on the API writes its position, ground flag or fall distance. The
+# target is a game-crate function: a lower-crate target in motion.rs copies a `use` of a pub(crate) item that the
+# patch crate can't see (E0603 `attribute_error`).
+[[native.mixin]]
+id = "local_player_solid"
+target = "horizon_client::game::remote::Game<'_>::remote_send_state"
+kind = "HEAD"
+helper = "src/mixins/local_player_solid.rs"
+bindings = [{ name = "game", ty = "&mut Game<'_>", value = "&mut *self" }]

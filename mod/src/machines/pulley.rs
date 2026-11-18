@@ -109,6 +109,31 @@ fn range_at(host: &dyn Host, pos: Pos) -> i32 {
     pulley_rules::extension_range(pos[1], pulley_rules::min_build_height(host.dimension()))
 }
 
+/// Where the structure is at game time `t` and a tick before (`solid`): `toPosition`, the anchor
+/// `initialOffset - offset` up, the offset following its snapshot and speed.
+pub(crate) fn solid_sample(
+    host: &dyn Host,
+    pos: Pos,
+    entity: &ModBlockEntity,
+    anchor: Pos,
+    t: f64,
+) -> Option<crate::solid::Sample> {
+    if entity.id != PULLEY {
+        return None;
+    }
+    let state = saved(entity);
+    if !state.running {
+        return None;
+    }
+    let spin = psi_motion::moving_rpm(entity, kinetic::speed(entity));
+    let range = range_at(host, pos);
+    let at = |t: f64| {
+        let offset = pulley_rules::offset_at(state.offset, state.time, spin, t, range);
+        [f64::from(anchor[0]), f64::from(anchor[1]) + f64::from(pulley_rules::rise(state.initial, offset)), f64::from(anchor[2])]
+    };
+    Some(crate::solid::Sample::Slide { now: at(t), prev: at(t - 1.0) })
+}
+
 fn below(pos: Pos, i: i32) -> Pos {
     [pos[0], pos[1] - i, pos[2]]
 }
