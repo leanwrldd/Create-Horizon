@@ -46,7 +46,7 @@ use super::contraption::{
 use super::actor;
 use super::actor_draw;
 use super::portable_interface_motion as psi_motion;
-use create_kinetics::rules::actor::Carrier;
+use create_kinetics::rules::actor::{Carrier, Structure};
 use crate::{kinetic, util};
 
 const MECHANICAL: &str = "create:mechanical_bearing";
@@ -329,7 +329,7 @@ impl Hooks for Bearing {
                 let angle = |t: f64| f64::from(angle_at(state.angle, state.time, spin, t));
                 let pose = psi_motion::Pose::Turning { anchor: live.moving.anchor, axis: facing.axis(), angle: &angle };
                 // The actors on the structure (drills, saws...) may stall it too (`tickActors`).
-                let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, false);
+                let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, Structure::Other);
                 let want = psi_motion::tick(host, pos, &live.moving, &pose, now) | acted;
                 if want != held {
                     let at = angle_at(state.angle, state.time, spin, now as f64);

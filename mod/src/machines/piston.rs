@@ -41,7 +41,7 @@ use super::contraption::{
 use super::actor;
 use super::actor_draw;
 use super::portable_interface_motion as psi_motion;
-use create_kinetics::rules::actor::Carrier;
+use create_kinetics::rules::actor::{Carrier, Structure};
 use crate::{kinetic, util};
 
 const NORMAL: &str = "create:mechanical_piston";
@@ -352,7 +352,7 @@ impl Hooks for Piston {
             };
             let pose = psi_motion::Pose::Translating { origin: &origin };
             // The actors on the structure (drills, saws...) may stall it too (`tickActors`).
-            let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, false);
+            let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, Structure::Other);
             let want = psi_motion::tick(host, pos, &live.moving, &pose, now) | acted;
             if want != held {
                 let offset = piston_rules::offset_at(state.offset, state.time, speed, now as f64, state.range);

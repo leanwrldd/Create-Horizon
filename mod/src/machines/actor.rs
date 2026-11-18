@@ -6,9 +6,12 @@
 //!
 //! # The hook
 //!
-//! A controller (`piston.rs`, `bearing.rs`, `gantry.rs`, `pulley.rs`) calls [`tick`] each tick its
-//! structure runs, with the [`Pose`] it already has for the Portable Interfaces (where the
-//! structure is at any game time), and [`stop`] just before it sets the structure down. `tick`
+//! A controller (`piston.rs`, `bearing.rs`, `gantry.rs`, `pulley.rs`, `elevator.rs`) calls [`tick`]
+//! each tick its structure runs, with the [`Pose`] it already has for the Portable Interfaces (where
+//! the structure is at any game time) and the [`Structure`] it carries (a pulley's and an elevator's
+//! differ in `isActive` and `disableActorOnStart`), and [`stop`] just before it sets the structure
+//! down. A rope pulley and a gantry also call [`restart`] (`Contraption.stop` with the structure
+//! still running) when their speed turns round or stops. `tick`
 //! works out each actor block's world position (`toGlobalVector(centre + getActiveAreaOffset)`),
 //! the moment it enters a new block position (`shouldActorTrigger`) and calls
 //! `visitNewPosition`, `onSpeedChanged` and `tick` on its behaviour as `tickActors` does. It answers
@@ -29,7 +32,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use create_kinetics::rules::actor::{self as rules, Carrier, Context, Kind, Vec3};
+use create_kinetics::rules::actor::{self as rules, Carrier, Context, Kind, Structure, Vec3};
 use create_kinetics::rules::contraption::State;
 use create_kinetics::rules::portable_interface::Stack;
 use create_kinetics::{Dir, Pos};
@@ -105,10 +108,15 @@ fn controls_of(moving: &Moving) -> Vec<(bool, Option<String>)> {
 impl Run {
     /// `Contraption.startMoving`: a context for each actor, and the actors the Controls start
     /// disabled (`disableActorOnStart`, `setActorsActive(filter, false)`).
-    fn start(moving: &Moving, now: i64, controller: Pos) -> Run {
+    fn start(moving: &Moving, now: i64, controller: Pos, structure: Structure) -> Run {
         let controls = controls_of(moving);
         let refs: Vec<(bool, Option<&str>)> = controls.iter().map(|(d, f)| (*d, f.as_deref())).collect();
-        let disabled = rules::disabled_filters(&refs);
+        // `ElevatorContraption.disableActorOnStart` does nothing.
+        let disabled = if structure.controls_disable_on_start() {
+            rules::disabled_filters(&refs)
+        } else {
+            Vec::new()
+        };
         let mut actors = Vec::new();
         for block in &moving.blocks {
             let Some(kind) = rules::kind_of(&block.state.name) else { continue };
@@ -311,7 +319,7 @@ pub fn tick(
     pose: &Pose<'_>,
     now: i64,
     carrier: Carrier,
-    on_pulley: bool,
+    structure: Structure,
 ) -> bool {
     let dimension = host.dimension();
     let Some(live) = engine::live(dimension, controller, &entity.nbt) else {
@@ -320,7 +328,7 @@ pub fn tick(
     let key: Key = (dimension.to_owned(), controller);
     let mut run = with_runs(|runs| runs.remove(&key))
         .filter(|run| run.blocks == live.moving.blocks.len())
-        .unwrap_or_else(|| Run::start(&live.moving, now, controller));
+        .unwrap_or_else(|| Run::start(&live.moving, now, controller, structure));
     run.seen = now;
     if run.actors.is_empty() {
         with_runs(|runs| runs.insert(key, run));
@@ -336,7 +344,7 @@ pub fn tick(
         let turned = pose.rotate(t, offset);
         let position = [centre[0] + turned[0], centre[1] + turned[1], centre[2] + turned[2]];
         let visited = actor.ctx.arrive(position, &|v| pose.unrotate(t, v), false);
-        if !rules::is_active(actor.kind, actor.ctx.disabled, facing, actor.ctx.relative_motion, on_pulley)
+        if !rules::is_active(actor.kind, actor.ctx.disabled, facing, actor.ctx.relative_motion, structure.is_pulley())
             && !rules::must_tick_while_disabled(actor.kind)
         {
             continue;
@@ -366,6 +374,18 @@ pub fn tick(
 /// hand goes back into its block's data. Only the cached structure the set-down places from is
 /// changed (`engine::set_live`), so no entity is needed. Forgets the structure's actors.
 pub fn stop(host: &mut dyn Host, controller: Pos, nbt: &Compound) {
+    stop_moving(host, controller, nbt, false);
+}
+
+/// `Contraption.stop` while the structure goes on (`LinearActuatorBlockEntity.onSpeedChanged` and
+/// `GantryContraptionEntity.tickContraption` call it when the speed turns round or stops): every
+/// actor stops moving (cracks cleared, a Deployer's hand put back, position and motion forgotten)
+/// and picks up again from the next tick, with the contexts kept (`firstMovement` stays as it is).
+pub fn restart(host: &mut dyn Host, controller: Pos, nbt: &Compound) {
+    stop_moving(host, controller, nbt, true);
+}
+
+fn stop_moving(host: &mut dyn Host, controller: Pos, nbt: &Compound, keep: bool) {
     let dimension = host.dimension();
     let key: Key = (dimension.to_owned(), controller);
     let Some(mut run) = with_runs(|runs| runs.remove(&key)) else { return };
@@ -381,6 +401,9 @@ pub fn stop(host: &mut dyn Host, controller: Pos, nbt: &Compound) {
         actor.ctx.stop();
     }
     store.commit_cached(controller, dimension);
+    if keep {
+        with_runs(|runs| runs.insert(key, run));
+    }
 }
 
 /// The nearest block direction of a vector (`Direction.getNearest`), for a facing turned by the
