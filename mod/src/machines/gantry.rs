@@ -12,6 +12,13 @@
 //! The structure is kept in the block entity of the gantry shaft the carriage started on (the
 //! controller): `Running`, `Offset` (blocks along the shaft's facing, a snapshot taken at
 //! `SyncTime`), `Facing` (the carriage's) and `Contraption`, as the piston keeps its own.
+//!
+//! Actors on the structure (`actor.rs`) and the Portable Interfaces run on it as on a piston's:
+//! the controller gives them the structure's `Pose` (it slides along the shaft's facing) and holds
+//! the structure still while one stalls it (`Stalled`; the shaft under it is still checked at the
+//! shaft's own speed, `checkPinionShaft`). A carriage that turns round stops its actors
+//! (`GantryContraptionEntity.tickContraption`), and setting the structure down stops them first.
+//! The drills' heads turn with the structure's speed.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -28,9 +35,13 @@ use crate::compat::{
     Tag, UpdateShapeEvent, UseItemOnEvent,
 };
 
+use super::actor;
+use super::actor_draw;
 use super::contraption::{
     self as engine, ASSEMBLE, CONTRAPTION, HostWorld, LAST_EXCEPTION, RUNNING, SYNC_TIME,
 };
+use super::portable_interface_motion as psi_motion;
+use create_kinetics::rules::actor::{Carrier, Structure, speed_reversed};
 use crate::{kinetic, util};
 
 const SHAFT: &str = gantry::SHAFT;
@@ -266,6 +277,8 @@ fn try_assemble(
 /// Sets the structure of the shaft at `pos` down `cell` blocks along from where it started.
 fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, facing: Dir, cell: i32) {
     let dimension = host.dimension().to_owned();
+    // `Contraption.stop`: the actors on the structure stop first.
+    actor::stop(host, pos, nbt);
     if let Some(live) = engine::live(&dimension, pos, nbt) {
         let transform = Transform::translation(relative(live.moving.anchor, facing, cell));
         engine::place_in_world(host, &live.moving, &transform, &mut |_, _, _| false);
@@ -275,21 +288,31 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, facing: Dir, cell: i3
 
 fn stop(entity: &mut ModBlockEntity, now: i64) {
     entity.nbt.insert(RUNNING.into(), flag(false));
+    entity.nbt.remove(&psi_motion::STALLED.into());
     entity.nbt.remove(&CONTRAPTION.into());
     util::set_float(&mut entity.nbt, OFFSET, 0.0);
     entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
     put(entity, ASSEMBLE, flag(false));
 }
 
-/// `GantryContraptionEntity.checkPinionShaft` and the collision, once a tick: where the structure
-/// is, whether the shaft under it lets it go on, whether something is in its way. Returns the
-/// cell to set it down in when it has to stop.
-fn check_motion(host: &mut dyn Host, pos: Pos, entity: &ModBlockEntity, facing: Dir, rpm: f32, now: i64) -> Option<i32> {
+/// `GantryContraptionEntity.checkPinionShaft`, once a tick: where the structure is and whether
+/// the shaft under it lets it go on. The shaft's own speed decides that (`rpm`, even while an
+/// actor holds the structure still); the structure follows `held`, the pinion speed it moves at
+/// (none while it is held). Returns the cell to set it down in when it has to stop.
+fn check_shaft(
+    host: &mut dyn Host,
+    pos: Pos,
+    entity: &ModBlockEntity,
+    facing: Dir,
+    rpm: f32,
+    held: f32,
+    now: i64,
+) -> Option<i32> {
     let state = saved(entity);
     let dimension = host.dimension().to_owned();
     let live = engine::live(&dimension, pos, &entity.nbt)?;
     let speed = gantry::pinion_speed(rpm);
-    let offset = gantry::offset_at(state.offset, state.time, speed, now as f64);
+    let offset = gantry::offset_at(state.offset, state.time, held, now as f64);
     let cell = gantry::grid_offset(offset);
     let anchor = live.moving.anchor;
     // The shaft under the carriage is gone, powered, or nothing turns it.
@@ -304,14 +327,72 @@ fn check_motion(host: &mut dyn Host, pos: Pos, entity: &ModBlockEntity, facing: 
             _ => return Some(k),
         }
     }
-    // Something in the way.
-    let movement = if speed > 0.0 { facing } else { facing.opposite() };
-    let next = gantry::offset_at(state.offset, state.time, speed, (now + 1) as f64);
+    None
+}
+
+/// `ContraptionCollider.collideBlocks`, once a tick: whether something is in the structure's way
+/// as it moves at `held` (a structure held still isn't moving into anything). Returns the cell
+/// to set it down in when it has to stop.
+fn check_collision(
+    host: &mut dyn Host,
+    pos: Pos,
+    entity: &ModBlockEntity,
+    facing: Dir,
+    held: f32,
+    now: i64,
+) -> Option<i32> {
+    if held == 0.0 {
+        return None;
+    }
+    let state = saved(entity);
+    let dimension = host.dimension().to_owned();
+    let live = engine::live(&dimension, pos, &entity.nbt)?;
+    let offset = gantry::offset_at(state.offset, state.time, held, now as f64);
+    let cell = gantry::grid_offset(offset);
+    let anchor = live.moving.anchor;
+    let movement = if held > 0.0 { facing } else { facing.opposite() };
+    let next = gantry::offset_at(state.offset, state.time, held, (now + 1) as f64);
     let at = piston_rules::collision_anchor(piston_rules::position(anchor, facing, next), movement);
     let colliders = live.colliders(movement);
     let blocked = HostWorld::new(&*host)
         .is_some_and(|world| colliders.iter().any(|c| rules::blocked_by(&world, add(*c, at))));
     blocked.then_some(cell)
+}
+
+/// `GantryContraptionEntity.tickContraption` after `checkPinionShaft`: the actors (`tickActors`)
+/// and the Portable Interfaces on the structure, which may hold it still (`Contraption.stalled`:
+/// `!isStalled()` is what lets it `move`), then the collision. `from` and `at` are the snapshot the
+/// structure follows. Returns the cell to set it down in when something is in its way.
+#[allow(clippy::too_many_arguments)]
+fn tick_structure(
+    host: &mut dyn Host,
+    pos: Pos,
+    entity: &mut ModBlockEntity,
+    facing: Dir,
+    rpm: f32,
+    now: i64,
+    from: f32,
+    at: i64,
+) -> Option<i32> {
+    let dimension = host.dimension().to_owned();
+    let live = engine::live(&dimension, pos, &entity.nbt)?;
+    let held = psi_motion::is_stalled(&entity.nbt);
+    let speed = gantry::pinion_speed(psi_motion::moving_rpm(entity, rpm));
+    let anchor = live.moving.anchor;
+    let origin = |t: f64| piston_rules::position(anchor, facing, gantry::offset_at(from, at, speed, t));
+    let pose = psi_motion::Pose::Translating { origin: &origin };
+    let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, Structure::Other);
+    let want = psi_motion::tick(host, pos, &live.moving, &pose, now) | acted;
+    if want != held {
+        // The snapshot moves to now, then the structure follows no speed (or its own again).
+        let offset = gantry::offset_at(from, at, speed, now as f64);
+        util::set_float(&mut entity.nbt, OFFSET, offset);
+        entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
+        psi_motion::set_stalled(entity, want);
+        host.block_entity_sync(pos);
+    }
+    let moved = gantry::pinion_speed(psi_motion::moving_rpm(entity, rpm));
+    check_collision(host, pos, entity, facing, moved, now)
 }
 
 impl Hooks for Gantries {
@@ -358,6 +439,7 @@ impl Hooks for Gantries {
                 };
                 tag.insert(LAST_EXCEPTION.into(), Tag::String(line.as_str().into()));
                 tag.insert(CONTRAPTION.into(), engine::client_contraption(entity));
+                tag.insert(psi_motion::STALLED.into(), psi_motion::tag_value(&entity.nbt));
                 Some(tag)
             }
             _ => None,
@@ -404,10 +486,18 @@ impl Hooks for Gantries {
             return;
         };
         let now = draw.game_time as f64 + f64::from(draw.partial);
-        let offset = gantry::offset_at(state.offset, state.time, gantry::pinion_speed(rpm), now);
+        // A held structure (an actor or an interface stalls it) follows no speed.
+        let speed = gantry::pinion_speed(psi_motion::moving_rpm(event.entity, rpm));
+        let offset = gantry::offset_at(state.offset, state.time, speed, now);
         let n = facing.normal();
         let anchor = parsed.moving.anchor;
         let base = [0, 1, 2].map(|i| (anchor[i] - event.pos[i]) as f32 + n[i] as f32 * offset);
+        // How it moves, for the actors' heads.
+        actor_draw::set_motion(if psi_motion::is_stalled(&event.entity.nbt) {
+            actor_draw::Motion::Stalled
+        } else {
+            actor_draw::Motion::Slide(speed.abs())
+        });
         engine::draw_blocks(host, draw, &parsed, base);
     }
 
@@ -561,7 +651,7 @@ impl Hooks for Gantries {
             return Flow::Continue;
         };
         let now = util::game_time(&*host);
-        let speed = gantry::pinion_speed(kinetic::speed(&entity));
+        let speed = gantry::pinion_speed(psi_motion::moving_rpm(&entity, kinetic::speed(&entity)));
         let cell = gantry::grid_offset(gantry::offset_at(state.offset, state.time, speed, now as f64));
         set_down(host, pos, &entity.nbt, facing, cell);
         Flow::Continue
@@ -615,8 +705,14 @@ fn tick_shaft(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
 
     if changed {
         if state.running {
+            // `GantryContraptionEntity.tickContraption`: a carriage that turns round (or stops)
+            // stops its actors (`Contraption.stop`).
+            if speed_reversed(gantry::pinion_speed(previous), gantry::pinion_speed(rpm)) {
+                actor::restart(host, pos, &entity.nbt);
+            }
             // `onSpeedChanged`: the structure follows the old speed up to now.
-            let offset = gantry::offset_at(state.offset, state.time, gantry::pinion_speed(previous), now as f64);
+            let moved = gantry::pinion_speed(psi_motion::moving_rpm(entity, previous));
+            let offset = gantry::offset_at(state.offset, state.time, moved, now as f64);
             util::set_float(&mut entity.nbt, OFFSET, offset);
             entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
             state.offset = offset;
@@ -638,13 +734,17 @@ fn tick_shaft(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     }
 
     // A click of the Wrench, or the structure's end.
-    let cell_now = gantry::grid_offset(gantry::offset_at(state.offset, state.time, gantry::pinion_speed(rpm), now as f64));
+    let held = gantry::pinion_speed(psi_motion::moving_rpm(entity, rpm));
+    let cell_now = gantry::grid_offset(gantry::offset_at(state.offset, state.time, held, now as f64));
     let asked_to_stop = util::boolean(&entity.nbt, DISASSEMBLE);
-    let stop_at = if asked_to_stop {
+    let mut stop_at = if asked_to_stop {
         Some(cell_now)
     } else {
-        check_motion(host, pos, entity, facing, rpm, now)
+        check_shaft(host, pos, entity, facing, rpm, held, now)
     };
+    if stop_at.is_none() {
+        stop_at = tick_structure(host, pos, entity, facing, rpm, now, state.offset, state.time);
+    }
     if let Some(cell) = stop_at {
         set_down(host, pos, &entity.nbt.clone(), facing, cell);
         stop(entity, now);
