@@ -250,7 +250,7 @@ A structure is saved in the controller's block entity in Create's layout (`Ancho
 a reload resumes it. Known differences from Create: nothing collides with a moving structure (no one rides,
 stands on or is pushed by it), blocks in it are drawn as their block model only, no seats with riders or
 movement interactions (actors: see below), only the "move and place" mode, the Cart Assembler is not
-here (see below), belts and the Creative Fluid Tank can't be moved (a Fluid Tank can, with its content, if the whole tank is in the structure; its multi-block `Controller` is kept relative to the structure), and a controller destroyed by an explosion loses its structure. A structure can be held still (the `Stalled` flag of the controller, only the piston and bearing honour it; the Portable Interfaces use it). Tested in
+here (see below), belts and the Creative Fluid Tank can't be moved (a Fluid Tank can, with its content, if the whole tank is in the structure; its multi-block `Controller` is kept relative to the structure), and a controller destroyed by an explosion loses its structure. A structure can be held still (the `Stalled` flag of the controller, which every controller honours; the Portable Interfaces and the actors use it). Tested in
 game (build `8d883ba`): extend and retract, sticky pistons and the slime ball, stopping at an obstacle, slime
 structures, the bearing turning and setting down every way, save and reload mid-stroke, and breaking a
 controller while it runs. The chassis, Super Glue, windmill and sails, gantry, Rope Pulley and Elevator Pulley
@@ -270,7 +270,7 @@ differences. The ones worth knowing:
   placement assist; powering and a carriage losing its shaft are polled.
 - **Rope Pulley**: no mirrored pulleys (several on one structure), no waterlogged rope, the world's floor is
   taken as -64 in the Overworld and 0 elsewhere, the coil doesn't scroll.
-- **Portable Interfaces**: the structure's storage is chests, trapped chests, barrels, shulker boxes, Item Vaults and Fluid Tanks (no Creative Crate, Depot, Dispenser, Toolbox or another mod's container; a double chest is two storages); it is read and changed in the controller's saved structure, in position order; only pistons and bearings hold a structure still, so an interface on a gantry, rope pulley or elevator never links; the comparator reads nothing; a hopper beside the stationary interface can't reach the structure's items (Horizon's hoppers see only a block's own container), nor can the Mechanical Arm; the moving interface is drawn at rest, not reaching out; the top's yaw about its axis may differ from Create's.
+- **Portable Interfaces**: the structure's storage is chests, trapped chests, barrels, shulker boxes, Item Vaults and Fluid Tanks (no Creative Crate, Depot, Dispenser, Toolbox or another mod's container; a double chest is two storages); it is read and changed in the controller's saved structure, in position order; every controller (piston, bearing, gantry, rope pulley, elevator) holds a structure still for an interface (unplayed on the gantry, rope pulley and elevator); the comparator reads nothing; a hopper beside the stationary interface can't reach the structure's items (Horizon's hoppers see only a block's own container), nor can the Mechanical Arm; the moving interface is drawn at rest, not reaching out; the top's yaw about its axis may differ from Create's.
 - **Elevator**: the cabin's contact is a Redstone Contact, as Create's (the Wrench makes one that faces the floors
   an Elevator Contact; the placed item doesn't); no floor screen, door controls, Contraption Controls or Display Link source; a contact
   doesn't light while it powers; the draw's orientation is unchecked.
@@ -290,13 +290,35 @@ Blocks that act while the structure they are part of moves (`MovementBehaviour`;
 | Andesite Funnel, Brass Funnel | On a moving structure take the items lying in the cell they enter into the structure's storage (the filter decides) or, extracting, drop one (or the filter's count) from it into the cell |
 | Contraption Controls | The Controls' `Disabled` and `Filter` decide which actors start disabled on the structure: no filter stops all of them, a filter item stops the actors of that block |
 
-Both the piston and the bearing (so the windmill) run actors and are held still by them; the rest of the
-actors, the structure's storage and the stalls follow Create's `tickActors`: an actor's position is the
-block's centre plus its active-area offset turned with the structure; a new block position (or the first
-movement) calls `visitNewPosition`. Known differences from Create:
+The piston, the bearing (so the windmill), the Gantry Carriage, the Rope Pulley and the Elevator Pulley all
+run actors and are held still by them; the rest of the actors, the structure's storage and the stalls follow
+Create's `tickActors`: an actor's position is the block's centre plus its active-area offset turned with the
+structure; a new block position (or the first movement) calls `visitNewPosition`. Per controller:
 
-- **Only pistons, bearings and windmills run actors.** The Gantry, Rope Pulley and Elevator Pulley structures
-  don't (they cannot be held still yet), so a drill on a rope pulley does not mine.
+- **Rope Pulley:** the structure slides up and down the rope (`toPosition`: the anchor, `initialOffset - offset`
+  up); a stalled rope pays out no more (`moveAndCollideContraption` returns early) and a rope that turns round
+  or stops stops its actors (`LinearActuatorBlockEntity.onSpeedChanged` calls `Contraption.stop`: cracks
+  cleared, positions forgotten, the contexts kept). The Roller sleeps on it (`PulleyContraption`).
+- **Gantry Carriage:** the structure slides along the shaft's facing; a stalled gantry doesn't move
+  (`!isStalled()`) but the shaft under it is still checked at the shaft's own speed (`checkPinionShaft`), a
+  carriage that turns round stops its actors (`GantryContraptionEntity.tickContraption`).
+- **Elevator Pulley:** the cabin's actors tick while it runs. A stalled cabin keeps its offset, but its speed
+  goes on building toward the target as `getMovementSpeed`'s `prevSpeed` does, so it sets off at that speed when
+  let go (`ElevatorPulleyBlockEntity.tick`). The cabin is a `PulleyContraption` (no Roller), and its Controls
+  start no actor disabled (`ElevatorContraption.disableActorOnStart` is empty). A reversal of the pulley doesn't
+  stop the actors (the elevator's `onSpeedChanged` doesn't call `super`).
+
+Known differences from Create:
+
+- Setting the structure down (a Wrench click, the pulley or gantry broken, the rotation gone) stops its actors
+  first, but a **reload** of the controller starts every actor afresh. A piston doesn't stop its actors when
+  its rotation reverses (Create's `LinearActuatorBlockEntity.onSpeedChanged` does); the pulley and gantry do.
+- An elevator cabin held while it arrives doesn't ease onto its floor until it is let go. A held gantry isn't
+  tested against the world's blocks (Create tests it every tick, with the structure's motion vector, even while
+  it stands still).
+- A structure's colliders still stop it at any solid block ahead of a leading actor: Create lets a drill, saw,
+  harvester or plough through a block it can break (`ContraptionCollider.isCollidingWithWorld`); here the
+  actor holds the structure still while it works, which keeps it from reaching that block.
 - Contexts (`MovementContext`) live in memory, not in the structure's NBT: a reload begins every actor again
   (a half-broken block starts over). What actors collect and a Deployer's hand are saved in the structure.
 - The Mechanical Roller, the Seat's riders (`SeatMovementBehaviour`), `DeployerMovementBehaviour`'s

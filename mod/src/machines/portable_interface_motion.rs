@@ -23,9 +23,8 @@
 //! (`keepAlive`) until the stationary interface's timer is down (nothing more moved for the
 //! timeout), and goes on. The decisions are `rules::portable_interface`.
 //!
-//! Known differences from Create: only the piston and the bearing (and so the windmill) stall a
-//! structure; a gantry, a rope pulley and an elevator don't, and an interface on one never links.
-//! The moving interface's own extension toward the stationary one isn't animated (it is drawn
+//! Every controller stalls its structure this way (the piston, the bearing and so the windmill, the
+//! gantry, the rope pulley and the elevator). Known differences from Create: the moving interface's own extension toward the stationary one isn't animated (it is drawn
 //! at rest). `Carriage` contraptions (trains) aren't in this port.
 
 use std::collections::HashMap;
