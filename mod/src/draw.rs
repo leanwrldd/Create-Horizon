@@ -102,7 +102,9 @@ pub fn block(
     let turn = rpm * 0.3; // Degrees per tick.
     match kind {
         Kind::Shaft(axis) => {
-            spin(draw, axis.unit(), turn, 0.0, angle);
+            // `getRotationOffsetForPosition` turns shafts too, so one lines up with an encased
+            // shaft or a machine's shaft on the same line.
+            spin(draw, axis.unit(), turn, tooth_phase(pos, axis, false), angle);
             host.draw_block(draw, "create:shaft", &[("axis", axis.name())]);
         }
         Kind::Cogwheel(axis) => {
