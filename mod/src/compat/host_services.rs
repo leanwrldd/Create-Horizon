@@ -256,3 +256,46 @@ pub(super) fn level_random(host: &mut dyn ServerHost, dimension: &str) -> Option
     // SAFETY: leaked once, never freed; one thread draws.
     Some(unsafe { &mut *ptr })
 }
+
+// --- containers and fluid tanks, declared at registration ------------------------------------------------------
+
+/// The old `block_entity_container` / `block_entity_fluids` hooks answered per block at run time; the new API wants
+/// the same table declared once at registration (`block_container`, `block_fluids`), after which the game's own
+/// `ITEMS` and `FLUIDS` capabilities serve it and a block entity's `items` hold its slots. Called from
+/// `Hooks::register`, once for every Create block that has an entity.
+pub fn register_containers(r: &mut dyn mod_api::Registrar) {
+    let hooks = crate::create();
+    for &id in crate::parts_gen::BLOCK_ENTITIES {
+        let full = format!("create:{id}");
+        let container = guarded("block_entity_container", None, || {
+            hooks.block_entity_container(&Adapter::None, &mut BlockEntityContainerEvent { block: &full })
+        });
+        let tanks = guarded("block_entity_fluids", None, || {
+            hooks.block_entity_fluids(&Adapter::None, &mut BlockEntityFluidsEvent { block: &full })
+        });
+        if container.is_none() && tanks.is_none() {
+            continue;
+        }
+        let key = r.block_key(&full);
+        if let Some(old) = container {
+            r.block_container(
+                &key,
+                mod_api::ModContainer {
+                    slots: old.slots,
+                    faces: old.faces,
+                    inputs: old.inputs,
+                    outputs: old.outputs,
+                    menu: old.menu,
+                },
+            );
+        }
+        if let Some(old) = tanks {
+            let mut new = mod_api::ModFluidTanks::default();
+            new.tanks = old.tanks;
+            new.faces = old.faces;
+            new.inputs = old.inputs;
+            new.outputs = old.outputs;
+            r.block_fluids(&key, new);
+        }
+    }
+}

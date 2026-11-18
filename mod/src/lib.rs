@@ -644,6 +644,8 @@ impl mod_api::Hooks for Mod {
         }
         // Particle keys are issued at registration only; the glue's `send_particles` needs them later.
         compat::register_particles(r);
+        // Item slots and fluid tanks of the machines, which the old hooks answered at run time.
+        compat::register_containers(r);
         for &id in parts_gen::BLOCKS {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
             let key = r.block_key(full);

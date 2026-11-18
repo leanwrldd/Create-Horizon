@@ -90,6 +90,24 @@ pub fn items_new(host: &dyn mod_api::Host, slots: &[Option<ItemStack>]) -> Vec<O
     slots.iter().map(|slot| slot.as_ref().and_then(|stack| stack_new(host, stack))).collect()
 }
 
+/// The item slots of each ticking block entity as old stacks, as the last tick or write left them. The hooks that
+/// build a client's update tag have no host to name an item with, so they read this copy (a gap otherwise).
+static SLOT_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<[i32; 3], Vec<Option<ItemStack>>>>> =
+    std::sync::LazyLock::new(Default::default);
+
+pub fn cache_slots(pos: [i32; 3], items: &[Option<ItemStack>]) {
+    let mut cache = SLOT_CACHE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if items.iter().all(Option::is_none) {
+        cache.remove(&pos);
+    } else {
+        cache.insert(pos, items.to_vec());
+    }
+}
+
+fn cached_slots(pos: [i32; 3]) -> Vec<Option<ItemStack>> {
+    SLOT_CACHE.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&pos).cloned().unwrap_or_default()
+}
+
 // --- block parts ---------------------------------------------------------------------------------------
 
 pub fn state_for_placement(
@@ -271,8 +289,10 @@ pub fn block_entity_tick(host: &mut dyn ServerHost, event: &mut mod_api::BlockEn
     if old == before {
         // Nothing changed: no revision, no save, no comparator update.
         *event.reply = mod_api::BlockEntityTickReply::Unchanged;
+        cache_slots(event.pos, &old.items);
         return;
     }
+    cache_slots(event.pos, &old.items);
     if old.nbt != before.nbt {
         event.entity.nbt = old.nbt;
     }
@@ -290,7 +310,7 @@ pub fn block_entity_update_tag(event: &mut mod_api::BlockEntityUpdateTagEvent<'_
     let old = ModBlockEntity {
         id: event.entity.id().to_owned(),
         nbt: event.entity.nbt.clone(),
-        items: Vec::new(),
+        items: cached_slots(event.pos),
         data: event.entity.data.clone(),
     };
     let mut e = BlockEntityUpdateTagEvent { pos: event.pos, entity: &old };

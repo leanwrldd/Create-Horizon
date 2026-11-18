@@ -68,7 +68,7 @@ end lists every hook that is not wired, with the modules that answer it.
 
 These are the places where the new API has no equivalent in the context the old one answered (not merely work left):
 
-* `LevelHost::is_client_side` — the new level views cannot say which side they are on; the compat view says "server".
+* `LevelHost::is_client_side` — the new level views cannot say which side they are on; the compat view says "server". No machine module calls it (only the test doubles in `diodes_signal.rs` define it), so nothing depends on the answer.
 * `NeighborChangedEvent::changed` — the old event named the block by registry number; the new one has a `BlockKey`
   with no number: always `BlockId(0)`.
 * `update_tag` / `submit` events have no host that reads item slots, so `ModBlockEntity::items` is empty there.
@@ -80,6 +80,48 @@ These are the places where the new API has no equivalent in the context the old 
   every module's hook call, so the panic is logged once and that module's hook is skipped for the tick instead of
   ending the game; the host still writes a crash report for the first one. Known case: `coupling::client_tick_post`
   reads the level attachment through `new_server()`. Step 2: read replicated state through the client's own services.
+
+## Step 2, part A: the game calls
+
+`compat/adapter.rs` now answers the old `Host`'s game calls on the new API (the one-line trait methods; the helpers are in
+`compat/host_services.rs`). Grouped:
+
+* **Entities** (`entity`, `entity_position`, `_velocity`, `_bounding_box`, `_rotation`, `_on_ground`, `_kind`, `_uuid`, `_nbt`,
+  `_push`, `_set_velocity`, `_teleport_to`, `_set_rotation`, `_set_head_yaw`, `_set_fire`, fire and shift reads, `entities_in`,
+  `vehicle_of`, `dismount`, `living`, `living_set_equipment`, `hurt_entity`, `remove_entity`, `remove_mob`, `summon`,
+  `summon_with_uuid`): handle methods of `EntityRef`/`LivingRef`; `summon_with_uuid` writes the `UUID` int array into the data.
+* **Item entities** (`item_entities`, `set_item_entity`): `LevelRef::entities_in` filtered by `Host::item_entity`; count 0 discards.
+* **Items and the player's inventory** (`max_stack_size`, `take_items`, `give_items`, `give_stack`, `player_equipment`, `equipment`,
+  `player_stacks`, `player_food`, `set_player_status`, `attribute`, `set_attribute_base`, `add_effect`, `player_break_block`,
+  `set_inventory_slot_typed`, `insert_item`, `extract_item`, `component`, `set_component`, `remove_component`):
+  `take_items` and `give_items` work on the 36 main slots through `inventory_slots` and `set_inventory_slot` / `give_stack`
+  (the room is computed here, since `give_stack` drops what does not fit); `insert_item` and `extract_item` go through the `ITEMS`
+  capability inside `host.transaction`; components are edited on the old stack's own patch (no registry validation).
+* **Players**: `acting_player` and `server_players` read position, rotation, health, entity id, experience, abilities and so on
+  through `PlayerRef::entity()` (the earlier placeholders are gone); `player`, `sneaking`, `raycast`, `view_hit`, `push_player`,
+  `playing`, `equipment` use `ClientHost::camera_entity` on a client.
+* **Recipes**: `recipes_of_type` (the game hands out the same `Arc` until a reload, so each type's slice is leaked once),
+  `recipe_ingredient`, `recipe_result` (the JSON is passed as text).
+* **Sounds and particles**: `play_sound`, `send_particles`, `send_particles_to` (the player filter is dropped: the new API sends to
+  everyone near). Particle keys exist only at registration, so `Hooks::register` asks for the three the glue uses
+  (`compat::register_particles`).
+* **The world**: `chunk_is_loaded`, `level_is_loaded`, `block_collision`, `collision_boxes`, `clear_between`, `pick_block` (no fluid
+  mode in the new clip), `light`, `day_time`, `world_height`, `world_border`, `level_difficulty`, `fluid_flow`,
+  `set_break_progress`, `update_signal_neighbors` and `update_output_neighbors` (`LevelRef::update_neighbors`),
+  `destroy_block`, `set_block_property_with`, `block_entity_tag`, `set_block_tag`, `block_name_in_tag`,
+  `block_sprites_version`, `upgrade_block_state` (identity: no datafixer), `instance_dir`, `profile_by_uuid`, `level_random`
+  (an independent stream per dimension, seeded from the level's: the new API only lends a copy).
+* **Block entity slots**: `mod_block_entity` reads `items` from `BlockEntityRef::item_slot` (a probe past the end answers the slot
+  count); `change_mod_block_entity` writes changed slots in one transaction, and data slots. Only entities that declare a
+  container have slots (declaring them is the containers step).
+* **Drawing**: `draw_text`, `draw_terrain_model`, `draw_fluid_box`.
+
+Still neutral, and why: the fluid calls (`fluid_tanks`, `fluid_insert`, `fluid_extract`) need the fluid capabilities wired and
+`fluid_tanks` takes `&self`, which cannot lend the `&mut` host a capability handler needs; `use_as_player` (the Deployer: needs
+a `PlayerAction` mapping), `carried_stack` and `carried_items` (they belong to the `inventory_tick` item hook), `held`,
+`block_states`, `block_entity_nbt` and `set_block_entity` (SNBT text, no parser), `open_menu_with_input` (menus), `client_state`
+(the GUI size comes from the draw context of the HUD hook), `client_resources`, `data`, and what the hooks step owns: network
+sends, key state, HUD and screen drawing, commands.
 
 ## What the first smoke run showed
 

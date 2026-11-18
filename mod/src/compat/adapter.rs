@@ -193,6 +193,9 @@ impl Host for Adapter<'_> {
                 })
                 .is_ok();
         }
+        if entity.items != before.items {
+            events::cache_slots(pos, &entity.items);
+        }
         if entity.data != before.data {
             ok &= handle.set_data_slots(&mut **host, entity.data.clone()).is_ok();
         }
@@ -896,6 +899,29 @@ impl Host for Adapter<'_> {
         // A removal of a default component is written `!id` in the patch, as the game saves it.
         data.patch.insert(format!("!{id}").as_str().into(), Tag::Compound(Compound::default()));
         Ok(())
+    }
+
+    fn upgrade_block_state(&self, name: &str, props: &[(String, String)], _data_version: i32) -> (String, Vec<(String, String)>) {
+        // The new API has no datafixer: a schematic written by this game's version needs none, an older one keeps
+        // its old names (gap).
+        (name.to_owned(), props.to_vec())
+    }
+    fn block_sprites_version(&self) -> u64 {
+        match self {
+            Adapter::Client(host) => host.block_sprites_version(),
+            Adapter::ClientMut(host) => host.block_sprites_version(),
+            _ => 0,
+        }
+    }
+
+    fn add_effect(&mut self, uuid: u128, effect: &NativeEffect) -> bool {
+        let Some(host) = self.server_mut() else { return false };
+        let Some(key) = host.effect_key(&effect.id) else { return false };
+        // The old API took the entity id of a mob or the player's uuid; a player is found by uuid first.
+        let Some(entity) = host.player(uuid).map(PlayerRef::entity).or_else(|| host.entity(uuid as u32)) else { return false };
+        let Some(living) = host.living(entity) else { return false };
+        let effect = mod_api::ActiveEffect::new(key, effect.duration, effect.amplifier as i32, effect.ambient, effect.particles, effect.particles);
+        living.add_effect(host, &effect)
     }
 
     // --- players -------------------------------------------------------------------------------------------
