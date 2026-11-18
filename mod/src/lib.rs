@@ -646,6 +646,7 @@ impl mod_api::Hooks for Mod {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
             let key = r.block_key(full);
             r.block_part(key, parts::CreateBlock { id: full });
+            compat::containers::register_block(r, full);
         }
         for &id in parts_gen::ITEMS {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
@@ -657,6 +658,7 @@ impl mod_api::Hooks for Mod {
             let kind = r.block_entity_type(id).blocks(&[id]).build();
             r.block_entity_part(&kind, parts::CreateEntity { id: full })
                 .expect("a native block entity type");
+            compat::containers::register_entity(r, full, &kind);
         }
     }
 
