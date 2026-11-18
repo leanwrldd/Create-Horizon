@@ -924,6 +924,14 @@ impl Host for Adapter<'_> {
         living.add_effect(host, &effect)
     }
 
+    fn server_item_in_tag(&self, stack: &ItemStack, tag: &str) -> Result<bool, NativeBlockReadError> {
+        let host = self.base().ok_or(NativeBlockReadError::InactiveContext)?;
+        let item = Identifier::parse(&stack.item).ok().and_then(|id| host.item_key(&id)).ok_or(NativeBlockReadError::InvalidState)?;
+        let tags = host.tags();
+        let key = Identifier::parse(tag.trim_start_matches('#')).ok().and_then(|id| tags.key(&id)).ok_or(NativeBlockReadError::TagsUnavailable)?;
+        tags.is_in_tag(item, key).ok_or(NativeBlockReadError::TagsUnavailable)
+    }
+
     // --- players -------------------------------------------------------------------------------------------
 
     fn acting_player(&self) -> Option<NativeServerPlayer> {

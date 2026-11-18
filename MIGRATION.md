@@ -77,9 +77,11 @@ These are the places where the new API has no equivalent in the context the old 
 * `brewing::potion_color` — no read of vanilla's potion colours: water's.
 * Block entity ticks clone the NBT and items into the old struct and write back only what changed.
 * `Host::new_server` off the server panics (a client hook cannot be given a `ServerHost`). `compat::guarded` wraps
-  every module's hook call, so the panic is logged once and that module's hook is skipped for the tick instead of
-  ending the game; the host still writes a crash report for the first one. Known case: `coupling::client_tick_post`
-  reads the level attachment through `new_server()`. Step 2: read replicated state through the client's own services.
+  every module's hook call and, since the first smoke run showed it, remembers a (hook, module) pair that panicked and skips
+  it afterwards: a caught panic still runs the game's panic hook and a backtrace capture (seconds on Windows), and
+  `coupling::client_tick_post` panicking every tick took the client to 0.08 frames a second. `coupling` and `super_glue` now read
+  nothing on a client (`window()`), so no known hook panics; the client does not see couplings until replicated state is read
+  through the client's own services (step 2).
 
 ## Step 2, part A: the game calls
 
@@ -115,6 +117,13 @@ These are the places where the new API has no equivalent in the context the old 
   count); `change_mod_block_entity` writes changed slots in one transaction, and data slots. Only entities that declare a
   container have slots (declaring them is the containers step).
 * **Drawing**: `draw_text`, `draw_terrain_model`, `draw_fluid_box`.
+* **Containers and tanks, declared at registration** (`compat::register_containers`, called from `Hooks::register`): the old
+  `block_entity_container` and `block_entity_fluids` hooks are asked once per block entity block and answered with
+  `r.block_container` / `r.block_fluids`, so a block entity's `items` hold its slots and the game's `ITEMS` / `FLUIDS` capabilities serve
+  them (hoppers, `game_container`). The old per-insert gates (`container_accepts`, `block_entity_accepts_fluid`) and the `custom_*`
+  fluid hooks are still not wired. `block_entity_update_tag` reads a copy of each entity's slots kept by the tick and the click
+  (`events::cache_slots`), since that hook has no host to name an item with.
+* **`server_item_in_tag`** through `Host::tags()`.
 
 Still neutral, and why: the fluid calls (`fluid_tanks`, `fluid_insert`, `fluid_extract`) need the fluid capabilities wired and
 `fluid_tanks` takes `&self`, which cannot lend the `&mut` host a capability handler needs; `use_as_player` (the Deployer: needs
@@ -123,13 +132,24 @@ a `PlayerAction` mapping), `carried_stack` and `carried_items` (they belong to t
 (the GUI size comes from the draw context of the HUD hook), `client_resources`, `data`, and what the hooks step owns: network
 sends, key state, HUD and screen drawing, commands.
 
-## What the first smoke run showed
+## What the smoke runs showed
 
-On `create-new`, a fresh creative world, a stone platform at 290..312 / 120 / 290..310: the Creative Motor, shafts,
-cogwheel, gearbox, Mechanical Press and Depot were drawn from the generated content and the kinetic network turned
-the shaft and cogwheel (frames differ between screenshots). Not working yet, as expected from the gaps: the depot
-did not take an iron ingot (item give/take are neutral values), so the press had nothing to press; the Goggles'
-stress overlay did not appear (HUD is step 2). No content warnings in `logs/latest.log`.
+First run (step 1, `create-new`, a fresh creative world on a stone platform at y 199): the Creative Motor, shafts, cogwheel, gearbox,
+Mechanical Press and Depot were drawn from the generated content and the kinetic network turned them. The depot did not take an
+iron ingot and the Goggles showed no overlay (item calls and the HUD were gaps).
+
+After step 2 part A (build `native-3f1843e-…`, 4th build of the branch; screenshots in `target/smoke/`, not committed):
+
+* **Depot and press:** an iron ingot stack clicked onto the Depot is taken from the hand, travels to the centre, the press (Creative
+  Motor 16 RPM, shaft along the press's facing axis) presses it: `Items: [{iron_ingot x6}, {create:iron_sheet x2}]` after a few seconds
+  (`03-depot-press-iron-sheets.png`). Before the containers were declared at registration the depot swallowed the stack and held nothing
+  (`02-depot-no-item.png`).
+* **Millstone:** wheat dropped on it became `create:wheat_flour` x6 and `minecraft:wheat_seeds` x2 (`04-millstone.png`).
+* **Mixer over a Basin:** andesite and an iron nugget dropped into the basin, the mixer (cog beside it at 64 RPM; at 16 RPM it waits for
+  `speed_fulfilled`) turned them into `create:andesite_alloy` (`05-mixer-basin-andesite-alloy.png`).
+* **Frame time:** the first build with `compat::guarded` calling `coupling::client_tick_post` every tick ran at 0.08 fps (a panic per tick
+  runs the game's panic hook and a backtrace capture). After the fix the game runs at 140 fps and `latest.log` has no "panicked" lines.
+* Not tried: Goggles overlay and anything on the HUD (the hooks step), the Deployer, fluids, belts.
 
 <!-- Generated by tools/gen_migration.py: the tables below. The prose above them is written by hand. -->
 
@@ -189,8 +209,8 @@ stress overlay did not appear (HUD is step 2). No content warnings in `logs/late
 | `world_primitives` | no direct match | client render hook (no match yet) | coupling, schematic_view, symmetry_wand, value_box_draw |
 | `release_using` | part (not wired) | ItemPart::release_using | package |
 
-### Old `Host` methods still answered with a neutral value (124 of 147)
+### Old `Host` methods still answered with a neutral value (32 of 147)
 
-Each logs `create: compat gap: Host::<name> ...` once. Implemented: `acting_player`, `action_bar`, `block`, `block_entity_sync`, `block_property`, `block_state_property`, `change_mod_block_entity`, `default_state`, `dimension`, `draw_block`, `draw_cube`, `draw_item`, `draw_model`, `draw_quad`, `held_stack`, `level`, `mod_block_entity`, `neighbor_signal`, `run_command`, `set_block`, `set_block_property`, `tell`, `window`.
+Each logs `create: compat gap: Host::<name> ...` once. Implemented: `acting_player`, `action_bar`, `add_effect`, `attribute`, `block`, `block_collision`, `block_entity_sync`, `block_entity_tag`, `block_name_in_tag`, `block_property`, `block_sprites_version`, `block_state_property`, `change_mod_block_entity`, `chunk_is_loaded`, `clear_between`, `collision_boxes`, `component`, `day_time`, `default_state`, `destroy_block`, `dimension`, `dismount`, `draw_block`, `draw_cube`, `draw_fluid_box`, `draw_item`, `draw_model`, `draw_quad`, `draw_terrain_model`, `draw_text`, `entities_in`, `entity`, `entity_bounding_box`, `entity_fire_immune`, `entity_fire_ticks`, `entity_head_yaw`, `entity_is_shift_key_down`, `entity_kind`, `entity_nbt`, `entity_on_ground`, `entity_position`, `entity_push`, `entity_rotation`, `entity_set_fire`, `entity_set_head_yaw`, `entity_set_rotation`, `entity_set_velocity`, `entity_teleport_to`, `entity_uuid`, `entity_velocity`, `equipment`, `extract_item`, `fluid_flow`, `give_items`, `give_stack`, `held_stack`, `hurt_entity`, `insert_item`, `instance_dir`, `item_entities`, `level`, `level_difficulty`, `level_is_loaded`, `level_random`, `light`, `living`, `living_set_equipment`, `max_stack_size`, `mod_block_entity`, `neighbor_signal`, `pick_block`, `play_sound`, `player`, `player_break_block`, `player_equipment`, `player_food`, `player_stacks`, `playing`, `profile_by_uuid`, `push_player`, `raycast`, `recipe_ingredient`, `recipe_result`, `recipes_of_type`, `remove_component`, `remove_entity`, `remove_mob`, `run_command`, `send_particles`, `send_particles_to`, `server_item_in_tag`, `server_players`, `set_attribute_base`, `set_block`, `set_block_property`, `set_block_property_with`, `set_block_tag`, `set_break_progress`, `set_component`, `set_inventory_slot_typed`, `set_item_entity`, `set_player_status`, `sneaking`, `summon`, `summon_with_uuid`, `take_items`, `tell`, `update_output_neighbors`, `update_signal_neighbors`, `upgrade_block_state`, `vehicle_of`, `view_hit`, `window`, `world_border`, `world_height`.
 
-`add_effect`, `apply_screen_blur`, `attribute`, `block_collision`, `block_entity_nbt`, `block_entity_tag`, `block_name_in_tag`, `block_sprites_version`, `block_states`, `carried_items`, `carried_stack`, `chunk_is_loaded`, `clear_between`, `client_resources`, `client_state`, `collision_boxes`, `component`, `data`, `day_time`, `destroy_block`, `dismount`, `draw_fluid_box`, `draw_scene`, `draw_terrain_model`, `draw_text`, `entities_in`, `entity`, `entity_bounding_box`, `entity_fire_immune`, `entity_fire_ticks`, `entity_head_yaw`, `entity_is_shift_key_down`, `entity_kind`, `entity_nbt`, `entity_on_ground`, `entity_position`, `entity_push`, `entity_rotation`, `entity_set_fire`, `entity_set_head_yaw`, `entity_set_rotation`, `entity_set_velocity`, `entity_teleport_to`, `entity_uuid`, `entity_velocity`, `equipment`, `extract_item`, `fill`, `fluid_extract`, `fluid_flow`, `fluid_insert`, `fluid_tanks`, `give_items`, `give_stack`, `gui_tooltip`, `has_alt_down`, `has_control_down`, `has_shift_down`, `held`, `hurt_entity`, `insert_item`, `instance_dir`, `is_key_down`, `item`, `item_entities`, `level_difficulty`, `level_is_loaded`, `level_random`, `light`, `living`, `living_set_equipment`, `max_stack_size`, `mod_screen`, `mod_screen_close`, `mod_screen_open`, `net_send_to_player`, `net_send_to_server`, `open_menu_with_input`, `pick_block`, `play_sound`, `player`, `player_break_block`, `player_equipment`, `player_food`, `player_stacks`, `playing`, `profile_by_uuid`, `push_player`, `quad`, `raycast`, `recipe_ingredient`, `recipe_result`, `recipes_of_type`, `remove_component`, `remove_entity`, `remove_mob`, `send_particles`, `send_particles_to`, `server_item_in_tag`, `server_players`, `set_attribute_base`, `set_block_entity`, `set_block_property_with`, `set_block_tag`, `set_break_progress`, `set_component`, `set_inventory_slot_typed`, `set_item_entity`, `set_player_status`, `sneaking`, `sprite`, `summon`, `summon_with_uuid`, `take_items`, `text`, `text_width`, `update_output_neighbors`, `update_signal_neighbors`, `upgrade_block_state`, `use_as_player`, `vehicle_of`, `view_hit`, `world_border`, `world_height`
+`apply_screen_blur`, `block_entity_nbt`, `block_states`, `carried_items`, `carried_stack`, `client_resources`, `client_state`, `data`, `draw_scene`, `fill`, `fluid_extract`, `fluid_insert`, `fluid_tanks`, `gui_tooltip`, `has_alt_down`, `has_control_down`, `has_shift_down`, `held`, `is_key_down`, `item`, `mod_screen`, `mod_screen_close`, `mod_screen_open`, `net_send_to_player`, `net_send_to_server`, `open_menu_with_input`, `quad`, `set_block_entity`, `sprite`, `text`, `text_width`, `use_as_player`
