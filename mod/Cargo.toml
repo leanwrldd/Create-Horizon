@@ -1,0 +1,17 @@
+[package]
+name = "mod-create"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+# The only form the launcher takes (reference/sdk/03-in-a-project.md). `cargo` outside the launcher needs the
+# temporary path swap that tools/check_package.sh does on a copy.
+horizon-mod-api = { path = ".horizon/sdk/api/crates/horizon-mod-api" }
+# The rotation rules, with no dependency on the game, so `cargo test` runs them in seconds. A local crate has
+# to live under src/: the package takes nothing else.
+create-kinetics = { path = "src/kinetics" }
+# Registry dependencies: pinned in Cargo.lock by `horizon-launcher native-lock mod`.
+# Gzip for the schematic files.
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", "runtime_detection"] }

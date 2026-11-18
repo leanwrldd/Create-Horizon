@@ -190,47 +190,30 @@ def import_assets(jar: ZipFile, content: Path, c, ponder_models=()):
             copy(name + ".mcmeta")
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("create_jar", type=Path, help="Create 6.0.10 for Minecraft 1.21.1 (NeoForge)")
-    parser.add_argument("--tool", type=Path, help="path to cargo-horizon-mod")
-    parser.add_argument("--owner", help="build a private package under target/content-check-<owner>/ "
-                        "without the plugins other owners are still writing (tools/wip.txt); "
-                        "content/ is left alone")
-    args = parser.parse_args()
-    bundled = ROOT.parent / "target" / "horizon-tools" / "debug" / "cargo-horizon-mod.exe"
-    tool = args.tool or (bundled if bundled.is_file() else shutil.which("cargo-horizon-mod"))
-    if tool is None:
-        parser.error("cargo-horizon-mod was not found. Pass its path with --tool.")
+def stage(create_jar: Path, dest: Path, owner=None):
+    """Assembles the content's `assets/` and `data/` under `dest`, art included: the generated declarations plus
+    what is imported from Create's own jar. Used by tools/stage_package.py to build the package; `dest` is never
+    committed (the art must not be)."""
+    with create_jar.open("rb") as source:
+        if hashlib.file_digest(source, "sha256").hexdigest() != CREATE_SHA256:
+            raise SystemExit("Expected the original Create 6.0.10 for Minecraft 1.21.1 (NeoForge) JAR.")
+        # Generated into target/, so the committed content/ is left as it is.
+        generated = ROOT.parent / "target" / (f"content-check-{owner}" if owner else "package-content") / "content"
+        shutil.rmtree(generated, ignore_errors=True)
+        collected = generate(generated, owner)
+        with ZipFile(source) as jar:
+            shutil.rmtree(dest / "assets", ignore_errors=True)
+            shutil.rmtree(dest / "data", ignore_errors=True)
+            shutil.copytree(generated / "assets", dest / "assets")
+            shutil.copytree(generated / "data", dest / "data")
+            models = import_ponder(jar, dest)
+            import_goggles(jar, dest)
+            import_assets(jar, dest, collected, models)
 
-    try:
-        with args.create_jar.open("rb") as source:
-            if hashlib.file_digest(source, "sha256").hexdigest() != CREATE_SHA256:
-                parser.error("Expected the original Create 6.0.10 for Minecraft 1.21.1 (NeoForge) JAR.")
-            if args.owner:
-                private = ROOT.parent / "target" / f"content-check-{args.owner}"
-                generated = private / "content"
-                shutil.rmtree(generated, ignore_errors=True)
-                output = private / "create.hmod"
-            else:
-                generated = ROOT
-                output = ROOT / "target" / "horizon-mod" / "create.hmod"
-            output.parent.mkdir(parents=True, exist_ok=True)
-            collected = generate(generated, args.owner)
-            with ZipFile(source) as jar, TemporaryDirectory(dir=output.parent) as staging:
-                content = Path(staging)
-                shutil.copy2(ROOT / "horizon-mod.toml", content)
-                shutil.copytree(generated / "assets", content / "assets")
-                shutil.copytree(generated / "data", content / "data")
-                models = import_ponder(jar, content)
-                import_goggles(jar, content)
-                import_assets(jar, content, collected, models)
-                subprocess.run([str(Path(tool).resolve()), "horizon-mod", "build"],
-                               cwd=content, check=True)
-                (content / "target" / "horizon-mod" / "create.hmod").replace(output)
-    except (OSError, subprocess.CalledProcessError) as error:
-        parser.exit(1, f"{error}\n")
-    print(f"Built {output}")
+
+def main():
+    raise SystemExit("The content mod is no longer a package of its own: it is part of the flat package "
+                     "(mod/). Run `python tools/stage_package.py` to assemble target/package/ with Create's art.")
 
 
 if __name__ == "__main__":

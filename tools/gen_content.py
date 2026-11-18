@@ -11,8 +11,30 @@ AXES = ["x", "y", "z"]
 FACINGS = ["north", "south", "east", "west", "up", "down"]
 
 
+def _tables(value):
+    """The new loader (launcher 0.2.70+) names a shape or light table's properties as a list: `{"property": p,
+    "values": v}` becomes `{"properties": [p], "values": v}` (reference/content-mods: `shapes`, `state_light`)."""
+    if isinstance(value, dict):
+        for key in ("shapes", "collision_shapes", "state_light"):
+            table = value.get(key)
+            if isinstance(table, dict) and "property" in table:
+                value[key] = {"properties": [table["property"]],
+                              **{k: v for k, v in table.items() if k != "property"}}
+        for inner in value.values():
+            _tables(inner)
+    elif isinstance(value, list):
+        for inner in value:
+            _tables(inner)
+    return value
+
+
 def write(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if "horizon" in path.parts and "block" in path.parts:
+        _tables(value)
+    if "horizon" in path.parts and "item" in path.parts and isinstance(value, dict) and "place_block" in value:
+        # the new item schema places a block with `block` (the old loader's `place_block`)
+        value["block"] = value.pop("place_block")
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 

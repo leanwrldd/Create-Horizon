@@ -1,0 +1,15 @@
+id = "create"
+name = "Create (Rust)"
+version = "0.1.0"
+description = "Create's rotating machines, rewritten in Rust for Horizon."
+authors = ["leanwrldd"]
+api = "0.2"
+side = "both"
+capabilities = ["registries"]
+
+# Native code in src/, compiled by the launcher against the game build [native] pins, beside the content in
+# assets/ and data/ (tools/stage_package.py adds those, with Create's art, under target/package/).
+[native]
+game = "26.3"
+horizon = "3f1843e04d037848669e7bdb2b393f2aa507b251"
+mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
