@@ -1,3 +1,6 @@
 target/
 Cargo.lock
 __pycache__/
+
+# The mod's registry lock belongs in the package and in git (Horizon docs: 01-the-mods-crate).
+!mod/Cargo.lock

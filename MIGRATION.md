@@ -10,7 +10,7 @@ game yet, so "Needs testing in game" below is the list to play through first.
 
 | Path | What |
 |---|---|
-| `mod/horizon-mod.toml` | the manifest: content fields plus `[native]` (game 26.3, Horizon 3f1843e, horizon-mixins e59da90) |
+| `mod/horizon-mod.toml` | the manifest: content fields plus `[native]` (game 26.3, Horizon 0b14f8a, the official Nightly 2026-11-18 with its published SDK; horizon-mixins e59da90) |
 | `mod/Cargo.toml`, `mod/Cargo.lock` | the SDK path dependency the launcher takes, serde, flate2; the lock is `horizon-launcher native-lock mod` |
 | `mod/src/kinetics/` | the rules crate (was `native/kinetics`), unchanged: 1,413 tests |
 | `mod/src/*.rs`, `machines/`, `ponder/` | the glue (was `native/api/src`): only its imports changed |
