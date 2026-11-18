@@ -1,8 +1,10 @@
 # Migration to Horizon's new mod API
 
-Step 1 (scaffold and compatibility layer), branch `migrate-scaffold`. The port builds as one flat package on the
-developer version of Horizon (3f1843e) and keeps its 137 machine modules as they were, behind a compatibility
-layer. This file says what is where, what is wired, and what the next steps have to do.
+Step 1 (scaffold and compatibility layer, branch `migrate-scaffold`) and step 2 part B (the hooks, branch
+`step2-hooks`). The port builds as one flat package on the developer version of Horizon (3f1843e) and keeps its 137
+machine modules as they were, behind a compatibility layer. This file says what is where, what is wired, and what the
+next steps have to do. Step 2 part B was type-checked only (`tools/check_module.sh all`): none of it has run in the
+game yet, so "Needs testing in game" below is the list to play through first.
 
 ## Layout
 
@@ -39,30 +41,85 @@ A module used to `use horizon_client::mod_api::*`; it now says `use crate::compa
 
 ## What is wired
 
-`tools/hook_map.txt` is the table. Of the 75 old hooks, **30 are global, 23 are Part methods, 22 have no direct
-match**. Wired now: 9 global hooks (`standalone_models`, `component_types`, `server_tick`, `level_tick_post`,
-`client_tick_post`, `right_click_block`, `left_click_block`, `block_step_on`, plus the new `model_baking_completed`
-that resolves drawn models) and 10 `BlockPart` plus 6 `BlockEntityPart` methods, for the 607 blocks (181 with an
-entity). The other hooks are listed below.
+`tools/hook_map.txt` is the table. Of the 75 old hooks, 70 are wired (step 1 and step 2 part B, the hooks); the five that
+are not are listed at the end (no module answers four of them). A hook is wired one of three ways, and the classes in
+the table say which: `global (wired)` (a `mod_api::Hooks` method of the same name), `part (wired)` (a Part method of
+the same name) or `adapted (wired)` (the new API has another name or another mechanism for it).
 
-## Step 2: hooks with no direct match
+* **Blocks (step 1):** 10 `BlockPart` and 6 `BlockEntityPart` methods on the 607 blocks (181 with an entity), and the
+  globals `standalone_models`, `component_types`, `server_tick`, `level_tick_post`, `client_tick_post`,
+  `right_click_block`, `left_click_block`, `block_step_on` (and `model_baking_completed`, which resolves drawn models).
+* **Items:** one `CreateItem` `ItemPart` for each of the 655 items (99 content items, 556 blocks with `"item": true`;
+  `tools/gen_parts.py` writes `ITEMS`). It forwards `use_item`, `inventory_tick`, `tooltip`, `item_bar`,
+  `use_duration`, `use_animation`, `release_using` and `on_block_placed_by` (the old `place_block`, see below); the
+  globals `living_entity_use_item_tick` and `_finish` complete the item-use set. `compat/items.rs`.
+* **HUD, keys, screens, tooltips, world drawing:** `compat/client.rs`.
+  * `HudBatch` wraps the new `DrawContext` of the hook call (a pointer, as `BlockEntityDraw` does), so `Host::fill`,
+    `quad`, `text`, `sprite`, `item`, `gui_tooltip`, `draw_scene` draw at once; `text_width` asks the client's font.
+    `hud` runs from `render_gui_post` (not under F1), `tooltip_render_pre` from `render_tooltip_pre`.
+  * `key` runs from `input_key` (`key.keyboard.*`, a press or a release; repeats are dropped) and `mouse_button_post`
+    (`key.mouse.left/right/middle`). `Host::is_key_down` turns the GLFW code into a vanilla key name for
+    `ClientHost::is_key_down` (letters, digits, space, escape); `has_shift_down`/`control`/`alt` read `modifiers()`.
+  * The seven `screen_*` hooks and `movement_input` are the new globals of the same names. The mod screen is the same
+    idea in the new API (`mod_screen_open`, `mod_screen_close`, `mod_screen`; the screen hooks see `id == "mod"`).
+  * `world_primitives` runs from `render_level_stage` (after the translucent blocks): `WorldPrimitives` collects lines
+    (`box_outline` is 12) and quads (`filled_box` is 6) and sends them to the `WorldDrawContext`. World text has no
+    counterpart and is dropped.
+* **Containers and fluids:** `compat/containers.rs`, at `Hooks::register`.
+  * `block_entity_container` / `block_entity_fluids` become `Registrar::block_container` / `block_fluids` for each
+    block with an entity (the hook is asked at registration with no host).
+  * `container_accepts` has no declaration to hang on, so each of those block entity types also gets a **before-game**
+    `ITEMS` provider whose handler (`CreateItems`) reads and writes the entity's slots (`item_slot`, `set_item_slot`),
+    honours the container's faces, inputs and outputs, and asks the old hook before every insertion.
+  * A block whose `custom_block_fluids` says `custom` gets a `FLUIDS` block provider (`CustomFluids`): its handler's
+    tank reads are `custom_fluid_tanks`, `insert` is `custom_fluid_fill` and `extract` is `custom_fluid_drain`.
+* **Placing and breaking:** `destroy_block` is `Hooks::break_block`. `place_block` is **not** `entity_place`: that fires
+  before the block is written, and the modules read and change the placed block, so it is `ItemPart::on_block_placed_by`
+  (after the block, its state and `setPlacedBy`, with the pre-shrink stack).
+* **The rest, `compat/world.rs`:** `interact_entity` is `entity_interact`; `player_tick` is `player_tick_pre`;
+  `loot_drops`, `living_breathe`, `living_knockback`, `hears_projectile_impacts`, `projectile_impact`,
+  `entity_tick_listened`, `entity_tick_post`, `menu_clicked`, `menu_closed` are the new globals;
+  `living_incoming_damage_v3` is `living_incoming_damage`.
+  * **Commands:** `register_commands` collects the modules' usages and registers them as typed `Command`s;
+    `run_mod_command` finds the usage the invocation matches and rebuilds the old raw line from it (`clipboard add
+    some text`), so `perform_command` sees what it used to. Only word, text, integer, number and boolean values
+    are put back; the modules' usages use only those.
+  * **Network:** one bidirectional payload, `create:net` (version 1), carries every old message as
+    `[u16 channel length][channel][data]`: `Host::net_send_to_player` / `net_send_to_server` send it,
+    `net_from_client` / `net_from_server` receive it. A client needs the mod to join (the payload is required).
 
-These are not wired and not stubbed beyond a default. The first group is the one the user named; the table at the
-end lists every hook that is not wired, with the modules that answer it.
+### Not wired
 
-* **Placing and breaking blocks** (`place_block` → `entity_place`, `destroy_block` → `break_block`): modules that
-  decide what a placement or a break does (belts, shafts' neighbour updates, contraption controls).
-* **Containers and fluids** (`block_entity_container`, `container_accepts`, `block_entity_fluids`,
-  `block_entity_accepts_fluid`, `custom_block_fluids`, `custom_fluid_*`): become item and fluid capabilities. Every
-  machine with slots or tanks.
-* **Network messages** (`net_from_server`, `net_from_client`, `Host::net_send_*`): become payloads. Ponder, the
-  clipboard, value boxes, schematic screens, controllers.
-* **Commands** (`register_commands`, `perform_command`): the clipboard, schematic, symmetry wand commands.
-* **HUD and screens** (`hud`, `tooltip_render_pre`, `world_primitives`, `screen_*`, `Host::fill/text/item/...`): goggles'
-  overlay, value-box panels, Ponder, schematic hologram outlines.
-* **Key bindings** (`key`, `Host::is_key_down`): Ponder, linked controller.
-* **Items** (`use_item`, `inventory_tick`, `tooltip`, `item_bar`, `use_duration`, `use_animation`, `release_using`):
-  the new API has them on `ItemPart`; one Part per Create item still has to be generated.
+* `menu_input_closed` (and `Host::open_menu_with_input`): the Toolbox's menu. The new `open_menu` opens a chest
+  menu, but nothing hands the slots back when it closes; this needs a small design with the game running.
+* `block_changed`, `block_entity_inside`, `item_model_property`, `block_entity_accepts_fluid`: no module answers them.
+
+## Needs testing in game (step 2 part B)
+
+Each of these compiles and follows the docs, but nothing ran:
+
+* **Item hooks and `acting_player`:** the item hooks hand the player in their events, but the modules read
+  `host.acting_player()`; the docs say the game sets it for the hook, which `use_item` and `on_block_placed_by` rely on.
+  `inventory_tick` now runs only for stacks of a Create item (it ran for every slot before); a module that needs it
+  for a vanilla item in hand will not see it.
+* **Hoppers into machines:** a mod block with `block_container` is a vanilla-style container, and the docs say hoppers
+  keep their direct path for those. If so, `container_accepts` (Depot, Basin, Crafter, ...) is enforced for funnels,
+  arms and anything that looks the `ITEMS` capability up, but not for a hopper. Check a hopper into a Depot.
+* **Fluids and transactions:** `CustomFluids` and the old fluid hooks write at once, not into the transaction's journal:
+  an aborted transaction does not undo them. Fluid components (potions) are dropped (the new `Components` cannot be
+  built from a compound).
+* **Damage hooks and uuids:** the damage hooks name entities by id; the players' uuids come from a table
+  `player_tick_pre` fills, so a hit before a player's first tick has no uuid (Diving fire immunity, Cardboard Sword).
+* **Commands:** the old usages are registered as typed commands; the raw line is rebuilt from the usage. Try
+  `/clipboard add x`, `/address <text>` and one schematic command.
+* **Network:** every old message rides one payload, `create:net`. Try the Ponder viewer, the value box panel, the
+  Linked Controller and the symmetry wand.
+* **HUD:** the Goggles overlay needs `client_state`, `raycast` and `equipment` (the other agent's methods) as well as
+  the drawing wired here. `render_gui_post` is not drawn under F1.
+* **`break_block`** fires for a player breaking a block, not for an explosion, a piston or a machine's own
+  `destroy_block`: the belt-item drops and the other destroy cleanups run for players only.
+* **World drawing:** lines and quads at `AfterTranslucentBlocks`, depth-tested; world text is dropped (the value box
+  labels in the world, which the old API drew as text).
 
 ## Compatibility gaps worth knowing
 
@@ -95,60 +152,14 @@ stress overlay did not appear (HUD is step 2). No content warnings in `logs/late
 
 | Old hook | Class | New mechanism | Modules that answer it |
 |---|---|---|---|
-| `block_entity_container` | no direct match | capability (items) | basin, chute, crafter, creative_crate, crushing_wheel, deployer, frogport, item_drain, item_vault, lib, millstone, packager, postbox, saw, schematic_cannon, schematic_table, weighted_ejector |
-| `block_entity_fluids` | no direct match | capability (fluids) | basin, item_drain, spout |
 | `block_entity_accepts_fluid` | no direct match | capability (fluids) | (none) |
-| `container_accepts` | no direct match | capability (items) | basin, chute, crafter, crushing_wheel, deployer, depot, frogport, item_drain, lib, millstone, packager, postbox, saw, weighted_ejector |
-| `destroy_block` | no direct match | break_block (Hooks) | arm, basin, bearing, bracket, chain_conveyor, clockwork_bearing, copycat, crafter, creative_crate, elevator, extendo_grip, fluid_tank, frogport, gantry, item_drain, item_vault, large_water_wheel, lectern_controller, lib, packager, piston, placard, pulley, symmetry_wand, tunnel, weighted_ejector |
-| `place_block` | no direct match | entity_place (Hooks) | arm_select, backtank, bell, chain_conveyor, chain_drive, chute, clipboard, content_observer, copycat, crushing_wheel, diodes, display_link_select, encased, extendo_grip, fluid_pipe, flywheel, frogport, funnel, gauges, gearshift, large_water_wheel, lib, nixie_tube, packager, rose_quartz_lamp, schematic_cannon, sequenced_gearshift, smart_fluid_pipe, speed_controller, stockpile_switch, symmetry_wand, toolbox, tunnel, vertical_gearbox, weighted_ejector |
-| `use_item` | part (not wired) | ItemPart::use_item | clipboard, filter, fluid_tank, item_drain, package, potato_cannon, sand_paper, schematic, symmetry_wand, worldshaper |
-| `interact_entity` | no direct match | EntityPart::interact / interact_entity (Hooks) | burner, coupling |
 | `block_changed` | global (not wired) | Hooks::block_changed | (none) |
 | `block_entity_inside` | no direct match | BlockPart::entity_inside | (none) |
-| `player_tick` | no direct match | player_tick_pre/post (Hooks) | bell, belt_carry, cardboard_sword, diving, extendo_grip, lectern_controller, linked_controller, schematic, super_glue, symmetry_wand, toolbox, value_box |
-| `inventory_tick` | part (not wired) | ItemPart::inventory_tick | clipboard, extendo_grip, linked_controller, package, potato_cannon, schematic, symmetry_wand |
-| `tooltip` | part (not wired) | ItemPart::tooltip | filter, mod, package, schematic, screen, sequenced |
-| `hud` | no direct match | client render hook (no match yet) | goggles, linked_controller, value_box_draw |
-| `menu_clicked` | global (not wired) | Hooks::menu_clicked | (none) |
-| `menu_closed` | global (not wired) | Hooks::menu_closed | (none) |
 | `item_model_property` | global (not wired) | Hooks::item_model_property | (none) |
-| `loot_drops` | global (not wired) | Hooks::loot_drops | backtank, bracket, clipboard, copycat, lectern_controller, toolbox |
-| `net_from_server` | no direct match | payload (PayloadsClientHost) | belt_carry, fan, lectern_controller, schematic_view, symmetry_wand |
-| `custom_block_fluids` | no direct match | capability (fluids) | fluid_tank, hose_pulley, portable_interface |
-| `custom_fluid_tanks` | no direct match | capability (fluids) | fluid_tank, hose_pulley, portable_interface |
-| `custom_fluid_fill` | no direct match | capability (fluids) | fluid_tank, hose_pulley, portable_interface |
-| `custom_fluid_drain` | no direct match | capability (fluids) | fluid_tank, hose_pulley, portable_interface |
-| `key` | no direct match | key mappings (KeyMappings) | linked_controller, mod, package, screen, value_box_screen |
-| `tooltip_render_pre` | no direct match | ItemPart::tooltip / client render | mod |
-| `screen_render_post` | global (not wired) | Hooks::screen_render_post | mod, value_box_screen |
-| `screen_closing` | global (not wired) | Hooks::screen_closing | mod, value_box_screen |
-| `screen_key_pressed_pre` | global (not wired) | Hooks::screen_key_pressed_pre | mod |
-| `screen_char_typed_pre` | global (not wired) | Hooks::screen_char_typed_pre | mod |
-| `screen_mouse_button_pressed_pre` | global (not wired) | Hooks::screen_mouse_button_pressed_pre | mod |
-| `screen_mouse_button_released_pre` | global (not wired) | Hooks::screen_mouse_button_released_pre | mod, value_box_screen |
-| `screen_mouse_scrolled_pre` | global (not wired) | Hooks::screen_mouse_scrolled_pre | mod, value_box_screen |
-| `item_bar` | part (not wired) | ItemPart::item_bar | backtank, sequenced |
-| `use_duration` | part (not wired) | ItemPart::use_duration | package, sand_paper |
-| `use_animation` | part (not wired) | ItemPart::use_animation | package, sand_paper |
-| `living_entity_use_item_tick` | global (not wired) | Hooks::living_entity_use_item_tick | sand_paper |
-| `living_entity_use_item_finish` | global (not wired) | Hooks::living_entity_use_item_finish | sand_paper |
-| `entity_tick_listened` | global (not wired) | Hooks::entity_tick_listened | belt_carry |
-| `entity_tick_post` | global (not wired) | Hooks::entity_tick_post | belt_carry |
 | `menu_input_closed` | no direct match | MenuPart | toolbox |
-| `register_commands` | global (not wired) | Hooks::register_commands | clipboard, package, schematic, schematic_cannon |
-| `perform_command` | no direct match | register_commands (Command tree) | clipboard, package, schematic, schematic_cannon |
-| `movement_input` | global (not wired) | Hooks::movement_input | linked_controller |
-| `net_from_client` | no direct match | payload (server payload handler) | linked_controller, value_box |
-| `living_breathe` | global (not wired) | Hooks::living_breathe | diving |
-| `living_incoming_damage_v3` | no direct match | living_incoming_damage (Hooks) | cardboard_sword, diving, extendo_grip |
-| `living_knockback` | global (not wired) | Hooks::living_knockback | extendo_grip |
-| `hears_projectile_impacts` | global (not wired) | Hooks::hears_projectile_impacts | potato_cannon |
-| `projectile_impact` | global (not wired) | Hooks::projectile_impact | potato_cannon |
-| `world_primitives` | no direct match | client render hook (no match yet) | coupling, schematic_view, symmetry_wand, value_box_draw |
-| `release_using` | part (not wired) | ItemPart::release_using | package |
 
-### Old `Host` methods still answered with a neutral value (124 of 147)
+### Old `Host` methods still answered with a neutral value (107 of 147)
 
-Each logs `create: compat gap: Host::<name> ...` once. Implemented: `acting_player`, `action_bar`, `block`, `block_entity_sync`, `block_property`, `block_state_property`, `change_mod_block_entity`, `default_state`, `dimension`, `draw_block`, `draw_cube`, `draw_item`, `draw_model`, `draw_quad`, `held_stack`, `level`, `mod_block_entity`, `neighbor_signal`, `run_command`, `set_block`, `set_block_property`, `tell`, `window`.
+Each logs `create: compat gap: Host::<name> ...` once. Implemented: `acting_player`, `action_bar`, `block`, `block_entity_sync`, `block_property`, `block_state_property`, `change_mod_block_entity`, `default_state`, `dimension`, `draw_block`, `draw_cube`, `draw_item`, `draw_model`, `draw_quad`, `draw_scene`, `fill`, `gui_tooltip`, `has_alt_down`, `has_control_down`, `has_shift_down`, `held_stack`, `is_key_down`, `item`, `level`, `mod_block_entity`, `mod_screen`, `mod_screen_close`, `mod_screen_open`, `neighbor_signal`, `net_send_to_player`, `net_send_to_server`, `quad`, `run_command`, `set_block`, `set_block_property`, `sprite`, `tell`, `text`, `text_width`, `window`.
 
-`add_effect`, `apply_screen_blur`, `attribute`, `block_collision`, `block_entity_nbt`, `block_entity_tag`, `block_name_in_tag`, `block_sprites_version`, `block_states`, `carried_items`, `carried_stack`, `chunk_is_loaded`, `clear_between`, `client_resources`, `client_state`, `collision_boxes`, `component`, `data`, `day_time`, `destroy_block`, `dismount`, `draw_fluid_box`, `draw_scene`, `draw_terrain_model`, `draw_text`, `entities_in`, `entity`, `entity_bounding_box`, `entity_fire_immune`, `entity_fire_ticks`, `entity_head_yaw`, `entity_is_shift_key_down`, `entity_kind`, `entity_nbt`, `entity_on_ground`, `entity_position`, `entity_push`, `entity_rotation`, `entity_set_fire`, `entity_set_head_yaw`, `entity_set_rotation`, `entity_set_velocity`, `entity_teleport_to`, `entity_uuid`, `entity_velocity`, `equipment`, `extract_item`, `fill`, `fluid_extract`, `fluid_flow`, `fluid_insert`, `fluid_tanks`, `give_items`, `give_stack`, `gui_tooltip`, `has_alt_down`, `has_control_down`, `has_shift_down`, `held`, `hurt_entity`, `insert_item`, `instance_dir`, `is_key_down`, `item`, `item_entities`, `level_difficulty`, `level_is_loaded`, `level_random`, `light`, `living`, `living_set_equipment`, `max_stack_size`, `mod_screen`, `mod_screen_close`, `mod_screen_open`, `net_send_to_player`, `net_send_to_server`, `open_menu_with_input`, `pick_block`, `play_sound`, `player`, `player_break_block`, `player_equipment`, `player_food`, `player_stacks`, `playing`, `profile_by_uuid`, `push_player`, `quad`, `raycast`, `recipe_ingredient`, `recipe_result`, `recipes_of_type`, `remove_component`, `remove_entity`, `remove_mob`, `send_particles`, `send_particles_to`, `server_item_in_tag`, `server_players`, `set_attribute_base`, `set_block_entity`, `set_block_property_with`, `set_block_tag`, `set_break_progress`, `set_component`, `set_inventory_slot_typed`, `set_item_entity`, `set_player_status`, `sneaking`, `sprite`, `summon`, `summon_with_uuid`, `take_items`, `text`, `text_width`, `update_output_neighbors`, `update_signal_neighbors`, `upgrade_block_state`, `use_as_player`, `vehicle_of`, `view_hit`, `world_border`, `world_height`
+`add_effect`, `apply_screen_blur`, `attribute`, `block_collision`, `block_entity_nbt`, `block_entity_tag`, `block_name_in_tag`, `block_sprites_version`, `block_states`, `carried_items`, `carried_stack`, `chunk_is_loaded`, `clear_between`, `client_resources`, `client_state`, `collision_boxes`, `component`, `data`, `day_time`, `destroy_block`, `dismount`, `draw_fluid_box`, `draw_terrain_model`, `draw_text`, `entities_in`, `entity`, `entity_bounding_box`, `entity_fire_immune`, `entity_fire_ticks`, `entity_head_yaw`, `entity_is_shift_key_down`, `entity_kind`, `entity_nbt`, `entity_on_ground`, `entity_position`, `entity_push`, `entity_rotation`, `entity_set_fire`, `entity_set_head_yaw`, `entity_set_rotation`, `entity_set_velocity`, `entity_teleport_to`, `entity_uuid`, `entity_velocity`, `equipment`, `extract_item`, `fluid_extract`, `fluid_flow`, `fluid_insert`, `fluid_tanks`, `give_items`, `give_stack`, `held`, `hurt_entity`, `insert_item`, `instance_dir`, `item_entities`, `level_difficulty`, `level_is_loaded`, `level_random`, `light`, `living`, `living_set_equipment`, `max_stack_size`, `open_menu_with_input`, `pick_block`, `play_sound`, `player`, `player_break_block`, `player_equipment`, `player_food`, `player_stacks`, `playing`, `profile_by_uuid`, `push_player`, `raycast`, `recipe_ingredient`, `recipe_result`, `recipes_of_type`, `remove_component`, `remove_entity`, `remove_mob`, `send_particles`, `send_particles_to`, `server_item_in_tag`, `server_players`, `set_attribute_base`, `set_block_entity`, `set_block_property_with`, `set_block_tag`, `set_break_progress`, `set_component`, `set_inventory_slot_typed`, `set_item_entity`, `set_player_status`, `sneaking`, `summon`, `summon_with_uuid`, `take_items`, `update_output_neighbors`, `update_signal_neighbors`, `upgrade_block_state`, `use_as_player`, `vehicle_of`, `view_hit`, `world_border`, `world_height`
