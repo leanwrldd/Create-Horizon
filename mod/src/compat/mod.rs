@@ -25,6 +25,7 @@ pub mod events;
 pub mod items;
 pub mod client;
 pub mod containers;
+pub mod world;
 pub use adapter::Adapter;
 
 use std::collections::BTreeSet;

@@ -352,6 +352,12 @@ impl Host for Adapter<'_> {
     fn is_key_down(&self, key: KeyCode) -> bool {
         self.key_down(key)
     }
+    fn net_send_to_player(&mut self, player: u128, channel: &str, data: &[u8]) -> Result<(), String> {
+        self.net_to_player(player, channel, data)
+    }
+    fn net_send_to_server(&mut self, channel: &str, data: &[u8]) -> Result<(), String> {
+        self.net_to_server(channel, data)
+    }
 }
 
 impl From<DisplayContext> for mod_api::ItemDisplayContext {

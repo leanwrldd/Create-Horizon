@@ -642,6 +642,7 @@ impl mod_api::Hooks for Mod {
             r.register_recipe_type(id);
             r.register_raw_recipe_serializer(id, id);
         }
+        compat::world::register_net(r);
         for &id in parts_gen::BLOCKS {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
             let key = r.block_key(full);
@@ -768,6 +769,86 @@ impl mod_api::Hooks for Mod {
         event: &mut mod_api::ScreenMouseScrolledPreEvent<'_>,
     ) -> mod_api::Flow {
         compat::client::screen_mouse_scrolled_pre(host, event)
+    }
+
+    fn break_block(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::BreakBlockEvent<'_>) -> mod_api::Flow {
+        compat::world::break_block(host, event)
+    }
+
+    fn entity_interact(
+        &self,
+        host: mod_api::HostSide<'_>,
+        event: &mut mod_api::EntityInteractEvent<'_>,
+    ) -> Option<mod_api::InteractionResult> {
+        compat::world::entity_interact(host, event)
+    }
+
+    fn player_tick_pre(&self, host: mod_api::HostSide<'_>, event: &mut mod_api::PlayerTickPreEvent) {
+        compat::world::player_tick_pre(host, event)
+    }
+
+    fn entity_tick_listened(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::EntityTickListenedEvent) {
+        compat::world::entity_tick_listened(host, event)
+    }
+
+    fn entity_tick_post(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::EntityTickPostEvent<'_>) {
+        compat::world::entity_tick_post(host, event)
+    }
+
+    fn living_breathe(&self, _: &dyn mod_api::LoopContext, event: &mut mod_api::LivingBreatheEvent<'_>) {
+        compat::world::living_breathe(event)
+    }
+
+    fn living_incoming_damage(
+        &self,
+        _: &mut dyn mod_api::LevelRandomHost,
+        event: &mut mod_api::LivingIncomingDamageEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::world::living_incoming_damage(event)
+    }
+
+    fn living_knockback(
+        &self,
+        _: &mut dyn mod_api::LevelRandomHost,
+        event: &mut mod_api::LivingKnockbackEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::world::living_knockback(event)
+    }
+
+    fn hears_projectile_impacts(&self, host: &dyn mod_api::Host, event: &mut mod_api::HearsProjectileImpactsEvent) {
+        compat::world::hears_projectile_impacts(host, event)
+    }
+
+    fn projectile_impact(
+        &self,
+        host: &mut dyn mod_api::ServerHost,
+        event: &mut mod_api::ProjectileImpactEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::world::projectile_impact(host, event)
+    }
+
+    fn loot_drops(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::LootDropsEvent<'_>) {
+        compat::world::loot_drops(host, event)
+    }
+
+    fn menu_clicked(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::MenuClickedEvent) {
+        compat::world::menu_clicked(host, event)
+    }
+
+    fn menu_closed(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::MenuClosedEvent) {
+        compat::world::menu_closed(host, event)
+    }
+
+    fn register_commands(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::RegisterCommandsEvent<'_>) {
+        compat::world::register_commands(host, event)
+    }
+
+    fn run_mod_command(
+        &self,
+        host: &mut dyn mod_api::ServerHost,
+        event: &mut mod_api::RunModCommandEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::world::run_mod_command(host, event)
     }
 
     fn living_entity_use_item_tick(

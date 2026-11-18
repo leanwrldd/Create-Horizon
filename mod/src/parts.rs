@@ -9,7 +9,7 @@ use mod_api::{
     TickBlockEvent, UpdateShapeEvent, UseItemOnEvent,
 };
 
-use crate::compat::{events, items};
+use crate::compat::{events, items, world};
 
 /// A Create block's `BlockPart`. `id` is the block's name without the namespace (`shaft`).
 pub(crate) struct CreateBlock {
@@ -114,5 +114,8 @@ impl ItemPart for CreateItem {
     }
     fn release_using(&self, host: HostSide, event: &mut mod_api::ReleaseUsingEvent<'_>) {
         items::release_using(host, event)
+    }
+    fn on_block_placed_by(&self, host: &mut dyn ServerHost, event: &mut mod_api::OnBlockPlacedByEvent<'_>) {
+        world::on_block_placed_by(host, event)
     }
 }
