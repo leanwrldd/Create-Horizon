@@ -642,6 +642,8 @@ impl mod_api::Hooks for Mod {
             r.register_recipe_type(id);
             r.register_raw_recipe_serializer(id, id);
         }
+        // Particle keys are issued at registration only; the glue's `send_particles` needs them later.
+        compat::register_particles(r);
         for &id in parts_gen::BLOCKS {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
             let key = r.block_key(full);

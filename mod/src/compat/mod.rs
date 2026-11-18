@@ -21,6 +21,8 @@ mod types;
 include!("types_names.rs");
 
 pub mod adapter;
+mod host_services;
+pub use host_services::register_particles;
 pub mod events;
 pub use adapter::Adapter;
 
