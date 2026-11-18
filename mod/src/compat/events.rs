@@ -399,11 +399,14 @@ pub fn component_types(event: &mut mod_api::ComponentTypesEvent<'_>) {
     create().component_types(&mut old);
 }
 
+/// The new hook fires on both sides; the old `right_click_block` was the server's only. On a client the modules
+/// would act on the client's copy (a Depot "took" the stack there) and their `Cancel` would stop the use packet, so
+/// the server never saw the click. The client lets the click through and the server decides, as before.
 pub fn right_click_block(host: HostSide<'_>, event: &mut mod_api::RightClickBlockEvent<'_>) -> mod_api::Flow {
     let mut old = RightClickBlockEvent { pos: event.click.pos, face: event.click.hit.face };
     match host {
         HostSide::Server(host) => create().right_click_block(&mut Adapter::Server(host), &mut old),
-        HostSide::Client(host) => create().right_click_block(&mut Adapter::ClientMut(host), &mut old),
+        HostSide::Client(_) => mod_api::Flow::Continue,
     }
 }
 

@@ -932,6 +932,36 @@ impl Host for Adapter<'_> {
         tags.is_in_tag(item, key).ok_or(NativeBlockReadError::TagsUnavailable)
     }
 
+    // --- the client's window and view ----------------------------------------------------------------------
+
+    /// The old one-call snapshot of the client, rebuilt from the new client host's calls. The GUI size comes from
+    /// the last draw context (`types::gui_size`); there is one window, so its id is a constant (Ponder keys its
+    /// per-window state by it).
+    fn client_state(&self) -> Option<NativeClientState> {
+        let host: &dyn ClientHost = match self {
+            Adapter::Client(host) => *host,
+            Adapter::ClientMut(host) => &**host,
+            _ => return None,
+        };
+        let camera = host.camera();
+        Some(NativeClientState {
+            window_id: 1,
+            focused: host.window_focused(),
+            gui_hidden: host.hud_mode() != mod_api::HudMode::AllVisible,
+            gui_size: super::types::gui_size(),
+            logged_in: host.camera_entity().is_some(),
+            world_partial_tick: camera.as_ref().map_or(0.0, |c| f64::from(c.partial_tick)),
+            eye_position: camera
+                .as_ref()
+                .map(|c| [c.position[0], c.position[1] + f64::from(c.eye_height), c.position[2]]),
+            yaw: camera.as_ref().map_or(0.0, |c| c.yaw),
+            pitch: camera.as_ref().map_or(0.0, |c| c.pitch),
+            menu_blur: host.menu_blur_radius(),
+            screen: if host.playing() { NativeScreenKind::Playing } else { NativeScreenKind::Other },
+            ..NativeClientState::default()
+        })
+    }
+
     // --- players -------------------------------------------------------------------------------------------
 
     fn acting_player(&self) -> Option<NativeServerPlayer> {

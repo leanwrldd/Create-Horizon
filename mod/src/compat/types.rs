@@ -620,11 +620,24 @@ pub struct HudBatch {
     draw: Option<std::ptr::NonNull<dyn DrawContext>>,
 }
 
+/// The GUI's size in GUI pixels, as the last HUD, screen or tooltip draw context gave it. The new API has no host
+/// call for it outside those hooks; the old `client_state().gui_size` reads this.
+static GUI_SIZE: std::sync::Mutex<[f32; 2]> = std::sync::Mutex::new([0.0, 0.0]);
+
+fn set_gui_size(size: [f32; 2]) {
+    *GUI_SIZE.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = size;
+}
+
+pub(crate) fn gui_size() -> [f32; 2] {
+    *GUI_SIZE.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 impl HudBatch {
     /// # Safety
     /// The result must not outlive the borrow of `draw`.
     pub(crate) unsafe fn new(draw: &mut dyn DrawContext) -> Self {
         let [width, height] = draw.size();
+        set_gui_size([width, height]);
         // SAFETY: only the trait object's lifetime bound is erased; the caller keeps the borrow alive.
         let draw: &mut (dyn DrawContext + 'static) = unsafe { std::mem::transmute(draw) };
         Self { scale: 1.0, width, height, vertices: Vec::new(), draw: Some(std::ptr::NonNull::from(draw)) }
