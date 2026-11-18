@@ -58,7 +58,8 @@ for name in names:
         parts.append(current.strip())
     args = ", ".join(part.split(":")[0].strip() for part in parts)
     signature = f"    fn {name}(&self, {', '.join(parts)})" + (f" -> {returns}" if returns else "")
-    call = f"module.{name}({args})"
+    fallback = "()" if returns is None else "Flow::Continue" if returns == "Flow" else "None"
+    call = f"guarded(\"{name}\", {fallback}, || module.{name}({args}))"
     if returns is None:
         body = [f"        for module in &self.modules {{", f"            {call};", "        }"]
     elif returns == "Flow":

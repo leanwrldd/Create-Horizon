@@ -27,6 +27,28 @@ pub use adapter::Adapter;
 use std::collections::BTreeSet;
 use std::sync::{Mutex, PoisonError};
 
+/// Runs one module's hook so that a compatibility gap that panics (the old `Host` offered the server's services
+/// everywhere; the adapter has none to give a client hook) costs that module's work for the tick, not the game.
+/// The first panic of each hook is logged; `fallback` is what the hook answers instead.
+pub fn guarded<R>(hook: &'static str, fallback: R, call: impl FnOnce() -> R) -> R {
+    static SEEN: Mutex<BTreeSet<&'static str>> = Mutex::new(BTreeSet::new());
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(call)) {
+        Ok(answer) => answer,
+        Err(payload) => {
+            let mut seen = SEEN.lock().unwrap_or_else(PoisonError::into_inner);
+            if seen.insert(hook) {
+                let message = payload
+                    .downcast_ref::<&str>()
+                    .map(|text| (*text).to_owned())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_default();
+                eprintln!("create: hook {hook} panicked in a module and was skipped: {message}");
+            }
+            fallback
+        }
+    }
+}
+
 /// Records, once per name, that something asked the compatibility layer for what the new API has no match for.
 /// The names it has seen are in `MIGRATION.md`'s gap list.
 pub fn gap(name: &'static str) {
