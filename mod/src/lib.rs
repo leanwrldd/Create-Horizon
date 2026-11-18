@@ -610,9 +610,38 @@ pub(crate) fn create() -> &'static dyn Hooks {
 #[derive(Default)]
 struct Mod;
 
+/// Every `create:` recipe type in `data/create/recipe` (`tools/check_content.py` lists what the data uses).
+const CREATE_RECIPE_TYPES: &[&str] = &[
+    "create:baked_blasting",
+    "create:baked_smelting",
+    "create:baked_smoking",
+    "create:compacting",
+    "create:crafter_baked_shaped",
+    "create:crafter_baked_shapeless",
+    "create:crushing",
+    "create:cutting",
+    "create:deploying",
+    "create:emptying",
+    "create:filling",
+    "create:haunting",
+    "create:item_application",
+    "create:mechanical_crafting",
+    "create:milling",
+    "create:mixing",
+    "create:pressing",
+    "create:sandpaper_polishing",
+    "create:sequenced_assembly",
+    "create:splashing",
+];
+
 #[mod_api::horizon_mod]
 impl mod_api::Hooks for Mod {
     fn register(&self, r: &mut dyn mod_api::Registrar, _: &mod_api::RegistrationContext) {
+        // The recipe types the data files name: the loader refuses a recipe whose serializer no mod registered.
+        for id in CREATE_RECIPE_TYPES {
+            r.register_recipe_type(id);
+            r.register_raw_recipe_serializer(id, id);
+        }
         for &id in parts_gen::BLOCKS {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
             let key = r.block_key(full);
