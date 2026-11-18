@@ -647,6 +647,11 @@ impl mod_api::Hooks for Mod {
             let key = r.block_key(full);
             r.block_part(key, parts::CreateBlock { id: full });
         }
+        for &id in parts_gen::ITEMS {
+            let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
+            let key = r.item_key(full);
+            r.item_part(key, parts::CreateItem { id: full });
+        }
         for &id in parts_gen::BLOCK_ENTITIES {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
             let kind = r.block_entity_type(id).blocks(&[id]).build();
@@ -689,6 +694,22 @@ impl mod_api::Hooks for Mod {
 
     fn block_step_on(&self, event: &mut mod_api::BlockStepOnEvent<'_>) {
         compat::events::block_step_on(event)
+    }
+
+    fn living_entity_use_item_tick(
+        &self,
+        host: mod_api::HostSide<'_>,
+        event: &mut mod_api::LivingEntityUseItemTickEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::items::living_entity_use_item_tick(host, event)
+    }
+
+    fn living_entity_use_item_finish(
+        &self,
+        host: mod_api::HostSide<'_>,
+        event: &mut mod_api::LivingEntityUseItemFinishEvent<'_>,
+    ) {
+        compat::items::living_entity_use_item_finish(host, event)
     }
 }
 
