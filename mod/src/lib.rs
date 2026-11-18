@@ -198,7 +198,7 @@ impl Core {
                 .block_state_property(state, "facing")
                 .and_then(Dir::from_name)
             {
-                press::draw(host, draw, facing, &entity.nbt);
+                press::draw(host, draw, pos, facing, &entity.nbt);
             }
             return;
         }

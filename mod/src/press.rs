@@ -616,10 +616,12 @@ fn recipe_for(host: &dyn Host, stack: &ItemStack) -> Option<Recipe> {
 // --- drawing (`MechanicalPressRenderer`) ----------------------------------------------------
 
 /// The shaft turning through the press, and the head at its height in the cycle.
-pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, facing: Dir, nbt: &Compound) {
+pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, pos: Pos, facing: Dir, nbt: &Compound) {
     let rpm = float(nbt, crate::SPEED).unwrap_or(0.0);
     let axis = facing.axis();
-    crate::draw::spin(draw, axis.unit(), rpm * 0.3, 0.0, float(nbt, crate::ponder::ANGLE));
+    // `KineticBlockEntityRenderer.getRotationOffsetForPosition`, so the shaft lines up with its neighbours.
+    let phase = crate::machines::encased::shaft_phase(axis, pos);
+    crate::draw::spin(draw, axis.unit(), rpm * 0.3, phase, float(nbt, crate::ponder::ANGLE));
     host.draw_block(draw, "create:shaft", &[("axis", axis.name())]);
     draw.still();
 

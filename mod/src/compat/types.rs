@@ -200,6 +200,8 @@ pub struct BlockEntityDraw {
     // The old handle had no lifetime, so this holds the borrowed context as a pointer. A `BlockEntityDraw` is made
     // by `events.rs` for one `block_entity_submit` call and dropped before it returns; nothing keeps it.
     pub(crate) ctx: std::ptr::NonNull<dyn BlockEntityDrawContext>,
+    /// A part turns in this draw (`spin` was called), so `still` stops it with a zero-rate spin.
+    spun: bool,
 }
 
 impl BlockEntityDraw {
@@ -209,7 +211,7 @@ impl BlockEntityDraw {
         let (partial, game_time, light) = (ctx.partial(), ctx.game_time(), ctx.light());
         // SAFETY: only the trait object's lifetime bound is erased; the caller keeps the borrow alive.
         let ctx: &mut (dyn BlockEntityDrawContext + 'static) = unsafe { std::mem::transmute(ctx) };
-        Self { partial, game_time, light, ctx: std::ptr::NonNull::from(ctx) }
+        Self { partial, game_time, light, ctx: std::ptr::NonNull::from(ctx), spun: false }
     }
     pub(crate) fn ctx(&mut self) -> &mut dyn BlockEntityDrawContext {
         // SAFETY: see `new`.
@@ -233,10 +235,21 @@ impl BlockEntityDraw {
     pub fn keep(&mut self) {
         self.ctx().keep();
     }
+    /// What is drawn next stands still. Once something has turned in this draw, a zero-rate spin
+    /// does it instead of the game's `still`: on 0b14f8a a model drawn after `still` is deferred
+    /// and baked in later (`bake_recorded`), which moves the `still` marker that shares its vertex
+    /// index past the model, so the model turns with the part before it (the press head and the
+    /// mixer pole swung around with the shaft and the cog). A model drawn while a spin is active is
+    /// not deferred, so it lands in order.
     pub fn still(&mut self) {
-        self.ctx().still();
+        if self.spun {
+            self.ctx().spin([0.0, 1.0, 0.0], [0.0; 3], 0.0, 0.0);
+        } else {
+            self.ctx().still();
+        }
     }
     pub fn spin(&mut self, axis: [f32; 3], pivot: [f32; 3], degrees_per_tick: f32, phase: f32) {
+        self.spun = true;
         self.ctx().spin(axis, pivot, degrees_per_tick, phase);
     }
     pub fn set_light(&mut self, light: u32) {
