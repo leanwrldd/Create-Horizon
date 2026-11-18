@@ -170,6 +170,25 @@ pub fn replay(snapshot: Snapshot, rpm: f32, ticks: i64) -> (f32, f32, bool) {
     (offset, speed, arrived)
 }
 
+/// The cabin `ticks` after the snapshot while an actor or an interface holds it still
+/// (`Contraption.stalled`). `ElevatorPulleyBlockEntity.tick` doesn't add the speed to the offset
+/// then (`!movedContraption.isStalled()`), but `getMovementSpeed` still runs each tick and its
+/// `prevSpeed` goes on accelerating toward the target from the offset it is held at, so the cabin
+/// sets off at that speed when it is let go. The offset is the snapshot's; the speed is the one
+/// the held cabin has reached.
+pub fn replay_held(snapshot: Snapshot, rpm: f32, ticks: i64) -> (f32, f32, bool) {
+    let (mut speed, mut arrived) = (snapshot.speed, false);
+    for _ in 0..ticks.clamp(0, 4000) {
+        (speed, arrived) = movement_speed(rpm, snapshot.target, snapshot.offset, speed);
+    }
+    (snapshot.offset, speed, arrived)
+}
+
+/// [`replay`], or [`replay_held`] while the cabin is held still.
+pub fn replay_as(snapshot: Snapshot, rpm: f32, ticks: i64, held: bool) -> (f32, f32, bool) {
+    if held { replay_held(snapshot, rpm, ticks) } else { replay(snapshot, rpm, ticks) }
+}
+
 /// What `ElevatorContactBlock.neighborChanged` does when the redstone signal on a contact
 /// changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -385,6 +404,34 @@ mod tests {
         });
         // Nothing before the snapshot.
         assert_eq!(replay(snapshot, 64.0, -5), (2.0, 0.0, false));
+    }
+
+    #[test]
+    fn a_held_cabin_keeps_its_offset_and_sets_off_at_the_speed_it_built_up() {
+        let snapshot = Snapshot { offset: 5.0, speed: 0.0, time: 10, target: 40 };
+        // Held for 30 ticks: it hasn't moved, but its speed went on climbing as `prevSpeed` does.
+        let (offset, speed, arrived) = replay_held(snapshot, 64.0, 30);
+        assert_eq!(offset, 5.0);
+        assert!(!arrived && speed > 0.0, "{speed}");
+        // The same speed a freely moving cabin has after 30 ticks while far from the floor (the
+        // brake term only matters near it).
+        let (_, free_speed, _) = replay(snapshot, 64.0, 30);
+        assert!((speed - free_speed).abs() < 1e-6, "{speed} {free_speed}");
+        // Held for a long time, it tops out at the limit for the rotation.
+        let (_, top, _) = replay_held(snapshot, 64.0, 2000);
+        assert!((top - 0.25).abs() < 1e-6, "{top}");
+        // The speed it is let go at carries on from there.
+        let released = Snapshot { offset, speed, time: 40, target: 40 };
+        let (moved, _, _) = replay(released, 64.0, 5);
+        assert!(moved > 5.0 + 5.0 * speed - 1e-3);
+        // Held at a floor it has reached, it is arrived and stays at rest.
+        let there = Snapshot { offset: 40.0, speed: 0.0, time: 0, target: 40 };
+        assert_eq!(replay_held(there, 64.0, 50), (40.0, 0.0, true));
+        // Not held: `replay_as` is `replay`.
+        assert_eq!(replay_as(snapshot, 64.0, 30, false), replay(snapshot, 64.0, 30));
+        assert_eq!(replay_as(snapshot, 64.0, 30, true), replay_held(snapshot, 64.0, 30));
+        // Nothing before the snapshot.
+        assert_eq!(replay_held(snapshot, 64.0, -3), (5.0, 0.0, false));
     }
 
     fn names(list: &[&str]) -> Vec<String> {
