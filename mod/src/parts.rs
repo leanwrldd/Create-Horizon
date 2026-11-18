@@ -100,6 +100,9 @@ impl ItemPart for CreateItem {
     fn use_item(&self, host: HostSide, event: &mut mod_api::UseItemEvent<'_>) -> Option<InteractionResult> {
         items::use_item(host, event)
     }
+    fn use_on(&self, host: HostSide, event: &mut mod_api::UseOnEvent<'_>) -> Option<InteractionResult> {
+        items::use_on(host, event)
+    }
     fn inventory_tick(&self, host: &mut dyn ServerHost, event: &mut mod_api::InventoryTickEvent<'_>) {
         items::inventory_tick(host, event)
     }

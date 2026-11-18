@@ -67,6 +67,24 @@ pub fn use_item(host: HostSide<'_>, event: &mut mod_api::UseItemEvent<'_>) -> Op
     }
 }
 
+/// `ItemPart::use_on`, the held item's own `useOn`: the game reaches it when the block did not take the click, and a
+/// sneaking player's held item skips the block's `useItemOn` altogether, so this is where a sneak-click with the Wrench
+/// (`WrenchItem.useOn` -> `onSneakWrenched`, pick the block up) arrives. The old `use_item_on` hook ran for every
+/// click; the block part's `use_item_on` still covers the clicks of a player who is not sneaking.
+pub fn use_on(host: HostSide<'_>, event: &mut mod_api::UseOnEvent<'_>) -> Option<mod_api::InteractionResult> {
+    let HostSide::Server(host) = host else { return None };
+    let sneaking = host.player(event.player).and_then(|player| player.is_secondary_use_active(&*host)).unwrap_or(false);
+    if !sneaking {
+        return None;
+    }
+    let stack = stack_old(&*host, event.stack)?;
+    let mut old = UseItemOnEvent { stack: &stack, pos: event.pos, face: event.face };
+    match create().use_item_on(&mut Adapter::Server(&mut *host), &mut old) {
+        Flow::Continue => None,
+        _ => Some(mod_api::InteractionResult::Success),
+    }
+}
+
 pub fn inventory_tick(host: &mut dyn ServerHost, event: &mut mod_api::InventoryTickEvent<'_>) {
     let mut old = InventoryTickEvent { slot: event.slot, selected: event.selected };
     create().inventory_tick(&mut Adapter::Server(host), &mut old);
