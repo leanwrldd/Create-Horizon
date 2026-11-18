@@ -1,6 +1,7 @@
 //! Client-side Ponder hooks. Inventory Ponder keeps the underlying menu open.
 
 mod archive;
+mod archive_models;
 mod render;
 mod scene;
 mod scenes;
@@ -258,7 +259,7 @@ impl Hooks for Ponder {
 
     fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
         event.models.extend(
-            include_str!("archive_models.txt")
+            archive_models::MODELS
                 .lines()
                 .map(str::to_owned),
         );

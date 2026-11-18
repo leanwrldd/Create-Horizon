@@ -6,22 +6,118 @@ use crate::compat::{
     BlockStateId, Host, HudBatch, ModBlockEntity, NativeSceneBlock, NativeSceneView,
     serde_json::{self, Value},
 };
-use serde::Deserialize;
 
 use super::scene::Pos;
 use super::screen::Showing;
 
 const ASSETS: &str = "assets/create/ponder/";
 
-#[derive(Deserialize)]
+/// Decoding from `serde_json::Value` by hand: the mod's own `serde` is a different crate instance from the one the
+/// game's `Value` implements `Deserialize` with, so `#[derive(Deserialize)]` and `from_value` cannot be used here.
+trait FromJson: Sized {
+    fn from_json(value: &Value) -> Option<Self>;
+}
+
+fn read<T: FromJson>(row: &[Value], index: usize) -> Option<T> {
+    T::from_json(row.get(index)?)
+}
+
+fn field<T: FromJson>(value: &Value, name: &str) -> Option<T> {
+    T::from_json(value.get(name)?)
+}
+
+fn field_or<T: FromJson + Default>(value: &Value, name: &str) -> T {
+    field(value, name).unwrap_or_default()
+}
+
+impl FromJson for u32 {
+    fn from_json(value: &Value) -> Option<Self> {
+        u32::try_from(value.as_u64()?).ok()
+    }
+}
+
+impl FromJson for usize {
+    fn from_json(value: &Value) -> Option<Self> {
+        usize::try_from(value.as_u64()?).ok()
+    }
+}
+
+impl FromJson for i32 {
+    fn from_json(value: &Value) -> Option<Self> {
+        i32::try_from(value.as_i64()?).ok()
+    }
+}
+
+impl FromJson for f32 {
+    fn from_json(value: &Value) -> Option<Self> {
+        Some(value.as_f64()? as f32)
+    }
+}
+
+impl FromJson for bool {
+    fn from_json(value: &Value) -> Option<Self> {
+        value.as_bool()
+    }
+}
+
+impl FromJson for String {
+    fn from_json(value: &Value) -> Option<Self> {
+        Some(value.as_str()?.to_owned())
+    }
+}
+
+impl<T: FromJson> FromJson for Option<T> {
+    fn from_json(value: &Value) -> Option<Self> {
+        Some(if value.is_null() { None } else { Some(T::from_json(value)?) })
+    }
+}
+
+impl<T: FromJson> FromJson for Vec<T> {
+    fn from_json(value: &Value) -> Option<Self> {
+        value.as_array()?.iter().map(T::from_json).collect()
+    }
+}
+
+impl<T: FromJson, const N: usize> FromJson for [T; N] {
+    fn from_json(value: &Value) -> Option<Self> {
+        let items = value.as_array()?;
+        if items.len() != N {
+            return None;
+        }
+        items.iter().map(T::from_json).collect::<Option<Vec<T>>>()?.try_into().ok()
+    }
+}
+
+impl<A: FromJson, B: FromJson> FromJson for (A, B) {
+    fn from_json(value: &Value) -> Option<Self> {
+        let items = value.as_array()?;
+        Some((A::from_json(items.first()?)?, B::from_json(items.get(1)?)?))
+    }
+}
+
+impl<A: FromJson, B: FromJson, C: FromJson> FromJson for (A, B, C) {
+    fn from_json(value: &Value) -> Option<Self> {
+        let items = value.as_array()?;
+        Some((A::from_json(items.first()?)?, B::from_json(items.get(1)?)?, C::from_json(items.get(2)?)?))
+    }
+}
+
+impl FromJson for BTreeMap<String, String> {
+    fn from_json(value: &Value) -> Option<Self> {
+        value
+            .as_object()?
+            .iter()
+            .map(|(key, value)| Some((key.clone(), value.as_str()?.to_owned())))
+            .collect()
+    }
+}
+
 pub struct Catalog {
     pub tags: Vec<Topic>,
     pub scenes: Vec<Entry>,
-    #[serde(default)]
     ui: BTreeMap<String, String>,
 }
 
-#[derive(Deserialize)]
 pub struct Topic {
     pub id: String,
     pub icon: String,
@@ -29,16 +125,49 @@ pub struct Topic {
     pub description: String,
     pub index: bool,
     pub items: Vec<String>,
-    #[serde(default)]
     pub main_item: Option<String>,
 }
 
-#[derive(Deserialize)]
 pub struct Entry {
     pub title: String,
     pub file: String,
     pub items: Vec<String>,
     pub tags: Vec<String>,
+}
+
+impl FromJson for Catalog {
+    fn from_json(value: &Value) -> Option<Self> {
+        Some(Self {
+            tags: field(value, "tags")?,
+            scenes: field(value, "scenes")?,
+            ui: field_or(value, "ui"),
+        })
+    }
+}
+
+impl FromJson for Topic {
+    fn from_json(value: &Value) -> Option<Self> {
+        Some(Self {
+            id: field(value, "id")?,
+            icon: field(value, "icon")?,
+            title: field(value, "title")?,
+            description: field(value, "description")?,
+            index: field(value, "index")?,
+            items: field(value, "items")?,
+            main_item: field_or(value, "main_item"),
+        })
+    }
+}
+
+impl FromJson for Entry {
+    fn from_json(value: &Value) -> Option<Self> {
+        Some(Self {
+            title: field(value, "title")?,
+            file: field(value, "file")?,
+            items: field(value, "items")?,
+            tags: field(value, "tags")?,
+        })
+    }
 }
 
 impl Catalog {
@@ -51,7 +180,7 @@ impl Catalog {
         let bytes = host
             .client_resources()
             .read(&format!("{ASSETS}catalog.json"))?;
-        serde_json::from_slice(&bytes).ok()
+        Self::from_json(&serde_json::from_slice::<Value>(&bytes).ok()?)
     }
 
     pub fn for_item(&self, item: &str) -> Option<usize> {
@@ -65,20 +194,40 @@ type Properties = BTreeMap<String, String>;
 type State = (String, Properties);
 
 // Scene files use variable-length rows, which are decoded once on selection.
-#[derive(Deserialize)]
 struct SceneFile {
     size: Pos,
     bounds: Pos,
     palette: Vec<State>,
     blocks: Vec<(Pos, usize)>,
-    #[serde(default)]
     speeds: Vec<(Pos, f32)>,
     events: Vec<Vec<Value>>,
-    #[serde(default)]
     models: Vec<(State, Vec<Model>)>,
     duration: u32,
     scale: f32,
     offset: f32,
+}
+
+impl FromJson for SceneFile {
+    fn from_json(value: &Value) -> Option<Self> {
+        Some(Self {
+            size: field(value, "size")?,
+            bounds: field(value, "bounds")?,
+            palette: field(value, "palette")?,
+            blocks: field(value, "blocks")?,
+            speeds: field_or(value, "speeds"),
+            events: field(value, "events")?,
+            models: field_or(value, "models"),
+            duration: field(value, "duration")?,
+            scale: field(value, "scale")?,
+            offset: field(value, "offset")?,
+        })
+    }
+}
+
+impl FromJson for Value {
+    fn from_json(value: &Value) -> Option<Self> {
+        Some(value.clone())
+    }
 }
 
 enum Event {
@@ -117,13 +266,23 @@ pub struct Scene {
     reading: Vec<(f32, f32)>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default)]
 pub struct CaptionStyle {
     pub target: Option<[f32; 3]>,
-    #[serde(default)]
     pub near: bool,
     pub y: Option<f32>,
     pub color: Option<String>,
+}
+
+impl FromJson for CaptionStyle {
+    fn from_json(value: &Value) -> Option<Self> {
+        Some(Self {
+            target: field_or(value, "target"),
+            near: field_or(value, "near"),
+            y: field_or(value, "y"),
+            color: field_or(value, "color"),
+        })
+    }
 }
 
 struct ResolvedBlock {
@@ -136,8 +295,15 @@ struct ResolvedBlock {
     properties: Vec<(String, String)>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone)]
 struct Model(String, f32, f32);
+
+impl FromJson for Model {
+    fn from_json(value: &Value) -> Option<Self> {
+        let (name, a, b) = <(String, f32, f32)>::from_json(value)?;
+        Some(Self(name, a, b))
+    }
+}
 
 #[derive(Clone, Copy, Default)]
 struct Motion {
@@ -262,7 +428,7 @@ impl Scene {
         let bytes = host
             .client_resources()
             .read(&format!("{ASSETS}{}", entry.file))?;
-        let file: SceneFile = serde_json::from_slice(&bytes).ok()?;
+        let file = SceneFile::from_json(&serde_json::from_slice::<Value>(&bytes).ok()?)?;
         Some(Self::prepare(host, file))
     }
 
@@ -796,9 +962,6 @@ fn overlay_line(
 }
 
 fn decode(row: &[Value], palette: &mut Vec<State>) -> Option<(f32, Event)> {
-    fn read<T: serde::de::DeserializeOwned>(row: &[Value], index: usize) -> Option<T> {
-        serde_json::from_value(row.get(index)?.clone()).ok()
-    }
     let tick = read::<u32>(row, 0)? as f32;
     let op = row.get(1)?.as_str()?;
     let color = |name: &str| match name {

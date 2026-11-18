@@ -13,6 +13,5 @@ horizon-mod-api = { path = ".horizon/sdk/api/crates/horizon-mod-api" }
 # to live under src/: the package takes nothing else.
 create-kinetics = { path = "src/kinetics" }
 # Registry dependencies: pinned in Cargo.lock by `horizon-launcher native-lock mod`.
-serde = { version = "1", features = ["derive"] }
 # Gzip for the schematic files.
 flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", "runtime_detection"] }
