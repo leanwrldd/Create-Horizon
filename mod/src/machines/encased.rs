@@ -385,8 +385,10 @@ fn wrench(host: &mut dyn Host, pos: Pos, id: &str, face: Dir) -> Flow {
         // Back to the plain block, on the same axis; the casing is lost.
         if let Some(plain) = encased::plain_of(id) {
             switch_block(host, pos, plain, &[("axis", axis.name())]);
+            return Flow::Cancel;
         }
-        return Flow::Cancel;
+        // A plain shaft or cogwheel: `IWrenchable.onSneakWrenched` picks the block up.
+        return util::wrench(host, pos, |_| {});
     }
     if cog.is_none() {
         rotate_block(host, pos, face);
