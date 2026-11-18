@@ -234,6 +234,42 @@ pub fn animation_speed(motion: Vec3, disabled: bool) -> f32 {
     ((signed / 100) * 100) as f32
 }
 
+// --- what carries the structure -----------------------------------------------------------------------
+
+/// The kind of structure the actors are on, where Create's behaviour differs by it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Structure {
+    /// A piston, a bearing (a windmill), a gantry: nothing special.
+    Other,
+    /// A Rope Pulley's `PulleyContraption`.
+    Pulley,
+    /// An Elevator Pulley's `ElevatorContraption`, which extends `PulleyContraption`.
+    Elevator,
+}
+
+impl Structure {
+    /// `context.contraption instanceof PulleyContraption`: the Roller sleeps on it
+    /// (`RollerMovementBehaviour.isActive`). An elevator's cabin is one too.
+    pub fn is_pulley(self) -> bool {
+        matches!(self, Structure::Pulley | Structure::Elevator)
+    }
+
+    /// `Contraption.disableActorOnStart`: the Controls' initial `Disabled` and `Filter` start
+    /// actors disabled, except on `ElevatorContraption` (`disableActorOnStart` is empty there: its
+    /// Controls pick floors).
+    pub fn controls_disable_on_start(self) -> bool {
+        self != Structure::Elevator
+    }
+}
+
+/// `Math.signum(previous) != Math.signum(now) && previous != 0`: the structure's speed turned
+/// round, or stopped, and `Contraption.stop` runs (`LinearActuatorBlockEntity.onSpeedChanged`,
+/// `GantryContraptionEntity.tickContraption`). Java's `signum(0)` is 0, unlike Rust's.
+pub fn speed_reversed(previous: f32, now: f32) -> bool {
+    let sign = |v: f32| if v > 0.0 { 1 } else if v < 0.0 { -1 } else { 0 };
+    previous != 0.0 && sign(previous) != sign(now)
+}
+
 // --- the Controls' say ------------------------------------------------------------------------------
 
 /// Which kind of structure it is, for the break speed's lower limit.
@@ -675,5 +711,28 @@ mod tests {
             let d = f64::from(cell[0]).hypot(f64::from(cell[2]));
             assert!((1.0..=3.5).contains(&d), "{cell:?}");
         }
+    }
+
+    #[test]
+    fn a_pulley_cabin_counts_as_a_pulley_but_its_controls_start_nothing_disabled() {
+        assert!(!Structure::Other.is_pulley());
+        assert!(Structure::Pulley.is_pulley());
+        // `ElevatorContraption extends PulleyContraption`.
+        assert!(Structure::Elevator.is_pulley());
+        assert!(Structure::Other.controls_disable_on_start());
+        assert!(Structure::Pulley.controls_disable_on_start());
+        assert!(!Structure::Elevator.controls_disable_on_start());
+    }
+
+    #[test]
+    fn a_speed_that_turns_round_or_stops_stops_the_actors() {
+        assert!(speed_reversed(16.0, -16.0));
+        assert!(speed_reversed(-16.0, 16.0));
+        // Stopping counts (signum 0); starting does not (`previous != 0`).
+        assert!(speed_reversed(16.0, 0.0));
+        assert!(!speed_reversed(0.0, 16.0));
+        assert!(!speed_reversed(0.0, 0.0));
+        assert!(!speed_reversed(16.0, 32.0));
+        assert!(!speed_reversed(-8.0, -64.0));
     }
 }

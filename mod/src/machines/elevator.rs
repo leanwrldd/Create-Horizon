@@ -14,7 +14,16 @@
 //! saved in each contact (`ColumnTarget`, `ColumnActive`), as Create's `ElevatorColumn` is. The cabin's
 //! position is replayed from a saved snapshot (`Offset`, `Speed`, `SyncTime`, `Target`) on the
 //! server and the clients alike, so nothing is written while it moves.
+//!
+//! Actors on the cabin (`actor.rs`) and the Portable Interfaces run on it, each tick it runs, with
+//! the cabin's `Pose` (it moves up and down from its anchor, `toPosition`). While one stalls the
+//! cabin (`Stalled`, `psi_motion`) it keeps its offset, and its speed goes on building as Create's
+//! `prevSpeed` does (`replay_held`): the snapshot is moved to now whenever that changes. The
+//! cabin is a `PulleyContraption` (the Roller sleeps) and its Controls start no actor disabled.
+//! A cabin that turns round doesn't stop its actors (the elevator's `onSpeedChanged` doesn't call
+//! `super`), and setting it down stops them first.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
@@ -29,10 +38,14 @@ use crate::compat::{
     RightClickBlockEvent, StandaloneModelsEvent, StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
+use super::actor;
+use super::actor_draw;
 use super::contraption::{
     self as engine, ASSEMBLE, CONTRAPTION, HostWorld, LAST_EXCEPTION, RUNNING, SYNC_TIME,
 };
 use super::diodes_signal as signal;
+use super::portable_interface_motion as psi_motion;
+use create_kinetics::rules::actor::{Carrier, Structure};
 use crate::{kinetic, util};
 
 const PULLEY: &str = elevator::PULLEY;
@@ -368,6 +381,8 @@ fn assemble(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, now: i64
 /// `ElevatorPulleyBlockEntity.disassemble`: the cabin down where it is, the column let go.
 fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, offset: f32, initial: i32, column: ColumnCoords) {
     let dimension = host.dimension().to_owned();
+    // `Contraption.stop`: the actors on the cabin stop first.
+    actor::stop(host, pos, nbt);
     let grid = (offset + 0.5).floor().max(0.0) as i32;
     if let Some(live) = engine::live(&dimension, pos, nbt) {
         let anchor = live.moving.anchor;
@@ -390,6 +405,7 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, offset: f32, initial:
 
 fn stop(entity: &mut ModBlockEntity, now: i64) {
     entity.nbt.insert(RUNNING.into(), flag(false));
+    entity.nbt.remove(&psi_motion::STALLED.into());
     entity.nbt.remove(&CONTRAPTION.into());
     util::set_float(&mut entity.nbt, OFFSET, 0.0);
     util::set_float(&mut entity.nbt, SPEED, 0.0);
@@ -431,7 +447,9 @@ fn tick_pulley(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     }
 
     let key = (dimension.clone(), state.column);
-    let site = |cell: &Snapshot| elevator::replay(*cell, previous, now - cell.time);
+    // A cabin held by an actor or an interface (`Contraption.stalled`) doesn't move.
+    let held_now = psi_motion::is_stalled(&entity.nbt);
+    let site = |cell: &Snapshot| elevator::replay_as(*cell, previous, now - cell.time, held_now);
     // The column's call: where the cabin is sent.
     let wanted = lock(&COLUMNS)
         .get(&key)
@@ -452,13 +470,53 @@ fn tick_pulley(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     }
 
     // A click on a running elevator sets the cabin down.
-    let (offset, _, arrived) = elevator::replay(state.snapshot, rpm, now - state.snapshot.time);
+    let (offset, _, _) = elevator::replay_as(state.snapshot, rpm, now - state.snapshot.time, held_now);
     if util::boolean(&entity.nbt, DISASSEMBLE) {
         set_down(host, pos, &entity.nbt.clone(), offset, state.initial, state.column);
         stop(entity, now);
         host.block_entity_sync(pos);
         return;
     }
+    // `tickActors` and the Portable Interfaces: the drills, saws... on the cabin may hold it
+    // still. The snapshot is moved to now when that changes.
+    if let Some(live) = engine::live(&dimension, pos, &entity.nbt) {
+        let snapshot = state.snapshot;
+        let (anchor, initial) = (live.moving.anchor, state.initial);
+        // `toPosition`, with the cabin's offset of the game time (replayed once a tick).
+        let memo: Cell<Option<(f64, [f64; 3])>> = Cell::new(None);
+        let origin = |t: f64| {
+            if let Some((at, out)) = memo.get() {
+                if at == t {
+                    return out;
+                }
+            }
+            let whole = t.floor();
+            let (cabin, speed, _) = elevator::replay_as(snapshot, rpm, whole as i64 - snapshot.time, held_now);
+            let cabin = if held_now { cabin } else { cabin + speed * (t - whole) as f32 };
+            let out = [
+                f64::from(anchor[0]),
+                f64::from(anchor[1]) + f64::from(pulley_rules::rise(initial, cabin)),
+                f64::from(anchor[2]),
+            ];
+            memo.set(Some((t, out)));
+            out
+        };
+        let pose = psi_motion::Pose::Translating { origin: &origin };
+        let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, Structure::Elevator);
+        let want = psi_motion::tick(host, pos, &live.moving, &pose, now) | acted;
+        if want != held_now {
+            let (at_now, speed, _) = elevator::replay_as(snapshot, rpm, now - snapshot.time, held_now);
+            let moved = Snapshot { offset: at_now, speed, time: now, target: snapshot.target };
+            util::set_float(&mut entity.nbt, OFFSET, moved.offset);
+            util::set_float(&mut entity.nbt, SPEED, moved.speed);
+            entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
+            psi_motion::set_stalled(entity, want);
+            state.snapshot = moved;
+            host.block_entity_sync(pos);
+        }
+    }
+    let held_after = psi_motion::is_stalled(&entity.nbt);
+    let (_, _, arrived) = elevator::replay_as(state.snapshot, rpm, now - state.snapshot.time, held_after);
     // `triggerContact`: the contact at the floor the cabin has reached powers.
     let floor = state.max_contact_y - (target);
     let reached = if arrived { Some(floor) } else { None };
@@ -533,6 +591,7 @@ impl Hooks for Elevators {
         };
         tag.insert(LAST_EXCEPTION.into(), Tag::String(line.as_str().into()));
         tag.insert(CONTRAPTION.into(), engine::client_contraption(entity));
+        tag.insert(psi_motion::STALLED.into(), psi_motion::tag_value(&entity.nbt));
         Some(tag)
     }
 
@@ -560,10 +619,16 @@ impl Hooks for Elevators {
         host.draw_model(draw, COIL, 0xFF_FFFF);
         draw.pop();
         let now = draw.game_time as f64 + f64::from(draw.partial);
+        // A held cabin (an actor or an interface stalls it) stands still; its speed, for the
+        // heads of the actors on it, is what it has built up.
+        let held = psi_motion::is_stalled(&event.entity.nbt);
+        let mut cabin_speed = 0.0;
         let offset = if state.running {
             let whole = now.floor();
-            let (offset, speed, _) = elevator::replay(state.snapshot, rpm, whole as i64 - state.snapshot.time);
-            offset + speed * (now - whole) as f32
+            let (offset, speed, _) =
+                elevator::replay_as(state.snapshot, rpm, whole as i64 - state.snapshot.time, held);
+            cabin_speed = speed;
+            if held { offset } else { offset + speed * (now - whole) as f32 }
         } else {
             0.0
         };
@@ -602,6 +667,12 @@ impl Hooks for Elevators {
             (anchor[1] - event.pos[1]) as f32 + pulley_rules::rise(state.initial, offset),
             (anchor[2] - event.pos[2]) as f32,
         ];
+        // How it moves, for the actors' heads.
+        actor_draw::set_motion(if held {
+            actor_draw::Motion::Stalled
+        } else {
+            actor_draw::Motion::Slide(cabin_speed.abs())
+        });
         engine::draw_blocks(host, draw, &parsed, base);
     }
 
@@ -748,7 +819,8 @@ impl Hooks for Elevators {
         }
         let now = util::game_time(&*host);
         let rpm = kinetic::speed(&entity);
-        let (offset, _, _) = elevator::replay(state.snapshot, rpm, now - state.snapshot.time);
+        let held = psi_motion::is_stalled(&entity.nbt);
+        let (offset, _, _) = elevator::replay_as(state.snapshot, rpm, now - state.snapshot.time, held);
         set_down(host, pos, &entity.nbt, offset, state.initial, state.column);
         Flow::Continue
     }

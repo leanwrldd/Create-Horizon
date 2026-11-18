@@ -82,9 +82,9 @@
 //!   draws (a press head, a funnel's flap) is missing, kinetic parts don't turn, items on
 //!   depots aren't drawn. Lit by the controller's light, not each block's.
 //! - Actors (`MovementBehaviour`: drills, saws, harvesters, ploughs, deployers, funnels) act on the
-//!   structures of pistons, bearings and windmills through one hook, `actor.rs` (`actor::tick`
-//!   each tick the structure runs, `actor::stop` first thing in the controller's `set_down`); the
-//!   gantry, the pulleys and the elevator don't run them. Seats don't carry riders, and movement
+//!   structures of pistons, bearings, windmills, gantries, rope pulleys and elevators through one
+//!   hook, `actor.rs` (`actor::tick` each tick the structure runs, `actor::stop` first thing in the
+//!   controller's `set_down`); every one of them can be held still by its actors. Seats don't carry riders, and movement
 //!   interactions (doors, levers on a structure) are not clickable. Belts, fluid tanks and the other blocks whose block entity holds the position of
 //!   another block can't be moved (`rules::contraption::movement_allowed`).
 //! - A structure whose controller disappears without the `destroy_block` hook (an explosion, a

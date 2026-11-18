@@ -9,6 +9,13 @@
 //! at RPM / 512 blocks a tick, drawn as it goes, and sets the structure down and the rope back as
 //! blocks when it stops, reaches its length or meets something. With nothing hanging from the
 //! magnet it lets the rope down on its own and picks up what it comes to.
+//!
+//! Actors on the structure (drills, saws, harvesters, ploughs, deployers, funnels: `actor.rs`) run
+//! on it, and so do the Portable Interfaces: each tick the controller gives them the structure's
+//! `Pose` (it slides up and down from the anchor, `toPosition`) and holds the rope still while one
+//! stalls it (`Stalled`, `psi_motion`), as `piston.rs` does. A rope that turns round or stops
+//! stops its actors (`onSpeedChanged`), and setting the structure down stops them first. The
+//! Roller sleeps on a pulley (`PulleyContraption`). The drills' heads turn with the rope's speed.
 
 use create_kinetics::rules::contraption::{self as rules, Transform, add};
 use create_kinetics::rules::drill::hardness;
@@ -22,9 +29,13 @@ use crate::compat::{
     StateForPlacementEvent, Tag, UseItemOnEvent,
 };
 
+use super::actor;
+use super::actor_draw;
 use super::contraption::{
     self as engine, ASSEMBLE, CONTRAPTION, HostWorld, LAST_EXCEPTION, RUNNING, SYNC_TIME,
 };
+use super::portable_interface_motion as psi_motion;
+use create_kinetics::rules::actor::{Carrier, Structure, speed_reversed};
 use crate::{kinetic, util};
 
 const PULLEY: &str = pulley_rules::PULLEY;
@@ -202,6 +213,8 @@ fn assemble(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, rpm: f32
 /// `PulleyBlockEntity.disassemble`: the structure down where the rope is, the rope back as blocks.
 fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, offset: f32, initial: i32) -> i32 {
     let dimension = host.dimension().to_owned();
+    // `Contraption.stop`: the actors on the structure stop first.
+    actor::stop(host, pos, nbt);
     let range = range_at(&*host, pos);
     let grid = pulley_rules::grid_offset(offset, range);
     make_ropes(host, pos, grid);
@@ -216,6 +229,7 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, offset: f32, initial:
 
 fn stop(entity: &mut ModBlockEntity, grid: i32, now: i64) {
     entity.nbt.insert(RUNNING.into(), flag(false));
+    entity.nbt.remove(&psi_motion::STALLED.into());
     entity.nbt.remove(&CONTRAPTION.into());
     util::set_float(&mut entity.nbt, OFFSET, grid as f32);
     entity.nbt.insert(INITIAL_OFFSET.into(), Tag::Int(0));
@@ -272,7 +286,13 @@ impl Hooks for Pulley {
         // `onSpeedChanged`: the rope follows the old speed up to now, then the new one.
         if changed {
             if state.running {
-                let offset = pulley_rules::offset_at(state.offset, state.time, previous, now as f64, range);
+                // `LinearActuatorBlockEntity.onSpeedChanged`: a rope that turns round or stops
+                // stops its actors (`Contraption.stop`).
+                if speed_reversed(previous, rpm) {
+                    actor::restart(host, pos, &entity.nbt);
+                }
+                let moved = psi_motion::moving_rpm(entity, previous);
+                let offset = pulley_rules::offset_at(state.offset, state.time, moved, now as f64, range);
                 util::set_float(&mut entity.nbt, OFFSET, offset);
                 entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
                 state.offset = offset;
@@ -287,7 +307,8 @@ impl Hooks for Pulley {
 
         // A click of the Wrench on a running pulley.
         if state.running && util::boolean(&entity.nbt, DISASSEMBLE) {
-            let offset = pulley_rules::offset_at(state.offset, state.time, rpm, now as f64, range);
+            let moved = psi_motion::moving_rpm(entity, rpm);
+            let offset = pulley_rules::offset_at(state.offset, state.time, moved, now as f64, range);
             let grid = set_down(host, pos, &entity.nbt.clone(), offset, state.initial);
             stop(entity, grid, now);
             host.block_entity_sync(pos);
@@ -301,7 +322,8 @@ impl Hooks for Pulley {
                     put(entity, ASSEMBLE, flag(false));
                     state.assemble = false;
                 } else if quiet >= engine::QUIET_TICKS {
-                    let offset = pulley_rules::offset_at(state.offset, state.time, previous, now as f64, range);
+                    let moved = psi_motion::moving_rpm(entity, previous);
+                    let offset = pulley_rules::offset_at(state.offset, state.time, moved, now as f64, range);
                     let grid = set_down(host, pos, &entity.nbt.clone(), offset, state.initial);
                     stop(entity, grid, now);
                     host.block_entity_sync(pos);
@@ -324,24 +346,58 @@ impl Hooks for Pulley {
         if state.needs && live.is_none() {
             return; // A structure that can't be read: nothing to move.
         }
-        let speed = pulley_rules::speed(rpm);
-        let offset = pulley_rules::offset_at(state.offset, state.time, rpm, now as f64, range);
-        let next = pulley_rules::offset_at(state.offset, state.time, rpm, (now + 1) as f64, range);
+        // `PortableStorageInterfaceMovement` and `tickActors`: the interfaces and the actors
+        // (drills, saws...) on the structure may hold it still (`Contraption.stalled`: the rope
+        // doesn't pay out, `moveAndCollideContraption` returns early). The snapshot is moved to
+        // now when that changes, and a held rope follows no speed.
+        if let Some(live) = &live {
+            let held = psi_motion::is_stalled(&entity.nbt);
+            let spin = psi_motion::moving_rpm(entity, rpm);
+            let (from, at, initial) = (state.offset, state.time, state.initial);
+            let anchor = live.moving.anchor;
+            // `toPosition`: the anchor, `initialOffset - offset` up.
+            let origin = |t: f64| {
+                let out = pulley_rules::offset_at(from, at, spin, t, range);
+                [
+                    f64::from(anchor[0]),
+                    f64::from(anchor[1]) + f64::from(pulley_rules::rise(initial, out)),
+                    f64::from(anchor[2]),
+                ]
+            };
+            let pose = psi_motion::Pose::Translating { origin: &origin };
+            let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, Structure::Pulley);
+            let want = psi_motion::tick(host, pos, &live.moving, &pose, now) | acted;
+            if want != held {
+                let at_now = pulley_rules::offset_at(from, at, spin, now as f64, range);
+                util::set_float(&mut entity.nbt, OFFSET, at_now);
+                entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
+                psi_motion::set_stalled(entity, want);
+                state.offset = at_now;
+                state.time = now;
+                host.block_entity_sync(pos);
+            }
+        }
+        let moved = psi_motion::moving_rpm(entity, rpm);
+        let speed = pulley_rules::speed(moved);
+        let offset = pulley_rules::offset_at(state.offset, state.time, moved, now as f64, range);
+        let next = pulley_rules::offset_at(state.offset, state.time, moved, (now + 1) as f64, range);
         let mut settle_at = None;
         if let Some(live) = &live {
-            let movement = if speed > 0.0 { Dir::Down } else { Dir::Up };
-            let anchor = live.moving.anchor;
-            let position = [
-                f64::from(anchor[0]),
-                f64::from(anchor[1]) + f64::from(pulley_rules::rise(state.initial, next)),
-                f64::from(anchor[2]),
-            ];
-            let cell = piston_rules::collision_anchor(position, movement);
-            let colliders = live.colliders(movement);
-            let blocked = HostWorld::new(&*host)
-                .is_some_and(|world| colliders.iter().any(|c| rules::blocked_by(&world, add(*c, cell))));
-            if blocked {
-                settle_at = Some(offset);
+            if speed != 0.0 {
+                let movement = if speed > 0.0 { Dir::Down } else { Dir::Up };
+                let anchor = live.moving.anchor;
+                let position = [
+                    f64::from(anchor[0]),
+                    f64::from(anchor[1]) + f64::from(pulley_rules::rise(state.initial, next)),
+                    f64::from(anchor[2]),
+                ];
+                let cell = piston_rules::collision_anchor(position, movement);
+                let colliders = live.colliders(movement);
+                let blocked = HostWorld::new(&*host)
+                    .is_some_and(|world| colliders.iter().any(|c| rules::blocked_by(&world, add(*c, cell))));
+                if blocked {
+                    settle_at = Some(offset);
+                }
             }
         } else if speed > 0.0 && (next as i32) != (offset as i32) {
             // `visitNewPosition`: the magnet is about to meet something to pick up.
@@ -385,6 +441,7 @@ impl Hooks for Pulley {
         };
         tag.insert(LAST_EXCEPTION.into(), Tag::String(line.as_str().into()));
         tag.insert(CONTRAPTION.into(), engine::client_contraption(entity));
+        tag.insert(psi_motion::STALLED.into(), psi_motion::tag_value(&entity.nbt));
         Some(tag)
     }
 
@@ -408,8 +465,10 @@ impl Hooks for Pulley {
         let state = saved(event.entity);
         let range = pulley_rules::extension_range(event.pos[1], pulley_rules::min_build_height(host.dimension()));
         let now = draw.game_time as f64 + f64::from(draw.partial);
+        // A held rope (an actor or an interface stalls the structure) follows no speed.
+        let moved = psi_motion::moving_rpm(event.entity, rpm);
         let offset = if state.running {
-            pulley_rules::offset_at(state.offset, state.time, rpm, now, range)
+            pulley_rules::offset_at(state.offset, state.time, moved, now, range)
         } else {
             0.0
         };
@@ -448,6 +507,12 @@ impl Hooks for Pulley {
             (anchor[1] - event.pos[1]) as f32 + pulley_rules::rise(state.initial, offset),
             (anchor[2] - event.pos[2]) as f32,
         ];
+        // How it moves, for the actors' heads.
+        actor_draw::set_motion(if psi_motion::is_stalled(&event.entity.nbt) {
+            actor_draw::Motion::Stalled
+        } else {
+            actor_draw::Motion::Slide(pulley_rules::speed(moved).abs())
+        });
         engine::draw_blocks(host, draw, &parsed, base);
     }
 
@@ -547,7 +612,7 @@ impl Hooks for Pulley {
                 if state.running {
                     let now = util::game_time(&*host);
                     let range = range_at(&*host, pos);
-                    let rpm = kinetic::speed(&entity);
+                    let rpm = psi_motion::moving_rpm(&entity, kinetic::speed(&entity));
                     let offset = pulley_rules::offset_at(state.offset, state.time, rpm, now as f64, range);
                     set_down(host, pos, &entity.nbt, offset, state.initial);
                 }
