@@ -23,6 +23,9 @@ impl BlockPart for CreateBlock {
         level: &dyn LevelHost,
         event: &mut StateForPlacementEvent<'_>,
     ) -> Option<Option<BlockState>> {
+        if let Some(answer) = crate::machines::cog_placement::state_for_placement(level, event) {
+            return Some(answer);
+        }
         events::state_for_placement(self.id, level, event)
     }
     fn can_survive(&self, level: &dyn LevelHost, event: &mut CanSurviveEvent) -> Option<bool> {
