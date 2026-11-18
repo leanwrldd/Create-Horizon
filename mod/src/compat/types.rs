@@ -353,6 +353,20 @@ pub struct NativeEffect {
 #[derive(Clone, Debug)]
 pub struct ClientResources {
     pub root: PathBuf,
+    /// The host of the hook that asked: the new API reads a resource through it (`Host::resource`). The old handle had
+    /// no lifetime, so this is a pointer; a `ClientResources` is made and read inside one hook call, like
+    /// `BlockEntityDraw`.
+    pub(crate) host: Option<std::ptr::NonNull<dyn mod_api::Host>>,
+}
+
+impl ClientResources {
+    /// # Safety
+    /// The handle must not outlive the borrow of `host` (it is used within the hook that made it).
+    pub(crate) unsafe fn of(host: &dyn mod_api::Host) -> Self {
+        // SAFETY: lifetime erased as in `BlockEntityDraw::new`; see above.
+        let host: &(dyn mod_api::Host + 'static) = unsafe { std::mem::transmute(host) };
+        Self { root: PathBuf::new(), host: Some(std::ptr::NonNull::from(host)) }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -754,13 +768,18 @@ impl Default for NativeInventoryError {
 }
 impl Default for ClientResources {
     fn default() -> Self {
-        Self { root: PathBuf::new() }
+        Self { root: PathBuf::new(), host: None }
     }
 }
 impl ClientResources {
-    /// Reads one file of the client's resources: a gap (the new API reads through `host.resource`).
-    pub fn read(&self, _path: &str) -> Option<Vec<u8>> {
-        None
+    /// Reads one file of the client's resources, `assets/<namespace>/<rest>`, through `Host::resource`
+    /// (`<namespace>:<rest>`), the winning file of the selected packs.
+    pub fn read(&self, path: &str) -> Option<Vec<u8>> {
+        let host = unsafe { self.host?.as_ref() };
+        let rest = path.strip_prefix("assets/")?;
+        let (namespace, name) = rest.split_once('/')?;
+        let id = Identifier::parse(&format!("{namespace}:{name}")).ok()?;
+        host.resource(mod_api::PackType::ClientResources, &id)
     }
 }
 

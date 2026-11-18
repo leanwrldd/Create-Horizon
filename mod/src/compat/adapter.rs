@@ -934,6 +934,15 @@ impl Host for Adapter<'_> {
 
     // --- the client's window and view ----------------------------------------------------------------------
 
+    /// The client's resources, read through the new host (`Host::resource`); used within the hook that made the handle.
+    fn client_resources(&self) -> ClientResources {
+        match self {
+            Adapter::Server(_) | Adapter::None => ClientResources::default(),
+            // SAFETY: the handle is read inside the hook call that holds this adapter.
+            _ => unsafe { ClientResources::of(self.new_host()) },
+        }
+    }
+
     /// The old one-call snapshot of the client, rebuilt from the new client host's calls. The GUI size comes from
     /// the last draw context (`types::gui_size`); there is one window, so its id is a constant (Ponder keys its
     /// per-window state by it).
