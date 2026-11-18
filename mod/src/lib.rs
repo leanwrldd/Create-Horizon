@@ -22,6 +22,7 @@ mod parts_gen;
 mod ponder;
 mod press;
 pub(crate) mod recipes;
+pub mod solid;
 pub(crate) mod util;
 
 use std::collections::BTreeMap;
@@ -679,7 +680,11 @@ impl mod_api::Hooks for Mod {
         compat::events::server_tick(host, event)
     }
 
-    fn level_tick_post(&self, host: mod_api::HostSide<'_>, _: &mut mod_api::LevelTickPostEvent) {
+    fn level_tick_post(&self, mut host: mod_api::HostSide<'_>, event: &mut mod_api::LevelTickPostEvent) {
+        // Create's `ContraptionHandler.tick`: the entities near each moving structure, at the end of the level tick.
+        if let mod_api::HostSide::Server(server) = &mut host {
+            solid::server::level_tick(&mut **server, event.level);
+        }
         compat::events::level_tick_post(host)
     }
 

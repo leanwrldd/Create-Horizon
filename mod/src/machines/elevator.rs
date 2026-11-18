@@ -238,6 +238,37 @@ fn column_tag(coords: ColumnCoords) -> Tag {
     Tag::Compound(tag)
 }
 
+/// Where the cabin is at game time `t` and a tick before (`solid`): `toPosition` with the cabin's
+/// offset replayed from its snapshot, as the tick and the drawing do.
+pub(crate) fn solid_sample(
+    _host: &dyn Host,
+    _pos: Pos,
+    entity: &ModBlockEntity,
+    anchor: Pos,
+    t: f64,
+) -> Option<crate::solid::Sample> {
+    if entity.id != PULLEY {
+        return None;
+    }
+    let state = saved(entity);
+    if !state.running {
+        return None;
+    }
+    let rpm = kinetic::speed(entity);
+    let held = psi_motion::is_stalled(&entity.nbt);
+    let at = |t: f64| {
+        let whole = t.floor();
+        let (cabin, speed, _) = elevator::replay_as(state.snapshot, rpm, whole as i64 - state.snapshot.time, held);
+        let cabin = if held { cabin } else { cabin + speed * (t - whole) as f32 };
+        [
+            f64::from(anchor[0]),
+            f64::from(anchor[1]) + f64::from(pulley_rules::rise(state.initial, cabin)),
+            f64::from(anchor[2]),
+        ]
+    };
+    Some(crate::solid::Sample::Slide { now: at(t), prev: at(t - 1.0) })
+}
+
 fn saved(entity: &ModBlockEntity) -> Saved {
     let column = match util::get(&entity.nbt, COLUMN) {
         Some(Tag::Compound(c)) => ColumnCoords {

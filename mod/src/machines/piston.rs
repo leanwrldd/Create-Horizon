@@ -97,6 +97,30 @@ fn state_of(host: &dyn Host, pos: Pos) -> Option<(Dir, bool)> {
     Some((facing, along_first))
 }
 
+/// Where the structure is at game time `t` and a tick before (`solid`): the piston's offset follows
+/// its snapshot and speed, as the drawing and the tick do.
+pub(crate) fn solid_sample(
+    host: &dyn Host,
+    pos: Pos,
+    entity: &ModBlockEntity,
+    anchor: Pos,
+    t: f64,
+) -> Option<crate::solid::Sample> {
+    if !is_piston(&entity.id) {
+        return None;
+    }
+    let state = saved(entity);
+    if !state.running {
+        return None;
+    }
+    let (facing, _) = state_of(host, pos)?;
+    let speed = piston_rules::velocity(psi_motion::moving_rpm(entity, kinetic::speed(entity)), facing);
+    let at = |t: f64| {
+        piston_rules::position(anchor, facing, piston_rules::offset_at(state.offset, state.time, speed, t, state.range))
+    };
+    Some(crate::solid::Sample::Slide { now: at(t), prev: at(t - 1.0) })
+}
+
 /// The state of the piston at `pos` as the rules want it.
 fn block_state(host: &dyn Host, pos: Pos) -> Option<State> {
     let level = host.level(host.dimension())?;

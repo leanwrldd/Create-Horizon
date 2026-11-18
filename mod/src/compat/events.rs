@@ -286,6 +286,8 @@ pub fn block_entity_tick(host: &mut dyn ServerHost, event: &mut mod_api::BlockEn
         let mut e = BlockEntityTickEvent { pos: event.pos, entity: &mut old };
         create().block_entity_tick(&mut adapter, &mut e);
     }
+    // A running structure is solid: the controller reports where it is (`solid`).
+    crate::solid::server::observe(&mut *host, event.pos, &old);
     if old == before {
         // Nothing changed: no revision, no save, no comparator update.
         *event.reply = mod_api::BlockEntityTickReply::Unchanged;

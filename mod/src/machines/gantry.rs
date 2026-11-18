@@ -68,6 +68,28 @@ fn put(entity: &mut ModBlockEntity, key: &str, value: Tag) {
     }
 }
 
+/// Where the structure is at game time `t` and a tick before (`solid`): the offset along the shaft's
+/// facing follows its snapshot and the pinion's speed, as the tick and the drawing do.
+pub(crate) fn solid_sample(
+    host: &dyn Host,
+    pos: Pos,
+    entity: &ModBlockEntity,
+    anchor: Pos,
+    t: f64,
+) -> Option<crate::solid::Sample> {
+    if entity.id != SHAFT {
+        return None;
+    }
+    let state = saved(entity);
+    if !state.running {
+        return None;
+    }
+    let facing = util::facing(host, pos, "facing")?;
+    let speed = gantry::pinion_speed(psi_motion::moving_rpm(entity, kinetic::speed(entity)));
+    let at = |t: f64| piston_rules::position(anchor, facing, gantry::offset_at(state.offset, state.time, speed, t));
+    Some(crate::solid::Sample::Slide { now: at(t), prev: at(t - 1.0) })
+}
+
 fn dir_of_index(index: i32) -> Dir {
     usize::try_from(index).ok().and_then(|i| Dir::ALL.get(i).copied()).unwrap_or(Dir::North)
 }

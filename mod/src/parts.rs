@@ -86,6 +86,13 @@ impl BlockEntityPart for CreateEntity {
     fn block_entity_render_bounding_box(&self, host: &dyn ClientHost, event: &mut BlockEntityRenderBoundingBoxEvent<'_>) {
         events::block_entity_render_bounding_box(host, event)
     }
+    /// A structure's controller ticks on the client so the local player can be collided with it.
+    fn block_entity_client_ticks(&self, _host: &dyn ClientHost, event: &mut mod_api::BlockEntityClientTicksEvent<'_>) {
+        event.ticks |= crate::solid::is_controller(self.id);
+    }
+    fn block_entity_client_tick(&self, host: &mut dyn ClientHost, event: &mut mod_api::BlockEntityClientTickEvent<'_>) {
+        crate::solid::client::observe(host, event)
+    }
 }
 
 /// A Create item's `ItemPart` (every item the content declares, and every block that has an item). `id` is the
