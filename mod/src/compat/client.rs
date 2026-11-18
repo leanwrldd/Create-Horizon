@@ -256,3 +256,45 @@ pub fn screen_mouse_scrolled_pre(
     let mut old = ScreenMouseScrolledPreEvent { screen: &screen, scroll: event.scroll, modifiers: event.modifiers };
     create().screen_mouse_scrolled_pre(&Adapter::Client(host), &mut old)
 }
+
+// --- the world --------------------------------------------------------------------------------------------------
+
+/// `Hooks::render_level_stage`: the old `world_primitives`, once a frame after the translucent blocks.
+pub fn render_level_stage(host: &dyn ClientHost, event: &mut mod_api::RenderLevelStageEvent<'_>) {
+    if event.stage != mod_api::RenderLevelStage::AfterTranslucentBlocks {
+        return;
+    }
+    let mut primitives = WorldPrimitives::default();
+    let mut old =
+        WorldPrimitivesEvent { partial: event.view.partial_tick, camera: event.view.camera, primitives: &mut primitives };
+    create().world_primitives(&Adapter::Client(host), &mut old);
+    if !primitives.lines.is_empty() {
+        let _ = event.draw.lines(&primitives.lines);
+    }
+    if !primitives.quads.is_empty() {
+        let _ = event.draw.quads(&primitives.quads);
+    }
+}
+
+// --- mod screens ------------------------------------------------------------------------------------------------
+
+impl Adapter<'_> {
+    /// `Host::mod_screen`: the mod whose own screen is open.
+    pub(crate) fn screen_of_mod(&self) -> Option<&str> {
+        self.client_host()?.mod_screen()
+    }
+
+    /// `Host::mod_screen_open`: only a client hook that holds the client mutably can open one.
+    pub(crate) fn open_mod_screen(&mut self, mod_id: &str) -> bool {
+        match self {
+            Adapter::ClientMut(host) => host.mod_screen_open(mod_id),
+            _ => false,
+        }
+    }
+
+    pub(crate) fn close_mod_screen(&mut self, mod_id: &str) {
+        if let Adapter::ClientMut(host) = self {
+            host.mod_screen_close(mod_id);
+        }
+    }
+}

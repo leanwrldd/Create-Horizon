@@ -644,9 +644,13 @@ pub struct Corners {
     used: [f32; 4],
 }
 
-/// The old per-frame world drawing handle; inert (`world_primitives` has no match in the new API).
+/// The old per-frame world drawing handle. It collects lines and quads for one `render_level_stage` call
+/// (`compat::client::render_level_stage` sends them to the `WorldDrawContext`). World text has no counterpart: dropped.
 #[derive(Default)]
-pub struct WorldPrimitives;
+pub struct WorldPrimitives {
+    pub(crate) lines: Vec<mod_api::WorldLine>,
+    pub(crate) quads: Vec<mod_api::WorldQuad>,
+}
 
 // --- block states --------------------------------------------------------------------------------------
 
@@ -850,9 +854,41 @@ impl KeyCode {
 }
 
 impl WorldPrimitives {
-    pub fn line(&mut self, _a: [f64; 3], _b: [f64; 3], _argb: u32, _width: f32) {}
-    pub fn box_outline(&mut self, _min: [f64; 3], _max: [f64; 3], _argb: u32, _width: f32) {}
-    pub fn filled_box(&mut self, _min: [f64; 3], _max: [f64; 3], _argb: u32) {}
+    pub fn line(&mut self, a: [f64; 3], b: [f64; 3], argb: u32, width: f32) {
+        self.lines.push(mod_api::WorldLine::new(a, b, argb, width, mod_api::WorldDepth::Tested));
+    }
+    pub fn box_outline(&mut self, min: [f64; 3], max: [f64; 3], argb: u32, width: f32) {
+        let corner = |i: usize| [
+            if i & 1 == 0 { min[0] } else { max[0] },
+            if i & 2 == 0 { min[1] } else { max[1] },
+            if i & 4 == 0 { min[2] } else { max[2] },
+        ];
+        // The 12 edges: corners that differ in exactly one of the three bits.
+        for a in 0..8usize {
+            for bit in [1usize, 2, 4] {
+                let b = a | bit;
+                if b != a {
+                    self.line(corner(a), corner(b), argb, width);
+                }
+            }
+        }
+    }
+    pub fn filled_box(&mut self, min: [f64; 3], max: [f64; 3], argb: u32) {
+        let [x0, y0, z0] = min;
+        let [x1, y1, z1] = max;
+        let faces = [
+            [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]],
+            [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]],
+            [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]],
+            [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]],
+            [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]],
+            [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]],
+        ];
+        for corners in faces {
+            self.quads.push(mod_api::WorldQuad::new(corners, argb, mod_api::WorldDepth::Tested));
+        }
+    }
+    /// No text in the world on the new API (`WorldDrawContext` draws lines and quads): dropped.
     pub fn text(&mut self, _at: [f64; 3], _text: impl AsRef<str>, _argb: u32, _scale: f32) {}
 }
 

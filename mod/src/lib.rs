@@ -851,6 +851,10 @@ impl mod_api::Hooks for Mod {
         compat::world::run_mod_command(host, event)
     }
 
+    fn render_level_stage(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::RenderLevelStageEvent<'_>) {
+        compat::client::render_level_stage(host, event)
+    }
+
     fn living_entity_use_item_tick(
         &self,
         host: mod_api::HostSide<'_>,

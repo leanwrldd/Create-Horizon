@@ -358,6 +358,15 @@ impl Host for Adapter<'_> {
     fn net_send_to_server(&mut self, channel: &str, data: &[u8]) -> Result<(), String> {
         self.net_to_server(channel, data)
     }
+    fn mod_screen(&self) -> Option<&str> {
+        self.screen_of_mod()
+    }
+    fn mod_screen_open(&mut self, mod_id: &str) -> bool {
+        self.open_mod_screen(mod_id)
+    }
+    fn mod_screen_close(&mut self, mod_id: &str) {
+        self.close_mod_screen(mod_id)
+    }
 }
 
 impl From<DisplayContext> for mod_api::ItemDisplayContext {
