@@ -54,7 +54,7 @@ def axis_shapes(boxes):
     return {"property": "axis", "values": {a: [turn(b, a) for b in boxes] for a in AXES}}
 
 
-SHAFT = [0.375, 0, 0.375, 0.625, 1, 0.625]
+SHAFT = [0.3125, 0, 0.3125, 0.6875, 1, 0.6875]  # AllShapes.SIX_VOXEL_POLE: 5 to 11 px
 SHAPES = {
     "shaft": [SHAFT],
     "cogwheel": [SHAFT, [0.125, 0.375, 0.125, 0.875, 0.625, 0.875]],
