@@ -642,16 +642,24 @@ impl mod_api::Hooks for Mod {
             r.register_recipe_type(id);
             r.register_raw_recipe_serializer(id, id);
         }
+        compat::world::register_net(r);
         for &id in parts_gen::BLOCKS {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
             let key = r.block_key(full);
             r.block_part(key, parts::CreateBlock { id: full });
+            compat::containers::register_block(r, full);
+        }
+        for &id in parts_gen::ITEMS {
+            let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
+            let key = r.item_key(full);
+            r.item_part(key, parts::CreateItem { id: full });
         }
         for &id in parts_gen::BLOCK_ENTITIES {
             let full: &'static str = Box::leak(format!("create:{id}").into_boxed_str());
             let kind = r.block_entity_type(id).blocks(&[id]).build();
             r.block_entity_part(&kind, parts::CreateEntity { id: full })
                 .expect("a native block entity type");
+            compat::containers::register_entity(r, full, &kind);
         }
     }
 
@@ -689,6 +697,178 @@ impl mod_api::Hooks for Mod {
 
     fn block_step_on(&self, event: &mut mod_api::BlockStepOnEvent<'_>) {
         compat::events::block_step_on(event)
+    }
+
+    fn render_gui_post(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::RenderGuiPostEvent<'_>) {
+        compat::client::render_gui_post(host, event)
+    }
+
+    fn render_tooltip_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::RenderTooltipPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::render_tooltip_pre(host, event)
+    }
+
+    fn input_key(&self, host: &mut dyn mod_api::ClientHost, event: &mut mod_api::InputKeyEvent<'_>) {
+        compat::client::input_key(host, event)
+    }
+
+    fn mouse_button_post(&self, host: &mut dyn mod_api::ClientHost, event: &mut mod_api::MouseButtonPostEvent) {
+        compat::client::mouse_button_post(host, event)
+    }
+
+    fn movement_input(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::MovementInputEvent) {
+        compat::client::movement_input(host, event)
+    }
+
+    fn screen_render_post(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::ScreenRenderPostEvent<'_>) {
+        compat::client::screen_render_post(host, event)
+    }
+
+    fn screen_closing(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::ScreenClosingEvent<'_>) {
+        compat::client::screen_closing(host, event)
+    }
+
+    fn screen_key_pressed_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenKeyPressedPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_key_pressed_pre(host, event)
+    }
+
+    fn screen_char_typed_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenCharTypedPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_char_typed_pre(host, event)
+    }
+
+    fn screen_mouse_button_pressed_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenMouseButtonPressedPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_mouse_button_pressed_pre(host, event)
+    }
+
+    fn screen_mouse_button_released_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenMouseButtonReleasedPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_mouse_button_released_pre(host, event)
+    }
+
+    fn screen_mouse_scrolled_pre(
+        &self,
+        host: &dyn mod_api::ClientHost,
+        event: &mut mod_api::ScreenMouseScrolledPreEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::client::screen_mouse_scrolled_pre(host, event)
+    }
+
+    fn break_block(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::BreakBlockEvent<'_>) -> mod_api::Flow {
+        compat::world::break_block(host, event)
+    }
+
+    fn entity_interact(
+        &self,
+        host: mod_api::HostSide<'_>,
+        event: &mut mod_api::EntityInteractEvent<'_>,
+    ) -> Option<mod_api::InteractionResult> {
+        compat::world::entity_interact(host, event)
+    }
+
+    fn player_tick_pre(&self, host: mod_api::HostSide<'_>, event: &mut mod_api::PlayerTickPreEvent) {
+        compat::world::player_tick_pre(host, event)
+    }
+
+    fn entity_tick_listened(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::EntityTickListenedEvent) {
+        compat::world::entity_tick_listened(host, event)
+    }
+
+    fn entity_tick_post(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::EntityTickPostEvent<'_>) {
+        compat::world::entity_tick_post(host, event)
+    }
+
+    fn living_breathe(&self, _: &dyn mod_api::LoopContext, event: &mut mod_api::LivingBreatheEvent<'_>) {
+        compat::world::living_breathe(event)
+    }
+
+    fn living_incoming_damage(
+        &self,
+        _: &mut dyn mod_api::LevelRandomHost,
+        event: &mut mod_api::LivingIncomingDamageEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::world::living_incoming_damage(event)
+    }
+
+    fn living_knockback(
+        &self,
+        _: &mut dyn mod_api::LevelRandomHost,
+        event: &mut mod_api::LivingKnockbackEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::world::living_knockback(event)
+    }
+
+    fn hears_projectile_impacts(&self, host: &dyn mod_api::Host, event: &mut mod_api::HearsProjectileImpactsEvent) {
+        compat::world::hears_projectile_impacts(host, event)
+    }
+
+    fn projectile_impact(
+        &self,
+        host: &mut dyn mod_api::ServerHost,
+        event: &mut mod_api::ProjectileImpactEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::world::projectile_impact(host, event)
+    }
+
+    fn loot_drops(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::LootDropsEvent<'_>) {
+        compat::world::loot_drops(host, event)
+    }
+
+    fn menu_clicked(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::MenuClickedEvent) {
+        compat::world::menu_clicked(host, event)
+    }
+
+    fn menu_closed(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::MenuClosedEvent) {
+        compat::world::menu_closed(host, event)
+    }
+
+    fn register_commands(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::RegisterCommandsEvent<'_>) {
+        compat::world::register_commands(host, event)
+    }
+
+    fn run_mod_command(
+        &self,
+        host: &mut dyn mod_api::ServerHost,
+        event: &mut mod_api::RunModCommandEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::world::run_mod_command(host, event)
+    }
+
+    fn render_level_stage(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::RenderLevelStageEvent<'_>) {
+        compat::client::render_level_stage(host, event)
+    }
+
+    fn living_entity_use_item_tick(
+        &self,
+        host: mod_api::HostSide<'_>,
+        event: &mut mod_api::LivingEntityUseItemTickEvent<'_>,
+    ) -> mod_api::Flow {
+        compat::items::living_entity_use_item_tick(host, event)
+    }
+
+    fn living_entity_use_item_finish(
+        &self,
+        host: mod_api::HostSide<'_>,
+        event: &mut mod_api::LivingEntityUseItemFinishEvent<'_>,
+    ) {
+        compat::items::living_entity_use_item_finish(host, event)
     }
 }
 

@@ -604,17 +604,36 @@ pub struct KeyCode(pub u32);
 
 // --- client-only stand-ins (their hooks have no match yet) ----------------------------------------------
 
-/// The old HUD batch. Only the `Host` drawing methods (`fill`, `text`, `item`, ...) take one, and every one of those
-/// is a gap here, so it carries nothing.
+/// The old HUD batch. It owns nothing: it wraps the new API's `DrawContext` for one hook call (`render_gui_post`, a
+/// screen hook, a tooltip hook) and keeps the old readable size. Only the `Host` drawing methods (`fill`, `text`,
+/// `item`, ...) draw on it, through `draw()`.
 #[derive(Default)]
 pub struct HudBatch {
     pub scale: f32,
     pub width: f32,
     pub height: f32,
+    /// Unused: the old batch collected vertices, this one draws at once. `len()` of it is still a mark for
+    /// `scale_since`.
     pub vertices: Vec<[f32; 8]>,
+    // As `BlockEntityDraw`: the old handle had no lifetime, so the borrowed context is held as a pointer. A batch is
+    // made by `compat::client` for one hook call and dropped before it returns.
+    draw: Option<std::ptr::NonNull<dyn DrawContext>>,
 }
 
 impl HudBatch {
+    /// # Safety
+    /// The result must not outlive the borrow of `draw`.
+    pub(crate) unsafe fn new(draw: &mut dyn DrawContext) -> Self {
+        let [width, height] = draw.size();
+        // SAFETY: only the trait object's lifetime bound is erased; the caller keeps the borrow alive.
+        let draw: &mut (dyn DrawContext + 'static) = unsafe { std::mem::transmute(draw) };
+        Self { scale: 1.0, width, height, vertices: Vec::new(), draw: Some(std::ptr::NonNull::from(draw)) }
+    }
+    /// The context behind this batch; None for a default (empty) batch, which draws nothing.
+    pub(crate) fn draw(&mut self) -> Option<&mut dyn DrawContext> {
+        // SAFETY: see `new`.
+        self.draw.map(|mut draw| unsafe { draw.as_mut() })
+    }
     pub fn scale_since(&mut self, _mark: usize, _x: f32, _y: f32, _sx: f32, _sy: f32) {}
 }
 
@@ -625,9 +644,13 @@ pub struct Corners {
     used: [f32; 4],
 }
 
-/// The old per-frame world drawing handle; inert (`world_primitives` has no match in the new API).
+/// The old per-frame world drawing handle. It collects lines and quads for one `render_level_stage` call
+/// (`compat::client::render_level_stage` sends them to the `WorldDrawContext`). World text has no counterpart: dropped.
 #[derive(Default)]
-pub struct WorldPrimitives;
+pub struct WorldPrimitives {
+    pub(crate) lines: Vec<mod_api::WorldLine>,
+    pub(crate) quads: Vec<mod_api::WorldQuad>,
+}
 
 // --- block states --------------------------------------------------------------------------------------
 
@@ -831,9 +854,41 @@ impl KeyCode {
 }
 
 impl WorldPrimitives {
-    pub fn line(&mut self, _a: [f64; 3], _b: [f64; 3], _argb: u32, _width: f32) {}
-    pub fn box_outline(&mut self, _min: [f64; 3], _max: [f64; 3], _argb: u32, _width: f32) {}
-    pub fn filled_box(&mut self, _min: [f64; 3], _max: [f64; 3], _argb: u32) {}
+    pub fn line(&mut self, a: [f64; 3], b: [f64; 3], argb: u32, width: f32) {
+        self.lines.push(mod_api::WorldLine::new(a, b, argb, width, mod_api::WorldDepth::Tested));
+    }
+    pub fn box_outline(&mut self, min: [f64; 3], max: [f64; 3], argb: u32, width: f32) {
+        let corner = |i: usize| [
+            if i & 1 == 0 { min[0] } else { max[0] },
+            if i & 2 == 0 { min[1] } else { max[1] },
+            if i & 4 == 0 { min[2] } else { max[2] },
+        ];
+        // The 12 edges: corners that differ in exactly one of the three bits.
+        for a in 0..8usize {
+            for bit in [1usize, 2, 4] {
+                let b = a | bit;
+                if b != a {
+                    self.line(corner(a), corner(b), argb, width);
+                }
+            }
+        }
+    }
+    pub fn filled_box(&mut self, min: [f64; 3], max: [f64; 3], argb: u32) {
+        let [x0, y0, z0] = min;
+        let [x1, y1, z1] = max;
+        let faces = [
+            [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]],
+            [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]],
+            [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]],
+            [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]],
+            [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]],
+            [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]],
+        ];
+        for corners in faces {
+            self.quads.push(mod_api::WorldQuad::new(corners, argb, mod_api::WorldDepth::Tested));
+        }
+    }
+    /// No text in the world on the new API (`WorldDrawContext` draws lines and quads): dropped.
     pub fn text(&mut self, _at: [f64; 3], _text: impl AsRef<str>, _argb: u32, _scale: f32) {}
 }
 

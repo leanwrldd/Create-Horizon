@@ -314,6 +314,59 @@ impl Host for Adapter<'_> {
     fn window(&self) -> bool {
         matches!(self, Adapter::Client(_) | Adapter::ClientMut(_))
     }
+
+    // --- step 2 hooks: payloads, keys, HUD and screens, commands
+    fn fill(&self, batch: &mut HudBatch, rect: [f32; 4], argb: u32) {
+        self.hud_fill(batch, rect, argb)
+    }
+    fn quad(&self, batch: &mut HudBatch, points: [[f32; 2]; 4], argb: u32) {
+        self.hud_quad(batch, points, argb)
+    }
+    fn text(&self, batch: &mut HudBatch, text: &str, at: [f32; 2], rgb: u32, shadow: bool) {
+        self.hud_text(batch, text, at, rgb, shadow)
+    }
+    fn sprite(&self, batch: &mut HudBatch, name: &str, src: [f32; 4], dst: [f32; 4]) -> bool {
+        self.hud_sprite(batch, name, src, dst)
+    }
+    fn item(&self, batch: &mut HudBatch, item: &str, at: [f32; 2], size: f32) -> bool {
+        self.hud_item(batch, item, at, size)
+    }
+    fn gui_tooltip(&self, batch: &mut HudBatch, lines: &[Text], at: [f32; 2]) {
+        self.hud_tooltip(batch, lines, at)
+    }
+    fn text_width(&self, text: &str) -> f32 {
+        self.hud_text_width(text)
+    }
+    fn draw_scene(&self, batch: &mut HudBatch, rect: [f32; 4], blocks: &[NativeSceneBlock<'_>], view: NativeSceneView) {
+        self.hud_scene(batch, rect, blocks, view)
+    }
+    fn has_shift_down(&self) -> bool {
+        self.modifiers_down().shift()
+    }
+    fn has_control_down(&self) -> bool {
+        self.modifiers_down().control()
+    }
+    fn has_alt_down(&self) -> bool {
+        self.modifiers_down().alt()
+    }
+    fn is_key_down(&self, key: KeyCode) -> bool {
+        self.key_down(key)
+    }
+    fn net_send_to_player(&mut self, player: u128, channel: &str, data: &[u8]) -> Result<(), String> {
+        self.net_to_player(player, channel, data)
+    }
+    fn net_send_to_server(&mut self, channel: &str, data: &[u8]) -> Result<(), String> {
+        self.net_to_server(channel, data)
+    }
+    fn mod_screen(&self) -> Option<&str> {
+        self.screen_of_mod()
+    }
+    fn mod_screen_open(&mut self, mod_id: &str) -> bool {
+        self.open_mod_screen(mod_id)
+    }
+    fn mod_screen_close(&mut self, mod_id: &str) {
+        self.close_mod_screen(mod_id)
+    }
 }
 
 impl From<DisplayContext> for mod_api::ItemDisplayContext {

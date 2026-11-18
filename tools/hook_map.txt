@@ -3,8 +3,9 @@
 #   global (wired)       a `mod_api::Hooks` method that lib.rs's `Mod` implements and forwards through compat/events.rs
 #   part (wired)         a BlockPart / BlockEntityPart method that parts.rs implements for every Create block
 #   global/part (not wired)  the new API has it with the same name; no conversion written yet (step 1b)
-#   no direct match      nothing of that name in the new API; the right-hand column is the nearest new mechanism
-# 75 hooks: 30 global, 23 part methods, 22 with no direct match.
+#   adapted (wired)      nothing of that name in the new API; wired through the new mechanism the right-hand column names
+#   no direct match      nothing of that name in the new API, not wired; the right-hand column is the nearest new mechanism
+# 75 hooks: 70 wired (global, part or adapted), 5 not wired (no module answers four of them; menu_input_closed is the Toolbox's).
 
 standalone_models                    global (wired)       Hooks::standalone_models
 block_entity                         part (wired)         BlockEntityPart::block_entity
@@ -13,17 +14,17 @@ block_entity_tick                    part (wired)         BlockEntityPart::block
 block_entity_update_tag              part (wired)         BlockEntityPart::block_entity_update_tag
 block_entity_submit                  part (wired)         BlockEntityPart::block_entity_submit
 block_entity_render_bounding_box     part (wired)         BlockEntityPart::block_entity_render_bounding_box
-block_entity_container               no direct match      capability (items)
-block_entity_fluids                  no direct match      capability (fluids)
+block_entity_container               adapted (wired)      Registrar::block_container plus a before-game ITEMS provider (compat/containers.rs)
+block_entity_fluids                  adapted (wired)      Registrar::block_fluids
 block_entity_accepts_fluid           no direct match      capability (fluids)
-container_accepts                    no direct match      capability (items)
-destroy_block                        no direct match      break_block (Hooks)
-place_block                          no direct match      entity_place (Hooks)
+container_accepts                    adapted (wired)      the ITEMS handler's insert and is_valid (compat/containers.rs)
+destroy_block                        adapted (wired)      Hooks::break_block (a player breaking a block)
+place_block                          adapted (wired)      ItemPart::on_block_placed_by (entity_place fires before the write)
 right_click_block                    global (wired)       Hooks::right_click_block
 left_click_block                     global (wired)       Hooks::left_click_block
 use_item_on                          part (wired)         BlockPart::use_item_on
-use_item                             part (not wired)     ItemPart::use_item
-interact_entity                      no direct match      EntityPart::interact / interact_entity (Hooks)
+use_item                             part (wired)         ItemPart::use_item
+interact_entity                      adapted (wired)      Hooks::entity_interact
 state_for_placement                  part (wired)         BlockPart::state_for_placement
 can_survive                          part (wired)         BlockPart::can_survive
 update_shape                         part (wired)         BlockPart::update_shape
@@ -38,46 +39,46 @@ block_entity_inside                  no direct match      BlockPart::entity_insi
 block_step_on                        global (wired)       Hooks::block_step_on
 server_tick                          global (wired)       Hooks::server_tick
 level_tick_post                      global (wired)       Hooks::level_tick_post
-player_tick                          no direct match      player_tick_pre/post (Hooks)
-inventory_tick                       part (not wired)     ItemPart::inventory_tick
-tooltip                              part (not wired)     ItemPart::tooltip
-hud                                  no direct match      client render hook (no match yet)
-menu_clicked                         global (not wired)   Hooks::menu_clicked
-menu_closed                          global (not wired)   Hooks::menu_closed
+player_tick                          adapted (wired)      Hooks::player_tick_pre
+inventory_tick                       part (wired)         ItemPart::inventory_tick
+tooltip                              part (wired)         ItemPart::tooltip
+hud                                  adapted (wired)      Hooks::render_gui_post (HudBatch over the DrawContext)
+menu_clicked                         global (wired)       Hooks::menu_clicked
+menu_closed                          global (wired)       Hooks::menu_closed
 item_model_property                  global (not wired)   Hooks::item_model_property
-loot_drops                           global (not wired)   Hooks::loot_drops
-net_from_server                      no direct match      payload (PayloadsClientHost)
-custom_block_fluids                  no direct match      capability (fluids)
-custom_fluid_tanks                   no direct match      capability (fluids)
-custom_fluid_fill                    no direct match      capability (fluids)
-custom_fluid_drain                   no direct match      capability (fluids)
-key                                  no direct match      key mappings (KeyMappings)
-tooltip_render_pre                   no direct match      ItemPart::tooltip / client render
-screen_render_post                   global (not wired)   Hooks::screen_render_post
-screen_closing                       global (not wired)   Hooks::screen_closing
-screen_key_pressed_pre               global (not wired)   Hooks::screen_key_pressed_pre
-screen_char_typed_pre                global (not wired)   Hooks::screen_char_typed_pre
-screen_mouse_button_pressed_pre      global (not wired)   Hooks::screen_mouse_button_pressed_pre
-screen_mouse_button_released_pre     global (not wired)   Hooks::screen_mouse_button_released_pre
-screen_mouse_scrolled_pre            global (not wired)   Hooks::screen_mouse_scrolled_pre
+loot_drops                           global (wired)       Hooks::loot_drops
+net_from_server                      adapted (wired)      payload create:net (client handler)
+custom_block_fluids                  adapted (wired)      a FLUIDS block provider (compat/containers.rs)
+custom_fluid_tanks                   adapted (wired)      the FLUIDS handler's size, resource, amount, capacity
+custom_fluid_fill                    adapted (wired)      the FLUIDS handler's insert
+custom_fluid_drain                   adapted (wired)      the FLUIDS handler's extract
+key                                  adapted (wired)      Hooks::input_key and Hooks::mouse_button_post
+tooltip_render_pre                   adapted (wired)      Hooks::render_tooltip_pre
+screen_render_post                   global (wired)       Hooks::screen_render_post
+screen_closing                       global (wired)       Hooks::screen_closing
+screen_key_pressed_pre               global (wired)       Hooks::screen_key_pressed_pre
+screen_char_typed_pre                global (wired)       Hooks::screen_char_typed_pre
+screen_mouse_button_pressed_pre      global (wired)       Hooks::screen_mouse_button_pressed_pre
+screen_mouse_button_released_pre     global (wired)       Hooks::screen_mouse_button_released_pre
+screen_mouse_scrolled_pre            global (wired)       Hooks::screen_mouse_scrolled_pre
 client_tick_post                     global (wired)       Hooks::client_tick_post
 component_types                      global (wired)       Hooks::component_types
-item_bar                             part (not wired)     ItemPart::item_bar
-use_duration                         part (not wired)     ItemPart::use_duration
-use_animation                        part (not wired)     ItemPart::use_animation
-living_entity_use_item_tick          global (not wired)   Hooks::living_entity_use_item_tick
-living_entity_use_item_finish        global (not wired)   Hooks::living_entity_use_item_finish
-entity_tick_listened                 global (not wired)   Hooks::entity_tick_listened
-entity_tick_post                     global (not wired)   Hooks::entity_tick_post
+item_bar                             part (wired)         ItemPart::item_bar
+use_duration                         part (wired)         ItemPart::use_duration
+use_animation                        part (wired)         ItemPart::use_animation
+living_entity_use_item_tick          global (wired)       Hooks::living_entity_use_item_tick
+living_entity_use_item_finish        global (wired)       Hooks::living_entity_use_item_finish
+entity_tick_listened                 global (wired)       Hooks::entity_tick_listened
+entity_tick_post                     global (wired)       Hooks::entity_tick_post
 menu_input_closed                    no direct match      MenuPart
-register_commands                    global (not wired)   Hooks::register_commands
-perform_command                      no direct match      register_commands (Command tree)
-movement_input                       global (not wired)   Hooks::movement_input
-net_from_client                      no direct match      payload (server payload handler)
-living_breathe                       global (not wired)   Hooks::living_breathe
-living_incoming_damage_v3            no direct match      living_incoming_damage (Hooks)
-living_knockback                     global (not wired)   Hooks::living_knockback
-hears_projectile_impacts             global (not wired)   Hooks::hears_projectile_impacts
-projectile_impact                    global (not wired)   Hooks::projectile_impact
-world_primitives                     no direct match      client render hook (no match yet)
-release_using                        part (not wired)     ItemPart::release_using
+register_commands                    global (wired)       Hooks::register_commands
+perform_command                      adapted (wired)      Hooks::run_mod_command (the raw line is rebuilt from the usage)
+movement_input                       global (wired)       Hooks::movement_input
+net_from_client                      adapted (wired)      payload create:net (server handler)
+living_breathe                       global (wired)       Hooks::living_breathe
+living_incoming_damage_v3            adapted (wired)      Hooks::living_incoming_damage
+living_knockback                     global (wired)       Hooks::living_knockback
+hears_projectile_impacts             global (wired)       Hooks::hears_projectile_impacts
+projectile_impact                    global (wired)       Hooks::projectile_impact
+world_primitives                     adapted (wired)      Hooks::render_level_stage (WorldPrimitives collects lines and quads)
+release_using                        part (wired)         ItemPart::release_using

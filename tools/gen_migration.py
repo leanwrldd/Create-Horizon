@@ -16,7 +16,7 @@ for line in (ROOT / "tools" / "hook_map.txt").read_text(encoding="utf-8").splitl
         continue
     parts = line.split(None, 1)
     name, rest = parts[0], parts[1]
-    kind = re.match(r"(global \(wired\)|part \(wired\)|global \(not wired\)|part \(not wired\)|no direct match)", rest).group(1)
+    kind = re.match(r"(global \(wired\)|part \(wired\)|adapted \(wired\)|global \(not wired\)|part \(not wired\)|no direct match)", rest).group(1)
     rows.append((name, kind, rest[len(kind):].strip()))
 
 sources = {}

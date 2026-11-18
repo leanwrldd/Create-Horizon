@@ -4,12 +4,12 @@
 use mod_api::{
     AnalogOutputEvent, BlockEntityPart, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
     BlockEntityTicksEvent, BlockEntityUpdateTagEvent, BlockPart, BlockSignalEvent, BlockState, CanSurviveEvent,
-    ClientHost, Compound, Flow, HasAnalogOutputEvent, Host, InteractionResult, IsSignalSourceEvent, LevelHost,
+    ClientHost, Compound, Flow, HasAnalogOutputEvent, Host, HostSide, InteractionResult, ItemPart, IsSignalSourceEvent, LevelHost,
     LevelSide, LevelTicksHost, LevelWriteHost, NeighborChangedEvent, ServerHost, StateForPlacementEvent,
     TickBlockEvent, UpdateShapeEvent, UseItemOnEvent,
 };
 
-use crate::compat::events;
+use crate::compat::{events, items, world};
 
 /// A Create block's `BlockPart`. `id` is the block's name without the namespace (`shaft`).
 pub(crate) struct CreateBlock {
@@ -82,5 +82,40 @@ impl BlockEntityPart for CreateEntity {
     }
     fn block_entity_render_bounding_box(&self, host: &dyn ClientHost, event: &mut BlockEntityRenderBoundingBoxEvent<'_>) {
         events::block_entity_render_bounding_box(host, event)
+    }
+}
+
+/// A Create item's `ItemPart` (every item the content declares, and every block that has an item). `id` is the
+/// item's full name; the old modules answer by the stack's item name, so the Part only forwards.
+pub(crate) struct CreateItem {
+    #[allow(dead_code)]
+    pub id: &'static str,
+}
+
+#[mod_api::horizon_part]
+impl ItemPart for CreateItem {
+    fn tooltip(&self, host: &dyn ClientHost, event: &mut mod_api::TooltipEvent<'_>) {
+        items::tooltip(host, event)
+    }
+    fn use_item(&self, host: HostSide, event: &mut mod_api::UseItemEvent<'_>) -> Option<InteractionResult> {
+        items::use_item(host, event)
+    }
+    fn inventory_tick(&self, host: &mut dyn ServerHost, event: &mut mod_api::InventoryTickEvent<'_>) {
+        items::inventory_tick(host, event)
+    }
+    fn item_bar(&self, host: &dyn ClientHost, event: &mut mod_api::ItemBarEvent<'_>) {
+        items::item_bar(host, event)
+    }
+    fn use_duration(&self, host: &dyn Host, event: &mut mod_api::UseDurationEvent<'_>) {
+        items::use_duration(host, event)
+    }
+    fn use_animation(&self, host: &dyn ClientHost, event: &mut mod_api::UseAnimationEvent<'_>) {
+        items::use_animation(host, event)
+    }
+    fn release_using(&self, host: HostSide, event: &mut mod_api::ReleaseUsingEvent<'_>) {
+        items::release_using(host, event)
+    }
+    fn on_block_placed_by(&self, host: &mut dyn ServerHost, event: &mut mod_api::OnBlockPlacedByEvent<'_>) {
+        world::on_block_placed_by(host, event)
     }
 }
