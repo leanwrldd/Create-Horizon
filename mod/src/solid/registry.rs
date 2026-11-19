@@ -80,6 +80,11 @@ pub fn forget(side: Side, dimension: &str, pos: Pos) {
     table().remove(&(side, dimension.to_owned(), pos));
 }
 
+/// Takes a controller's entry out (a structure that was just set down), for the pose it was last in.
+pub fn take(side: Side, dimension: &str, pos: Pos) -> Option<Entry> {
+    table().remove(&(side, dimension.to_owned(), pos))
+}
+
 /// Both sides forget a controller: the server's set-down.
 pub fn forget_both(dimension: &str, pos: Pos) {
     let mut t = table();
