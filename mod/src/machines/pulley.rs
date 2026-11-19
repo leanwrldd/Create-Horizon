@@ -194,9 +194,18 @@ fn assemble(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, rpm: f32
             }
             let movement = if rpm > 0.0 { Dir::Down } else { Dir::Up };
             let first = create_kinetics::rules::contraption::relative(anchor, movement, 1);
-            let blocked = rules::colliders(&states, movement, &engine::solid)
-                .iter()
-                .any(|c| rules::blocked_by(&world, add(first, *c)));
+            let blocked = rules::colliders(&states, movement, &engine::solid).iter().any(|c| {
+                let cell = add(first, *c);
+                // `isCollidingWithWorld`: the magnet above the anchor block is let through when
+                // the structure moves up (a rope that takes the structure it set down back up).
+                let magnet = movement == Dir::Up
+                    && *c == [0, 0, 0]
+                    && {
+                        use create_kinetics::rules::contraption::World;
+                        world.state(cell).is_some_and(|s| s.is(MAGNET))
+                    };
+                !magnet && rules::blocked_by(&world, cell)
+            });
             (found, blocked)
         })
     };
