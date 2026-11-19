@@ -1,190 +1,133 @@
 # Handoff: Create for Horizon (Rust rewrite)
 
-Written 2026-11-14. Read this, then `README.md`, then load the `minecraft-horizon-modding` skill
-(`~/.claude/skills/minecraft-horizon-modding/SKILL.md`), which holds the API notes and every gotcha found so far.
+Written 2026-11-19, at `main` 28f890a. Read this first, then `README.md`, `MODULES.md` and `MIGRATION.md`. Then load
+the `minecraft-horizon-modding` skill (`~/.claude/skills/minecraft-horizon-modding/SKILL.md`), which holds the API
+notes, the play-testing recipes and every gotcha found so far.
 
 ## Goal
 
-Rewrite the Minecraft mod Create in Rust for Horizon (the Rust reimplementation of Minecraft Java Edition 26.3,
-`github.com/horizon-rust/horizon`). The user chose a **fresh rewrite on Horizon's trait API** over forking
-Delete228's existing port (`github.com/Delete228/create-horizon`, MIT, far more complete, built on pinned mixins).
-That port is cloned locally as a reference only.
+Rewrite the Minecraft mod Create (6.0.10) in Rust for Horizon, the Rust reimplementation of Minecraft Java
+Edition 26.3 (`github.com/horizon-rust/horizon`). It's a fresh rewrite, not a fork of Delete228's mixin-based
+port. Every value, recipe and rule is ported from Create's own source, never from memory.
 
-## State
+## Where it stands
 
-**Done and checked**
+**Breadth:** 214 of 246 Create blocks and items (87%), counted by `python tools/progress.py`.
 
-- `native/kinetics`: rotation rules, the per-tick network table, and the generators
-  (`generators.rs`: Hand Crank, Water Wheel). 24 unit tests pass.
-- `native/api`: hook glue (block entities, ticking, sync, drawing, placement, wrench, crank right-click).
-  Type-checks against Horizon.
-- `content/`: block and item declarations, recipes, and loot. `tools/build_content.py <create jar>` builds a
-  local package with the models and textures from the player's own Create 6.0.10 JAR (hash-checked; the
-  user's copy is `%APPDATA%\horizon\horizon-mods\create-resources\create-1.21.1-6.0.10.jar`). Create's
-  assets never go in the source tree, and the built `.hmod` is for local use only.
-- **Kinetics confirmed working in game by the user (2026-11-14)**: shaft, cogwheels, gearbox, creative motor,
-  wrench.
+| Area | Done | | Area | Done |
+|---|---:|---|---|---:|
+| Kinetics | 52 / 57 | | Contraptions | 38 / 42 |
+| Materials | 19 / 20 | | Schematics | 5 / 5 |
+| Logistics | 31 / 52 | | Curiosities | 12 / 13 |
+| Fluids | 18 / 18 | | Palettes | 39 / 39 |
 
-**Every ported value is checked against Create's source**, at `C:\Users\latif\Claude\Projects\create-java-src`
-(sparse clone of `mc1.21.1/dev` at `4148fd8`: Java code and generated data, no assets). Catnip (`VecHelper`,
-`VoxelShaper`) is private on GitHub; read it from the Ponder sources jar on `maven.createmod.net`
-(`net/createmod/ponder/ponder-common/1.0.85+mc1.21.1`). Vanilla block numbers come from Horizon's prepared data,
-`%APPDATA%\horizon\.horizon-cache\mod-content\<hash>\gameplay-facts.json`. Cite the Create class in comments.
+**Code:**
+- **Rules:** `mod/src/kinetics` is about 76,000 lines of pure Rust with 1,560 unit tests.
+- **Glue:** `mod/src/` is about 75,000 lines, with 138 machine modules in `mod/src/machines`. It runs on Horizon's new
+  mod API. Older glue goes through the compatibility layer in `mod/src/compat`; new code is written on the new API
+  directly.
 
-**Hand Crank and Water Wheel verified in `create-dev` through Horizon MCP (2026-11-14).**
+**The mod API migration is done.** The mod builds on the official Nightly 2026-11-18 (Horizon `0b14f8a`) and its
+published SDK.
+- **Parts:** 607 block Parts, 181 block entity Parts and 655 ItemParts.
+- **Hooks:** 70 of the 75 old hooks are wired through `mod/src/compat`.
+- **Old game calls:** 13 of 147 still return a neutral value (`MIGRATION.md` lists them).
 
-- Crank and connected shaft reached 32 RPM on right-click and -32 RPM while sneaking, then returned to zero.
-  The survival food cost was not checked in game.
-- Wheel and connected shaft reached 8 RPM in either direction with a bubble column and 8 RPM with falling water.
-  Still water delivered zero RPM.
-- A game screenshot showed all seven kinetic block types placed and visible in the native build.
-- Wrench pickup was verified through MCP after rebuilding the content loot tables. A shaft disappeared
-  with no item in Creative, and a shaft and Hand Crank each returned one item in Survival. With the
-  wrench put away, sneak-right-click still drove the crank's shaft at -32 RPM.
+**Played in game on the nightly (`create-new`):**
+- **Processing:** the Press making iron sheets on a Depot, the Millstone making flour, and the Mixer making
+  andesite alloy in a Basin.
+- **Item handling:** hoppers and chutes into Depots.
+- **Goggles:** the overlay, with real text.
+- **Wrench:** rotation, and sneak pickup.
+- **Cog and shaft placement helpers:** snapping and the ghost.
+- **Collision on moving structures:** you ride rope pulleys, pistons, bearings, windmills and elevators, and mobs and
+  items get pushed and carried.
+- **Speed:** frames are about 7 ms (140 fps).
 
-Player placement of a crank or wheel follows nearby shaft ends. Sneaking or competing shaft axes falls
-back to the clicked face for the crank and the look axis for the wheel. The shaft preference runs in the
-player placement hook, so other placement paths use the fallback. The selection rules are unit-tested.
-Placement in the game needs a check on the next native build.
+**Waiting to be played:** riders moving with a structure when it snaps to the grid (`28f890a`). The test list is on
+the Port Board row `collision-disassembly-shift`.
 
-**Known differences from Create, not done yet:**
-- A crank doesn't break when the block behind it goes (`HandCrankBlock.canSurvive`).
-- The crank handle doesn't ease its spin (`HandCrankBlockEntity.independentAngle`).
-- Right-clicking the Hand Crank with a placeable block can briefly show that block next to it.
-  Horizon predicts ordinary placement on the client, while the crank consumes the click in the
-  server-side `right_click_block` hook. The modding fork already handles this (`arismoko/horizon#171`).
-  For builds from the official launcher, see `horizon-rust/horizon#16451` and draft PR `#16455`.
-- The wheel checks the water every tick; Create checks every 60 ticks and on neighbour changes.
-- No wheel materials (right-click with planks), no waterlogging, no Large Water Wheel.
-- Recipes: the Gearbox uses Andesite Alloy for the missing Andesite Casing; the Wrench uses gold ingots and a
-  stick for Create's `c:plates/gold` and `c:rods/wooden` tags, which nothing provides here.
-  (Fixed 2026-11-15: the casing and the tags exist now, and the recipes use them.)
+**Known bugs:** see the Port Board.
+- A Depot under a running Press twice lost its whole stack, with no log line.
+- The Clipboard keeps no pages, because it writes through the neutral `carried_stack`.
+- Packages loop on the first Chain Conveyor wheel.
 
-**Modules (2026-11-15).** Machines past the first slices are modules, one set of files each, written by
-Sonnet subagents in parallel: see `MODULES.md` for the layout, the shared helpers (`kinetic.rs`, `recipes.rs`,
-`util.rs`), the generated hook forwarder (`forward.rs` from `tools/forward_hooks.txt`) and the per-owner checks
-(`tools/check_module.sh <owner>`, `build_content.py --owner <owner>`, with `tools/wip.txt` naming who writes
-what). Done this way so far: transmission (encased shafts and cogwheels, clutch, gearshift, chain drives,
-gauges), millstone, crushing wheels, encased fan and nozzle, basin, mixer, blaze burner, materials, building
-blocks (wave 1); fluid tanks, pipes and pump, drill, saw, and Belts II (press over basin, belt and depot; belt
-hand-off; casings) (wave 2); chutes, smart chute, andesite and brass funnels (with belt funnels), the boiler,
-Steam Engine, Powered Shaft and Steam Whistle (wave 3). Each passes the unit tests, the type-check, the content
-build and the native build (`native-9f42064-184eb2b2db3e`). Waves 1 and 2 were tested in game through MCP on
-2026-11-15 and worked, apart from what the README lists (the Blaze Burner head shows in every lit state; the
-earlier report was an empty burner). Fixed after the wave 2 test, not yet re-tested: a bucket on a tank also
-poured water or filled twice, the saw had no log recipes (Create writes its wood cutting and concrete washing
-recipes at load time, `RuntimeDataGenerator`; now baked in), and the package now carries Create's sounds.
-Wave 3 was tested in game on 2026-11-15 and worked (see the README).
+**Left:**
+- package logistics part 2: Stock Link, Stock Ticker, Redstone Requester, Factory Gauge, Table Cloths, Shopping List,
+  Item Hatch. The rules are merged; the glue isn't;
+- the Mechanical Roller, seat riders on moving structures, and clicking blocks on a structure;
+- minecart contraptions;
+- the 13 neutral game calls, including the Toolbox menu;
+- vanilla recipes through `recipe_for` (fan smoking and blasting, shapeless mixing, the blueprint);
+- neighbour events instead of polling;
+- a route for other testers to get Create's art: a pack built from each tester's own Create jar;
+- trains, saved for last on purpose.
 
-Later the same day: the contraption engine with the Mechanical and Sticky Pistons and the Mechanical Bearing,
-the fluid machines (Spout, Item Drain, Fluid Valve and handles, Smart and Encased Fluid Pipes) and the
-redstone parts (Redstone Link, Analog Lever, pulse diodes, latches, Rose Quartz Lamp). They pass the tests,
-the type-check and the content build; the full native build into `create-dev` was not run (the user was
-playing there), and none of it has been tried in game. The task list is the Port Board artifact
-(https://claude.ai/artifact/YGFoFYxhHFMELsUzYxt35D). Each module file lists its known differences.
+## Building and testing
 
-**Ponder (2026-11-15, tested in game):** Rust client-side library with the 169 registered Create 6.0.10
-storyboards and 18 tags, plus 12 tutorials adapted to Horizon. K opens the index; holding W over a supported
-item opens its scenes (a person did this at the keyboard; the MCP tool can't hold W for the game). The index,
-tag pages, an original scene, a Horizon tutorial, captions, pause, replay, keyframe seek, next scene, identify
-and Esc all worked in `create-dev`. Not tried in game: orbit drag, Ctrl+scroll zoom, Comfy Reading and the slide
-between scenes (the test tool can't drag or hold a modifier). Found and fixed on the test: the checked-in
-`tools/ponder_storyboards.json` was older than `ponder_storyboards.py` (no tag main items, no slide-in
-directions): regenerate it with the `mc1.21.1-6.0.10` source tag and `tree-sitter`, `tree-sitter-java` in a
-venv; the 12 tutorials were drawn about twice as large as the original scenes and ran off the screen.
-Added: the Mechanical Press's stroke in original scenes (`pte.getPressingBehaviour().start(Mode.X)`, run at the
-press's speed with `press::virtual_ticks`) and 3-number `inflate`/`deflate` boxes, which brought 100 more
-outlines through. Still missing: see the README's Ponder section (block entity data changes, break cracks,
-arm, deployer, bearing and pulley movement, trains, parrots, particles, funnel flaps, Create's hint-box art).
-Build the content pack as usual to package the original schematics and captions locally.
-
-**Not started:** tunnels, deployer, crafter, sloped belts, the rest of contraptions, trains, the rest of logistics,
-schematics and goggles.
-
-**Agent waves:** the user wants at most 3 subagents at a time; after each wave, build, redraw the progress
-(`python tools/progress.py`), commit and push.
-
-**Git:** `origin` is `github.com/leanwrldd/Create-Horizon`, branch `main`. Author commits as leanwrldd with no
-AI attribution (the user's global rule).
+- **Build:** `powershell -File tools/native_build.ps1`. It stages the package (Create's art comes from the user's
+  jar), builds against the nightly and installs into the `create-new` instance.
+  - It takes about 20 to 25 minutes, so run it in a visible window. It writes `target\native-build.exit`, and the
+    launcher's log is `%APPDATA%\horizon-launcher\native\build.log`.
+  - The old home-built developer version and SDK (`developer-6888…`, `C:\Users\latif\Claude\Projects\horizon-sdk`,
+    rebuilt by `tools/dev_horizon_build.ps1`) are a fallback through `-Version` and `-Sdk`.
+- **Check:** `bash tools/check_module.sh all` runs the rules tests and type-checks the whole mod against
+  `C:\Users\latif\Claude\Projects\horizon-latest` (checked out at `0b14f8a`). It takes about 20 seconds when warm.
+- **Lock file:** `mod/Cargo.lock` is committed. Remake it with the launcher's `native-lock`, then
+  `python tools/pin_lock.py`.
+- **Game patches:** `[[native.mixin]]` rows in `mod/horizon-mod.toml`, with helpers in `mod/src/mixins/`. Today's
+  only one is `local_player_solid`, a HEAD patch on `Game::remote_send_state` that collides the local player with
+  moving structures.
+- **Launch for testing:** use the horizon MCP `play` tool on `create-new` with control on, then `game_wait_ready`.
+  The user often plays in the same window. Before driving the player, count down in chat (`tellraw`, 5 seconds), and
+  say in chat when they can move again.
 
 ## Where things are
 
 | What | Path |
 |---|---|
-| This project | `C:\Users\latif\Claude\Projects\Create-Horizon` |
-| Horizon source, shallow clone at `0de8932` (reference; the instance builds on `9f42064`) | `C:\Users\latif\Claude\Projects\horizon-src` |
-| Delete228's port (reference, MIT) | `C:\Users\latif\Claude\Projects\create-horizon-ref` |
-| Create's Java source (sparse, `mc1.21.1/dev` at `4148fd8`) | `C:\Users\latif\Claude\Projects\create-java-src` |
-| Launcher | `%LOCALAPPDATA%\Programs\Horizon Launcher\horizon-launcher.exe` (not on PATH) |
-| Test instance `create-dev` | `%APPDATA%\horizon\instances\create-dev` |
-| Game log | `%APPDATA%\horizon\instances\create-dev\logs\latest.log` |
-| Native build log | `%APPDATA%\horizon-launcher\native\build.log` |
-| Content tool, built from the clone | `target\horizon-tools\debug\cargo-horizon-mod.exe` |
+| This project | `C:\Users\latif\Claude\Projects\Create-Horizon` (`origin`: `github.com/leanwrldd/Create-Horizon`, branch `main`) |
+| Create's Java source (sparse, `mc1.21.1/dev`) | `C:\Users\latif\Claude\Projects\create-java-src` |
+| Create's jar (models, textures, lang; never committed) | `%APPDATA%\horizon\horizon-mods\create-resources\create-1.21.1-6.0.10.jar` |
+| Horizon source we build against (`0b14f8a`, read-only) | `C:\Users\latif\Claude\Projects\horizon-latest` |
+| Ola's port (MIT, design ideas; uses Parts) | `C:\Users\latif\Claude\Projects\create-horizon-ola` |
+| Delete228's port (MIT, reference) | `C:\Users\latif\Claude\Projects\create-horizon-ref` |
+| Launcher (not on PATH) | `%LOCALAPPDATA%\Programs\Horizon Launcher\horizon-launcher.exe` |
+| Test instance | `%APPDATA%\horizon\instances\create-new` (log: `logs\latest.log`) |
+| Play-test screenshots (not committed) | `target/smoke/` |
+| Port Board (task list; rows in its database) | `https://claude.ai/artifact/YGFoFYxhHFMELsUzYxt35D` |
 
-**Never build or test in the user's main `horizon` instance.** It holds their worlds and has Delete228's
-`create.hnmod` installed, which uses the same mod id (`create`).
+## Rules
 
-## The loop
+- **Never build or test in the `horizon` instance or `create-dev`.** `horizon` holds the user's real worlds and
+  Delete228's `create` mod. Use `create-new`.
+- **Don't quit or kill a game you didn't launch,** and don't native-build into an instance the user is playing in.
+- **Commits** are authored as leanwrldd, with no Co-Authored-By or other AI attribution lines.
+- **Long jobs** (10 minutes or more) run in a visible PowerShell window. Don't poll them; the user reports back.
+- **No unprompted browser or preview checks.**
+- **Create's art is never committed.** It's imported from the user's own jar at build time.
+- **Thin glue:** every decision, number and table goes in `mod/src/kinetics/src/rules/` with unit tests. Glue only
+  reads the world, calls the rules and applies the result.
+- **Agents:** Sonnet on medium effort, each in its own worktree (`.claude/worktrees/<name>`). In-game tests go to an
+  agent, with the chat countdown.
 
-```bash
-# 1. Rules (seconds)
-cargo test --manifest-path native/kinetics/Cargo.toml --target-dir target
+## Merging an agent's branch
 
-# 2. Hooks against Horizon's API (about 3 minutes cold, seconds warm)
-bash tools/check_native.sh
+1. `git merge --no-ff <branch>` on `main`.
+2. Regenerate: `python tools/gen_modules.py`, `gen_forward.py`, `gen_parts.py`, `gen_migration.py`. Keep only real
+   changes; line-ending noise is common.
+3. `bash tools/check_module.sh all`.
+4. `python tools/progress.py`, commit, push.
+5. Update the Port Board rows (writes pinned with `if_version`), then remove the worktree and branch.
 
-# 3. Content: edit tools/gen_content.py for declarations
-python tools/build_content.py "$APPDATA/horizon/horizon-mods/create-resources/create-1.21.1-6.0.10.jar"
-cp content/target/horizon-mod/create.hmod "$APPDATA/horizon/instances/create-dev/horizon-mods/"
+Don't run `tools/gen_content.py` over all of `content/`. The script has moved on to a `properties` shape format that
+the committed files don't use yet, so a full run rewrites about 110 files that have never been tried in game. Edit
+single files instead, and keep the script in step.
 
-# 4. Native build (defaults to dev; start long builds in a visible terminal)
-powershell -ExecutionPolicy Bypass -File tools/native_build.ps1
+## Next steps
 
-# 5. Play (use the native version assigned to create-dev in the launcher's instances.json)
-horizon-launcher play --instance create-dev --version <native-version> --world create-test --creative --arg=--control
-```
-
-Content-only changes need steps 3 and 5. Rust changes need 1, 2, 4 and 5.
-
-After every launch, grep the game log for `content mods not loaded`: one bad declaration drops the whole content mod.
-If icons appear but every placed Create block is invisible, check which executable the launcher started.
-The stock nightly loads `create.hmod` and its icons, but only the native build draws the placed blocks.
-On Windows, the launcher puts `source.json` one directory above the running `game/` folder. It records
-which installed version supplied the executable.
-
-## How it works
-
-- Each kinetic block has a block entity. Its server tick (`block_entity_tick`) reports the block to `Networks`
-  (a table inside the mod, behind a `Mutex`) and reads back its speed.
-- `server_tick` (start phase) prunes blocks that stopped ticking and, if anything changed, re-solves every network
-  with `create_kinetics::solve`.
-- A changed speed is written to the entity's NBT (`Speed`, a float) and synced; `block_entity_update_tag` sends it.
-- The client draws in `block_entity_submit` using `BlockEntityDraw::spin` plus `keep`, so geometry is rebuilt only
-  when the speed changes.
-- A jammed block (two speeds at once, opposing generators, over 256 RPM) is destroyed from its own tick.
-
-## Problems hit this session, all fixed
-
-| Symptom | Cause |
-|---|---|
-| Type-check failed inside `horizon-client-render` (`disk_cache` not found) | A crate outside Horizon's workspace doesn't inherit its `[patch.crates-io]`; `check_native.sh` now passes the three patches |
-| Launcher: "create was left out: made for another Horizon version" | A `Cargo.lock` left in `native/kinetics` by `cargo test`; `native_build.ps1` deletes it first |
-| Build window: path "not recognized" | Space in "Horizon Launcher" lost its quotes through `Start-Process -Command`; use the `.ps1` with `-File` |
-| Game log: `sounds minecraft:wood is not a block` | A block's `sounds` names a block; now `minecraft:oak_planks` |
-
-## Constraints
-
-- **Licence:** Create's code is MIT. The original art is All Rights Reserved. Keep asset imports in local
-  generated packages.
-- **Trait API only:** use named hook points so the mod isn't pinned to a Horizon commit. Get exact signatures from
-  the skill's `apigen` helper, not from memory.
-- **The trait crate may only use crates in Horizon's `Cargo.lock`.**
-- **User rules:** no browser/preview verification unless asked; jobs of 10 minutes or more go in a visible window;
-  commits authored as leanwrldd.
-
-## Suggested next steps
-
-1. Test wave 3 in game (chutes, funnels and belt funnels, boiler, steam engine, whistle and its sound), and
-   re-test the tank buckets and the saw on logs.
-2. Next slices: tunnels, deployer and crafter, sloped belts, contraptions.
-4. Keep the skill current: add each new gotcha in the session that finds it.
+1. Play-test the rider shift (`collision-disassembly-shift`), plus the gantry and moving stairs.
+2. Track down the Depot that empties under the Press, and fix the Clipboard (item writes from `inventory_tick`).
+3. Package logistics part 2 glue.
+4. Re-test the rows marked "code" on the Port Board, about 25 of them.
+5. The tester art route, if the user wants testers.
