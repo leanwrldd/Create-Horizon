@@ -1,12 +1,13 @@
 //! The server half: reporting each running structure after its controller's tick, and
 //! `ContraptionCollider.collideEntities` for every entity but a player at the end of the level tick.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
 use create_kinetics::Pos;
 use create_kinetics::rules::collider::{ColliderFrame, Colliders, EntityBody, broad_phase_area, can_collide_with, collide_entities};
 use create_kinetics::rules::collider_obb::{Aabb, CollisionList};
-use create_kinetics::rules::solid::{collide_bounding_box, entity_facts};
+use create_kinetics::rules::solid::{Colliding, collide_bounding_box, entity_facts, moved_on_disassembly};
 use mod_api::{EntityRef, Host, LevelRef, ServerHost};
 
 use super::registry::{self, Entry, Side};
@@ -26,7 +27,13 @@ pub fn observe(host: &mut dyn ServerHost, pos: Pos, entity: &ModBlockEntity) {
     }
     let dimension = host.dimension();
     if !util::boolean(&entity.nbt, engine::RUNNING) {
-        registry::forget(Side::Server, dimension, pos);
+        // The structure was set down (the entry is there only if it ran): `disassemble` ends with
+        // `moveCollidedEntitiesOnDisassembly`.
+        if let Some(last) = registry::take(Side::Server, dimension, pos) {
+            let windmill = entity.id == "create:windmill_bearing";
+            move_collided(host, dimension, pos, &last, windmill);
+        }
+        colliding().remove(&(dimension.to_owned(), pos));
         return;
     }
     let Some(live) = engine::live(dimension, pos, &entity.nbt) else {
@@ -69,9 +76,52 @@ pub fn observe(host: &mut dyn ServerHost, pos: Pos, entity: &ModBlockEntity) {
 pub fn level_tick(host: &mut dyn ServerHost, level: LevelRef) {
     let dimension = host.dimension();
     let Some(now) = level.game_time(&*host) else { return };
-    for (_, entry) in registry::active(Side::Server, dimension, now) {
+    for (pos, entry) in registry::active(Side::Server, dimension, now) {
         if !entry.solid.is_empty() {
-            pass(host, level, &entry, now);
+            pass(host, level, dimension, pos, &entry, now);
+        }
+    }
+    // `collidingEntities.entrySet().removeIf(.. incrementAndGet() > 3)`, in each structure's tick.
+    let mut map = colliding();
+    map.retain(|(d, _), set| {
+        if d != dimension {
+            return true;
+        }
+        set.prune(now);
+        !set.is_empty()
+    });
+}
+
+/// `AbstractContraptionEntity.collidingEntities` of each structure of the server (dimension and
+/// controller), by entity. Players are never in it: the server doesn't collide them (the client owns
+/// the local player's move, `client::local_player_pass`).
+static COLLIDING: LazyLock<Mutex<HashMap<(String, Pos), Colliding<EntityRef>>>> = LazyLock::new(Mutex::default);
+
+fn colliding() -> MutexGuard<'static, HashMap<(String, Pos), Colliding<EntityRef>>> {
+    COLLIDING.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// `moveCollidedEntitiesOnDisassembly`: every entity that stood on the structure in the last
+/// three ticks is put where the transform the blocks were set down with takes it, a sixteenth up.
+/// `last` is the structure's pose when it was last reported.
+///
+/// Difference from Create: its server entity has already been moved to the grid cell when this
+/// runs (`resetContraptionToOffset`), so a mob there is moved a sixteenth only; the client, whose
+/// copy hasn't, applies the whole snap to the player. Here every entity gets the snap, so a mob
+/// isn't left in the stone that was just placed.
+fn move_collided(host: &mut dyn ServerHost, dimension: &str, pos: Pos, last: &Entry, windmill: bool) {
+    let Some(set) = colliding().remove(&(dimension.to_owned(), pos)) else { return };
+    let Some(level) = host.level(dimension) else { return };
+    let Some(now) = level.game_time(&*host) else { return };
+    let pose = last.pose(last.seen);
+    for entity in set.alive(now) {
+        let Some(at) = entity.position(&*host) else { continue };
+        let velocity = entity.velocity(&*host);
+        let to = moved_on_disassembly(&pose, windmill, at);
+        // `entity.teleportTo`: the host's clears the velocity, Create's doesn't.
+        entity.teleport_to(host, to, None);
+        if let Some(velocity) = velocity {
+            entity.set_velocity(host, velocity);
         }
     }
 }
@@ -123,7 +173,7 @@ fn world_collide(host: &dyn Host, level: LevelRef, motion: [f64; 3], bb: &Aabb) 
 }
 
 /// One structure's loop over the entities near it.
-fn pass(host: &mut dyn ServerHost, level: LevelRef, entry: &Entry, now: i64) {
+fn pass(host: &mut dyn ServerHost, level: LevelRef, dimension: &str, pos: Pos, entry: &Entry, now: i64) {
     let pose = entry.pose(now);
     let frame = ColliderFrame::new(&pose);
     let area = broad_phase_area(&entry.solid.world_bounds(&pose));
@@ -158,6 +208,10 @@ fn pass(host: &mut dyn ServerHost, level: LevelRef, entry: &Entry, now: i64) {
     for (((entity, was), now_body), outcome) in entities.iter().zip(&before).zip(&bodies).zip(&outcomes) {
         if outcome.skipped || !outcome.collided {
             continue;
+        }
+        if outcome.registered_colliding {
+            // `contraptionEntity.registerColliding(entity)`.
+            colliding().entry((dimension.to_owned(), pos)).or_default().register(*entity, now);
         }
         // Create sets the position (`setPos`) and the motion; the host's teleport clears the
         // velocity, so it is set after.

@@ -13,11 +13,12 @@ use std::sync::{Arc, Mutex};
 
 use create_kinetics::Pos;
 use create_kinetics::rules::collider::{
-    ColliderFrame, Colliders, EntityBody, PlayerType, broad_phase, collide_entity, save_client_player_from_clipping,
+    ColliderFrame, Colliders, EntityBody, PlayerType, StructurePose, broad_phase, collide_entity,
+    save_client_player_from_clipping,
 };
 use create_kinetics::rules::collider_obb::{Aabb, CollisionList};
 use create_kinetics::rules::contraption::State;
-use create_kinetics::rules::solid::ray_boxes;
+use create_kinetics::rules::solid::{Colliding, moved_on_disassembly, ray_boxes};
 use mod_api::{BlockEntityClientTickEvent, ClientHost, Compound, Tag};
 
 use super::registry::{self, Entry, Side};
@@ -38,7 +39,13 @@ pub fn observe(host: &mut dyn ClientHost, event: &BlockEntityClientTickEvent<'_>
     let dimension = host.dimension();
     let nbt = &entity.nbt;
     if !util::boolean(nbt, "Running") {
-        registry::forget(Side::Client, dimension, pos);
+        // The structure was set down (the entry is there only if it ran): the packet
+        // `ContraptionDisassemblyPacket` makes the client run `moveCollidedEntitiesOnDisassembly`.
+        if let Some(last) = registry::take(Side::Client, dimension, pos)
+            && let Some(now) = host.level(dimension).and_then(|level| level.game_time(&*host))
+        {
+            set_down(dimension, pos, &last, id == "create:windmill_bearing", now);
+        }
         return;
     }
     let Some(contraption) = contraption_of(nbt) else {
@@ -144,6 +151,54 @@ static COOLDOWN: Mutex<i32> = Mutex::new(0);
 /// then `saveClientPlayerFromClipping` on the one the lock is on. `world(motion, box)` is
 /// `Entity.collideBoundingBox` against the world's blocks. Whether the player changed.
 pub fn local_player_pass(player: &mut LocalPlayer, world: &mut dyn FnMut([f64; 3], [[f64; 3]; 2]) -> [f64; 3]) -> bool {
+    // A structure set down since the last tick first: the shift the blocks' snap asks of the player.
+    let shifted = apply_set_downs(player);
+    collide_local_player(player, world) || shifted
+}
+
+/// `AbstractContraptionEntity.collidingEntities` for the local player, the only entity the client
+/// moves: the game time it was last registered by each structure (dimension, controller).
+static COLLIDING: Mutex<Option<HashMap<(String, Pos), Colliding<()>>>> = Mutex::new(None);
+
+/// A structure the local player stood on, set down: the pose it was last in and whether it was a windmill.
+struct SetDown {
+    pose: StructurePose,
+    windmill: bool,
+}
+
+static SET_DOWNS: Mutex<Vec<SetDown>> = Mutex::new(Vec::new());
+
+fn colliding() -> std::sync::MutexGuard<'static, Option<HashMap<(String, Pos), Colliding<()>>>> {
+    COLLIDING.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// A controller's structure was set down (its client copy stopped running): if the local player
+/// stood on it in the last three ticks, remember the shift for [`local_player_pass`] to make once.
+/// The server doesn't move players (`PlayerType.SERVER` is skipped), so this is the player's only
+/// owner: the game's own teleport of the player never happens, and the shift is not made twice.
+fn set_down(dimension: &str, pos: Pos, last: &Entry, windmill: bool, now: i64) {
+    let key = (dimension.to_owned(), pos);
+    let stood = {
+        let mut guard = colliding();
+        let Some(set) = guard.as_mut().and_then(|map| map.remove(&key)) else { return };
+        !set.alive(now).is_empty()
+    };
+    if stood {
+        let pose = last.pose(last.seen);
+        SET_DOWNS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(SetDown { pose, windmill });
+    }
+}
+
+/// `entity.setPos(transformed.x, transformed.y + 1 / 16f, transformed.z)` for each structure set down.
+fn apply_set_downs(player: &mut LocalPlayer) -> bool {
+    let pending = std::mem::take(&mut *SET_DOWNS.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+    for done in &pending {
+        player.position = moved_on_disassembly(&done.pose, done.windmill, player.position);
+    }
+    !pending.is_empty()
+}
+
+fn collide_local_player(player: &mut LocalPlayer, world: &mut dyn FnMut([f64; 3], [[f64; 3]; 2]) -> [f64; 3]) -> bool {
     if player.passenger || !registry::client_any() {
         return false;
     }
@@ -208,6 +263,10 @@ pub fn local_player_pass(player: &mut LocalPlayer, world: &mut dyn FnMut([f64; 3
             &mut body,
             &mut |motion, bb| world(motion, [bb.min, bb.max]),
         );
+        if outcome.registered_colliding {
+            // `contraptionEntity.registerColliding(entity)`.
+            colliding().get_or_insert_with(HashMap::new).entry((dimension.clone(), *pos)).or_default().register((), now);
+        }
         if let Some(offset) = outcome.safety_lock {
             *lock = Some((dimension.clone(), *pos, offset));
         }

@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 
 use super::actor::Vec3;
-use super::collider::{BlockProps, CollideFacts, StructurePose, bounce_multiplier};
+use super::collider::{BlockProps, CollideFacts, Rotation, StructurePose, bounce_multiplier, rotate};
 use super::collider_obb::{Aabb, CollisionList, vadd, vsub};
 use crate::{Axis, Pos};
 
@@ -313,6 +313,118 @@ pub fn ray_boxes(list: &CollisionList, from: Vec3, to: Vec3) -> Option<Vec3> {
     best.map(|t| vadd(from, [d[0] * t, d[1] * t, d[2] * t]))
 }
 
+// --- moving the entities that collided, when a structure is set down ---------------------------------
+
+/// Ticks `collidingEntities` keeps an entity after the last surface collision: the structure's tick
+/// does `removeIf(e -> e.getValue().incrementAndGet() > 3)` and `registerColliding` puts a 0.
+pub const COLLIDING_TICKS: i64 = 3;
+
+/// `AbstractContraptionEntity.collidingEntities`: the entities that stood on a structure, each with
+/// the game time it was last registered at (`registerColliding`).
+#[derive(Clone, Debug)]
+pub struct Colliding<K> {
+    seen: HashMap<K, i64>,
+}
+
+impl<K: Copy + Eq + std::hash::Hash> Default for Colliding<K> {
+    fn default() -> Self {
+        Self { seen: HashMap::new() }
+    }
+}
+
+impl<K: Copy + Eq + std::hash::Hash> Colliding<K> {
+    /// `registerColliding(entity)`: the counter goes back to 0.
+    pub fn register(&mut self, entity: K, now: i64) {
+        self.seen.insert(entity, now);
+    }
+
+    /// The entities still in the map at `now`: a counter that reached 4 is removed.
+    pub fn alive(&self, now: i64) -> Vec<K> {
+        self.seen.iter().filter(|(_, at)| now - **at <= COLLIDING_TICKS).map(|(k, _)| *k).collect()
+    }
+
+    /// Drops what has expired (the structure's per-tick `removeIf`).
+    pub fn prune(&mut self, now: i64) {
+        self.seen.retain(|_, at| now - *at <= COLLIDING_TICKS);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.seen.is_empty()
+    }
+}
+
+/// `StructureTransform` as a disassembly makes it (`makeStructureTransform`): the cell the anchor
+/// lands in, and the right-angle turn about one axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Snap {
+    /// `BlockPos.containing(getAnchorVec().add(.5, .5, .5))`.
+    pub offset: Pos,
+    /// `rotationAxis`: `None` when the structure isn't turned.
+    pub axis: Option<Axis>,
+    /// `angle`, normalised as the constructor does (`%= 360`, then `+360` under -90).
+    pub angle: i32,
+}
+
+impl Snap {
+    /// `new StructureTransform(offset, xRot, yRot, zRot)` for `rotation` degrees about `axis`
+    /// (`None` for a structure that only slides).
+    pub fn new(position: Vec3, axis: Option<Axis>, rotation: f32) -> Snap {
+        let offset = [0, 1, 2].map(|i| (position[i] + 0.5).floor() as i32);
+        // `if (xRotation != 0) { rotationAxis = Axis.X; angle = Math.round(xRotation / 90) * 90; }`
+        if rotation == 0.0 || axis.is_none() {
+            return Snap { offset, axis: None, angle: 0 };
+        }
+        // `Math.round(float)` is floor(x + 1/2).
+        let mut angle = ((f64::from(rotation / 90.0) + 0.5).floor() as i32) * 90;
+        // `angle %= 360; if (angle < -90) angle += 360;`
+        angle %= 360;
+        if angle < -90 {
+            angle += 360;
+        }
+        Snap { offset, axis, angle }
+    }
+
+    /// `apply(Vec3 localVec)`: `applyWithoutOffset(localVec).add(offset)`, the turn about the
+    /// centre of the cell (`VecHelper.rotateCentered`).
+    pub fn apply(&self, local: Vec3) -> Vec3 {
+        let v = vsub(local, [0.5; 3]);
+        let v = rotate(v, f64::from(self.angle), self.axis);
+        let v = vadd(v, [0.5; 3]);
+        vadd(v, self.offset.map(f64::from))
+    }
+}
+
+/// The pose a disassembly works from, given the structure's last pose. A windmill resets its
+/// angle before it disassembles (`MechanicalBearingBlockEntity.disassemble`: `angle = 0;` then
+/// `applyRotation()` for a windmill), but `prevAngle` is left, and `getAngle(0)` reads that one.
+pub fn disassembly_pose(last: &StructurePose, windmill: bool) -> StructurePose {
+    let mut pose = *last;
+    if windmill && let Rotation::Controlled { axis, prev_angle, .. } = pose.rotation {
+        pose.rotation = Rotation::Controlled { axis, angle: 0.0, prev_angle };
+    }
+    pose
+}
+
+/// `makeStructureTransform` for a structure last at `last` (`ControlledContraptionEntity` and
+/// `GantryContraptionEntity`: the cell round the anchor, the angle rounded to a right angle).
+pub fn disassembly_snap(last: &StructurePose, windmill: bool) -> Snap {
+    let pose = disassembly_pose(last, windmill);
+    match pose.rotation {
+        Rotation::Controlled { axis, angle, .. } => Snap::new(pose.position, axis, angle),
+        Rotation::Oriented { .. } => Snap::new(pose.position, None, 0.0),
+    }
+}
+
+/// `moveCollidedEntitiesOnDisassembly` for one entity at `position`: its place in the structure's
+/// own space (`toLocalVector(entity.position(), 0)`) carried through the transform the blocks are
+/// set down with, and `transformed.y + 1 / 16f` (a sixteenth up, off the new blocks' top).
+pub fn moved_on_disassembly(last: &StructurePose, windmill: bool, position: Vec3) -> Vec3 {
+    let pose = disassembly_pose(last, windmill);
+    let snap = disassembly_snap(last, windmill);
+    let moved = snap.apply(pose.to_local_vector(position, 0.0, false));
+    [moved[0], moved[1] + f64::from(1.0f32 / 16.0), moved[2]]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,5 +560,121 @@ mod tests {
         assert!(out.registered_colliding && e.on_ground);
         assert!(e.position[1] > 1.09 && e.position[1] < 1.11, "{:?}", e.position);
         assert!(s.world_bounds(&pose).max[1] > 1.0);
+    }
+
+    const SIXTEENTH: f64 = 0.0625;
+
+    fn close(a: Vec3, b: Vec3, eps: f64) -> bool {
+        (0..3).all(|i| (a[i] - b[i]).abs() < eps)
+    }
+
+    #[test]
+    fn a_pulley_stopped_below_the_middle_of_a_cell_puts_the_rider_down_with_the_blocks() {
+        // The anchor is at y 10.4: the blocks are set down in the cell 10 (floor(10.4 + .5)), 0.4 lower.
+        let pose = StructurePose::translating([0.0, 10.4, 0.0], [0.0, 10.4, 0.0], [0.0; 3]);
+        let moved = moved_on_disassembly(&pose, false, [0.5, 11.4, 0.5]);
+        assert!(close(moved, [0.5, 11.0 + SIXTEENTH, 0.5], 1e-9), "{moved:?}");
+    }
+
+    #[test]
+    fn a_pulley_stopped_above_the_middle_of_a_cell_lifts_the_rider_with_the_blocks() {
+        // 10.6 sets down in the cell 11: the stone the player stands on rises 0.4, so he does too.
+        let pose = StructurePose::translating([0.0, 10.6, 0.0], [0.0, 10.6, 0.0], [0.0; 3]);
+        let moved = moved_on_disassembly(&pose, false, [0.5, 11.6, 0.5]);
+        assert!(close(moved, [0.5, 12.0 + SIXTEENTH, 0.5], 1e-9), "{moved:?}");
+    }
+
+    #[test]
+    fn a_sliding_structure_moves_the_entity_only_along_its_own_axis() {
+        // A piston going east: the anchor x is 5.3, the cell 5.
+        let pose = StructurePose::translating([5.3, 7.0, -2.0], [5.3, 7.0, -2.0], [0.0; 3]);
+        let moved = moved_on_disassembly(&pose, false, [6.1, 8.0, -1.5]);
+        assert!(close(moved, [5.8, 8.0 + SIXTEENTH, -1.5], 1e-9), "{moved:?}");
+        // At rest on a cell: only the sixteenth.
+        let pose = StructurePose::translating([5.0, 7.0, -2.0], [5.0, 7.0, -2.0], [0.0; 3]);
+        let moved = moved_on_disassembly(&pose, false, [6.1, 8.0, -1.5]);
+        assert!(close(moved, [6.1, 8.0 + SIXTEENTH, -1.5], 1e-9), "{moved:?}");
+    }
+
+    #[test]
+    fn the_angle_rounds_as_math_round_does() {
+        let at = |deg: f32| Snap::new([0.0; 3], Some(Axis::Y), deg).angle;
+        assert_eq!(at(30.0), 0);
+        assert_eq!(at(45.0), 90, "Math.round(.5) is 1");
+        assert_eq!(at(50.0), 90);
+        assert_eq!(at(-45.0), 0, "Math.round(-.5) is 0");
+        assert_eq!(at(-50.0), -90);
+        assert_eq!(at(280.0), 270);
+        assert_eq!(at(350.0), 0);
+        assert_eq!(at(-170.0), 180, "-180 is under -90: plus 360");
+        assert_eq!(Snap::new([0.0; 3], Some(Axis::Y), 0.0).axis, None, "no turn, no axis");
+        assert_eq!(Snap::new([2.5, 3.49, -0.5], None, 0.0).offset, [3, 3, 0]);
+    }
+
+    #[test]
+    fn a_bearing_stopped_at_thirty_degrees_turns_the_rider_back_with_the_blocks() {
+        // Up bearing, anchor cell (0, 0, 0), turned 30 degrees (last tick 30 too): the blocks go back to
+        // 0. An entity one block east of the axis, half a block up, is turned back by the same 30 degrees.
+        let pose = StructurePose::turning([0.0; 3], Axis::Y, 30.0, 30.0);
+        let moved = moved_on_disassembly(&pose, false, [1.5, 0.5, 0.5]);
+        let (s, c) = 30.0f64.to_radians().sin_cos();
+        assert!(close(moved, [0.5 + c, 0.5 + SIXTEENTH, 0.5 + s], 1e-3), "{moved:?}");
+    }
+
+    #[test]
+    fn a_bearing_stopped_past_the_middle_of_a_quarter_turns_on_to_the_next_one() {
+        // 50 degrees sets down at 90: the entity ends 40 degrees further round, still on its circle.
+        let pose = StructurePose::turning([0.0; 3], Axis::Y, 50.0, 50.0);
+        let moved = moved_on_disassembly(&pose, false, [0.5 + 2.0, 0.5, 0.5]);
+        let (s, c) = 40.0f64.to_radians().sin_cos();
+        assert!(close(moved, [0.5 + 2.0 * c, 0.5 + SIXTEENTH, 0.5 - 2.0 * s], 1e-3), "{moved:?}");
+        // On the axis it only rises a sixteenth.
+        let moved = moved_on_disassembly(&pose, false, [0.5, 3.0, 0.5]);
+        assert!(close(moved, [0.5, 3.0 + SIXTEENTH, 0.5], 1e-9), "{moved:?}");
+    }
+
+    #[test]
+    fn the_anchor_cell_is_the_centre_of_the_turn() {
+        // The anchor at (4, 5, 6): the same turn about that cell's centre.
+        let pose = StructurePose::turning([4.0, 5.0, 6.0], Axis::Y, 90.0, 90.0);
+        let moved = moved_on_disassembly(&pose, false, [4.5, 5.5, 6.5]);
+        assert!(close(moved, [4.5, 5.5 + SIXTEENTH, 6.5], 1e-9), "{moved:?}");
+        // Stopped exactly on a quarter, nothing but the sixteenth moves, wherever the entity is.
+        let at_90 = disassembly_snap(&pose, false);
+        assert_eq!((at_90.angle, at_90.axis, at_90.offset), (90, Some(Axis::Y), [4, 5, 6]));
+        let moved = moved_on_disassembly(&pose, false, [4.5, 5.5, 4.5]);
+        assert!(close(moved, [4.5, 5.5 + SIXTEENTH, 4.5], 1e-3), "{moved:?}");
+    }
+
+    #[test]
+    fn a_windmill_goes_back_to_its_start_whatever_it_read() {
+        // `angle = 0` is set first, but `getAngle(0)` is `prevAngle`: the entity is taken back to the
+        // blocks' initial frame (the sails are set down unturned).
+        let pose = StructurePose::turning([0.0; 3], Axis::Y, 100.0, 99.0);
+        assert_eq!(disassembly_snap(&pose, true).angle, 0);
+        assert_eq!(disassembly_snap(&pose, false).angle, 90);
+        let moved = moved_on_disassembly(&pose, true, [1.5, 0.5, 0.5]);
+        let (s, c) = 99.0f64.to_radians().sin_cos();
+        // rotate(+x, -99): x = cos, z = sin
+        assert!(close(moved, [0.5 + c, 0.5 + SIXTEENTH, 0.5 + s], 1e-3), "{moved:?}");
+    }
+
+    #[test]
+    fn the_colliding_map_keeps_an_entity_three_ticks() {
+        let mut map: Colliding<u32> = Colliding::default();
+        assert!(map.is_empty());
+        map.register(7, 100);
+        map.register(8, 102);
+        let mut alive = map.alive(103);
+        alive.sort();
+        assert_eq!(alive, vec![7, 8], "the counter is 3 at the third tick");
+        assert_eq!(map.alive(104), vec![8], "4 is removed");
+        // Registered again, the counter starts over.
+        map.register(7, 104);
+        assert_eq!(map.alive(107), vec![7], "8 expired at 106");
+        map.prune(107);
+        assert_eq!(map.alive(107), vec![7]);
+        map.prune(108);
+        assert!(map.is_empty());
     }
 }
