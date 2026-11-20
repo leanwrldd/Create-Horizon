@@ -901,9 +901,8 @@ fn update_spout(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) -> b
         }
     }
     let target = add(add(pos, [0, -1, 0]), facing.normal());
-    let has_tank = host
-        .fluid_tanks(host.dimension(), target, util::direction(facing.opposite()))
-        .is_some();
+    let dimension = host.dimension();
+    let has_tank = host.fluid_tanks_mut(dimension, target, util::direction(facing.opposite())).is_some();
     if has_tank {
         for tank in &mut contents.tanks[2..TANKS] {
             if let (Some(fluid), true) = (tank.fluid.take(), tank.amount > 0) {
@@ -1006,8 +1005,9 @@ fn clear_overflow(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) ->
             continue;
         }
         // Only a whole fluid stack goes (`fill != amount` breaks out).
+        let dimension = host.dimension();
         let room: i32 = host
-            .fluid_tanks(host.dimension(), target, face)
+            .fluid_tanks_mut(dimension, target, face)
             .map(|tanks| {
                 tanks
                     .iter()
@@ -1107,8 +1107,9 @@ const BUCKETS: [(&str, &str); 5] = [
 ];
 const BUCKET: i32 = 1000;
 
-fn room_for(host: &dyn Host, pos: Pos, fluid: &str) -> i32 {
-    host.fluid_tanks(host.dimension(), pos, Direction::Up)
+fn room_for(host: &mut dyn Host, pos: Pos, fluid: &str) -> i32 {
+    let dimension = host.dimension();
+    host.fluid_tanks_mut(dimension, pos, Direction::Up)
         .map(|tanks| {
             tanks
                 .iter()
@@ -1144,7 +1145,7 @@ fn use_bucket(host: &mut dyn Host, pos: Pos, stack: &ItemStack, creative: bool) 
     }
     if item == "minecraft:bucket" {
         let dimension = host.dimension();
-        let Some(tanks) = host.fluid_tanks(dimension, pos, Direction::Up) else {
+        let Some(tanks) = host.fluid_tanks_mut(dimension, pos, Direction::Up) else {
             return false;
         };
         let Some(first) = tanks.iter().find(|t| t.can_drain && t.fluid.is_some() && t.amount > 0) else {

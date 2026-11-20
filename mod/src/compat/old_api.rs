@@ -1227,6 +1227,16 @@ pub trait Host {
         gap("fluid_tanks");
         None
     }
+    /// `fluid_tanks` for a caller that holds `&mut`: the same answer, and for a block the modules do not own (a
+    /// cauldron, another mod's tank) the server host's `FLUIDS` capability, which only a `&mut` host can read.
+    fn fluid_tanks_mut(
+        &mut self,
+        dimension: &str,
+        pos: [i32; 3],
+        face: Direction,
+    ) -> Option<Vec<NativeFluidTank>> {
+        self.fluid_tanks(dimension, pos, face)
+    }
     fn give_items(&mut self, item: &str, count: u32) -> u32 {
         gap("give_items");
         0

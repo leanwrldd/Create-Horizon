@@ -111,7 +111,7 @@ fn detect(host: &mut dyn Host, pos: Pos, now: i64, turn_off: i32, filter: &Filte
     if target::inventory_has(host, at, filter) == Some(true) {
         return Some(DEFAULT_DELAY);
     }
-    if let Some(tanks) = target::read_tanks(&*host, at)
+    if let Some(tanks) = target::read_tanks(host, at)
         && tanks.iter().any(|tank| {
             tank.amount > 0
                 && tank.fluid.as_deref().is_some_and(|fluid| target::passes_fluid(&filter, fluid))

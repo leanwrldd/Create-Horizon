@@ -120,9 +120,81 @@ pub fn tint(fluid: &str) -> u32 {
     }
 }
 
+/// One tank of a block as another block sees it from a face.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TankView {
+    /// The tank's index in the block's declared list.
+    pub tank: usize,
+    pub fluid: Option<String>,
+    pub amount: i32,
+    pub capacity: i32,
+    pub can_fill: bool,
+    pub can_drain: bool,
+}
+
+/// The tanks a block entity declares (`ModFluidTanks`: capacities, the tanks each face reaches, the ones that take a
+/// fill and the ones that give a drain) as seen from `face` (0 down, 1 up, then north, south, west, east), filled
+/// with what it saved: `saved[i]` is `(fluid, amount)` of tank `i`. A face that reaches no tank gives an empty list
+/// (the Spout's below, the drain's above), which is not "no handler".
+pub fn saved_tank_views(
+    capacities: &[i32],
+    faces: &[Vec<usize>; 6],
+    inputs: &[usize],
+    outputs: &[usize],
+    face: usize,
+    saved: &[(Option<String>, i32)],
+) -> Vec<TankView> {
+    faces
+        .get(face)
+        .map(|reached| {
+            reached
+                .iter()
+                .filter(|tank| **tank < capacities.len())
+                .map(|&tank| {
+                    let (fluid, amount) = saved.get(tank).cloned().unwrap_or((None, 0));
+                    let empty = amount <= 0 || fluid.as_deref().is_none_or(|f| f == "minecraft:empty");
+                    TankView {
+                        tank,
+                        fluid: if empty { None } else { fluid },
+                        amount: if empty { 0 } else { amount },
+                        capacity: capacities[tank],
+                        can_fill: inputs.contains(&tank),
+                        can_drain: outputs.contains(&tank),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_face_sees_only_its_tanks_with_what_they_saved() {
+        let faces = [vec![0], vec![], vec![0], vec![0], vec![0], vec![0]];
+        let saved = [(Some("minecraft:water".to_string()), 250)];
+        let side = saved_tank_views(&[1000], &faces, &[0], &[0], 2, &saved);
+        assert_eq!(side.len(), 1);
+        assert_eq!(side[0].fluid.as_deref(), Some("minecraft:water"));
+        assert_eq!((side[0].amount, side[0].capacity), (250, 1000));
+        assert!(side[0].can_fill && side[0].can_drain);
+        // A face with no tank is an empty list, not a missing handler.
+        assert!(saved_tank_views(&[1000], &faces, &[0], &[0], 1, &saved).is_empty());
+    }
+
+    #[test]
+    fn empty_tanks_have_no_fluid_and_drain_only_ones_take_no_fill() {
+        let faces: [Vec<usize>; 6] = [(); 6].map(|()| vec![0, 1]);
+        let saved = [(Some("minecraft:empty".to_string()), 5), (Some("minecraft:lava".to_string()), 0)];
+        let views = saved_tank_views(&[1000, 1000], &faces, &[0], &[0, 1], 0, &saved);
+        assert!(views.iter().all(|v| v.fluid.is_none() && v.amount == 0));
+        assert!(views[0].can_fill && !views[1].can_fill && views[1].can_drain);
+        // A face past the six, or a tank past the capacities, is dropped.
+        assert!(saved_tank_views(&[1000], &faces, &[], &[], 9, &[]).is_empty());
+        assert_eq!(saved_tank_views(&[1000], &faces, &[], &[], 0, &[]).len(), 1);
+    }
 
     #[test]
     fn a_bucket_of_honey_gives_a_bucket_and_a_bottle_a_quarter() {
