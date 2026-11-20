@@ -155,7 +155,8 @@ fn readable(host: &mut dyn Host, at: Pos, observer: bool) -> bool {
     if slot_count(host, at).is_some() {
         return true;
     }
-    host.fluid_tanks(host.dimension(), at, util::direction(Dir::Up)).is_some()
+    let dimension = host.dimension();
+    host.fluid_tanks_mut(dimension, at, util::direction(Dir::Up)).is_some()
 }
 
 /// `getStateForPlacement`'s loop over `getNearestLookingDirections`: the block just placed at
@@ -280,8 +281,9 @@ pub struct Tank {
 }
 
 /// The tanks of the block at `pos`, `None` where there are none (`TankManipulationBehaviour`).
-pub fn read_tanks(host: &dyn Host, pos: Pos) -> Option<Vec<Tank>> {
-    let tanks = host.fluid_tanks(host.dimension(), pos, util::direction(Dir::Up))?;
+pub fn read_tanks(host: &mut dyn Host, pos: Pos) -> Option<Vec<Tank>> {
+    let dimension = host.dimension();
+    let tanks = host.fluid_tanks_mut(dimension, pos, util::direction(Dir::Up))?;
     Some(
         tanks
             .into_iter()

@@ -104,7 +104,7 @@ fn transfer(host: &mut dyn Host, pos: Pos, state: &mut State) {
     let sources = state.pull.endpoints.clone();
     for source in &sources {
         let face = direction(source.face);
-        let Some((fluid, have)) = fluids::contents(&*host, source.handler, face) else {
+        let Some((fluid, have)) = fluids::contents(host, source.handler, face) else {
             continue;
         };
         let (pressure, ends) = if state.filtered {
@@ -126,7 +126,7 @@ fn transfer(host: &mut dyn Host, pos: Pos, state: &mut State) {
         let targets: Vec<&Endpoint> = ends.iter().filter(|t| t.handler != source.handler).collect();
         let rooms: Vec<i32> = targets
             .iter()
-            .map(|t| fluids::room(&*host, t.handler, direction(t.face), &fluid))
+            .map(|t| fluids::room(host, t.handler, direction(t.face), &fluid))
             .collect();
         let given = distribute(want, &rooms);
         let total: i32 = given.iter().sum();

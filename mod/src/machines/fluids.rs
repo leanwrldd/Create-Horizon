@@ -177,11 +177,12 @@ pub fn classify_for(host: &dyn Host, pos: Pos, fluid: Option<&str>) -> Cell {
 
 /// How much of `fluid` the block at `pos` has room for through `face`: its fillable tanks
 /// holding it or none. A creative tank has no end.
-pub fn room(host: &dyn Host, pos: Pos, face: Direction, fluid: &str) -> i32 {
+pub fn room(host: &mut dyn Host, pos: Pos, face: Direction, fluid: &str) -> i32 {
     if host.block(pos) == CREATIVE_FLUID_TANK {
         return UNLIMITED;
     }
-    host.fluid_tanks(host.dimension(), pos, face)
+    let dimension = host.dimension();
+    host.fluid_tanks_mut(dimension, pos, face)
         .map(|tanks| {
             tanks
                 .iter()
@@ -193,8 +194,9 @@ pub fn room(host: &dyn Host, pos: Pos, face: Direction, fluid: &str) -> i32 {
 }
 
 /// The fluid the block at `pos` gives through `face` and how much: its first drainable tank.
-pub fn contents(host: &dyn Host, pos: Pos, face: Direction) -> Option<(String, i32)> {
-    let tanks = host.fluid_tanks(host.dimension(), pos, face)?;
+pub fn contents(host: &mut dyn Host, pos: Pos, face: Direction) -> Option<(String, i32)> {
+    let dimension = host.dimension();
+    let tanks = host.fluid_tanks_mut(dimension, pos, face)?;
     let first = tanks.iter().find(|t| t.can_drain && t.fluid.is_some() && t.amount > 0)?;
     let fluid = first.fluid.clone()?;
     let total = tanks

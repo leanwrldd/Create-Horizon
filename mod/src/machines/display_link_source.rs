@@ -141,7 +141,7 @@ fn read_fluids(host: &mut dyn Host, source: Source, pos: Pos) -> Reading {
     let Some((filter, at)) = observed_block(host, pos) else {
         return Reading::Missing;
     };
-    let Some(tanks) = observed::read_tanks(&*host, at) else {
+    let Some(tanks) = observed::read_tanks(host, at) else {
         return Reading::Missing;
     };
     let held = tanks.into_iter().filter_map(|tank| {

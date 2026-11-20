@@ -71,6 +71,19 @@ fn property_of(text: &str, key: &str) -> Option<String> {
     })
 }
 
+/// What the modules declare for the tanks of a block entity (`block_entity_fluids`), asked once per block name.
+fn declared_tanks(block: &str) -> Option<ModFluidTanks> {
+    static DECLARED: LazyLock<Mutex<HashMap<String, Option<ModFluidTanks>>>> = LazyLock::new(Mutex::default);
+    if let Some(found) = DECLARED.lock().unwrap_or_else(PoisonError::into_inner).get(block) {
+        return found.clone();
+    }
+    let mut adapter = Adapter::None;
+    let mut event = BlockEntityFluidsEvent { block };
+    let found = guarded("block_entity_fluids", usize::MAX, None, || crate::create().block_entity_fluids(&mut adapter, &mut event));
+    DECLARED.lock().unwrap_or_else(PoisonError::into_inner).insert(block.to_owned(), found.clone());
+    found
+}
+
 impl Adapter<'_> {
     fn state_text_at(&self, pos: [i32; 3]) -> Option<String> {
         let host = self.new_host();
@@ -906,6 +919,106 @@ impl Host for Adapter<'_> {
         let taken = host.transaction(|host, tx| -> Result<u32, ()> { Ok(cap.extract(host, tx, tank, &resource, want)) }).ok()?;
         let id = resource.to_stack(1).key()?.id(&*host);
         (taken > 0).then_some((id, taken as i32))
+    }
+    /// The tanks of the block at `pos` seen from `face`, from a shared host (server or client, no `&mut` needed):
+    /// a block the modules serve from code answers through its `custom_fluid_tanks` hook, and a block entity that
+    /// declares tanks (`block_entity_fluids`: basin, spout, drain) through its saved `fluids` list. A block that is
+    /// neither (vanilla, another mod's) is `None` here; `fluid_tanks_mut` asks the capability for those.
+    fn fluid_tanks(&self, dimension: &str, pos: [i32; 3], face: Direction) -> Option<Vec<NativeFluidTank>> {
+        let host = self.base()?;
+        let mut adapter = Adapter::Base(host);
+        let mut event = CustomFluidTanksEvent { pos, side: Some(face) };
+        let served =
+            guarded("custom_fluid_tanks", usize::MAX, None, || crate::create().custom_fluid_tanks(&mut adapter, &mut event));
+        if let Some(views) = served {
+            return Some(
+                views
+                    .into_iter()
+                    .map(|view| NativeFluidTank {
+                        tank: view.tank,
+                        fluid: view.content.as_ref().map(|c| c.fluid.clone()),
+                        amount: view.content.as_ref().map_or(0, |c| c.amount),
+                        capacity: view.capacity,
+                        can_fill: view.can_fill,
+                        can_drain: view.can_drain,
+                    })
+                    .collect(),
+            );
+        }
+        let block = self.block(pos);
+        let declared = declared_tanks(&block)?;
+        let level = host.level(dimension)?;
+        let data = host.block_entity(level, pos)?.data(host)?;
+        let saved: Vec<(Option<String>, i32)> = match crate::util::get(&data, "fluids") {
+            Some(Tag::List(list)) => list
+                .iter()
+                .map(|tank| {
+                    let fluid = match tank.get("Fluid") {
+                        Some(Tag::String(fluid)) => Some(fluid.to_string_lossy()),
+                        _ => None,
+                    };
+                    let amount = match tank.get("Amount") {
+                        Some(Tag::Int(n)) => *n,
+                        _ => 0,
+                    };
+                    (fluid, amount)
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        let views = create_kinetics::rules::fluids::saved_tank_views(
+            &declared.tanks,
+            &declared.faces,
+            &declared.inputs,
+            &declared.outputs,
+            containers::face(face),
+            &saved,
+        );
+        Some(
+            views
+                .into_iter()
+                .map(|v| NativeFluidTank {
+                    tank: v.tank,
+                    fluid: v.fluid,
+                    amount: v.amount,
+                    capacity: v.capacity,
+                    can_fill: v.can_fill,
+                    can_drain: v.can_drain,
+                })
+                .collect(),
+        )
+    }
+
+    /// `fluid_tanks`, and for a block the modules do not own the server's `FLUIDS` capability (a `&mut` read).
+    fn fluid_tanks_mut(&mut self, dimension: &str, pos: [i32; 3], face: Direction) -> Option<Vec<NativeFluidTank>> {
+        if let Some(found) = self.fluid_tanks(dimension, pos, face) {
+            return Some(found);
+        }
+        let host = self.server_mut()?;
+        let level = host.level(dimension)?;
+        let cap = level.capability(host, &mod_api::FLUIDS, pos, Some(face))?;
+        // An empty tank has no resource to ask the capacity of: water stands in for "any fluid".
+        let probe = mod_api::FluidResource::of(&mod_api::FluidStack::new(host.fluid_key("minecraft:water")?, 1));
+        let mut tanks = Vec::new();
+        for tank in 0..cap.size(host) {
+            let resource = cap.resource(host, tank);
+            let amount = cap.amount(host, tank);
+            let ask = resource.as_ref().unwrap_or(&probe);
+            let capacity = cap.capacity(host, tank, ask);
+            let fluid = match &resource {
+                Some(r) if amount > 0 => r.to_stack(1).key().map(|key| key.id(&*host)),
+                _ => None,
+            };
+            tanks.push(NativeFluidTank {
+                tank,
+                fluid,
+                amount: amount as i32,
+                capacity: capacity as i32,
+                can_fill: cap.is_valid(host, tank, ask),
+                can_drain: amount > 0,
+            });
+        }
+        Some(tanks)
     }
     fn apply_screen_blur(&self) -> bool {
         match self {

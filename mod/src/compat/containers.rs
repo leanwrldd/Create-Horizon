@@ -19,7 +19,7 @@ fn create() -> &'static dyn Hooks {
 }
 
 /// Direction's index in a `ModContainer`'s `faces`: down, up, north, south, west, east.
-fn face(direction: Direction) -> usize {
+pub(super) fn face(direction: Direction) -> usize {
     match direction {
         Direction::Down => 0,
         Direction::Up => 1,

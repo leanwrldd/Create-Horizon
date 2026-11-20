@@ -113,7 +113,7 @@ fn publish(level: u8, pos: Pos, powered: bool) -> bool {
 /// to read.
 fn read_level(host: &mut dyn Host, at: Pos, filter: &Filter) -> Option<(Level, Kind)> {
     let slots = target::read_slots(host, at);
-    let tanks = target::read_tanks(&*host, at);
+    let tanks = target::read_tanks(host, at);
     if slots.is_none() && tanks.is_none() {
         return None;
     }
