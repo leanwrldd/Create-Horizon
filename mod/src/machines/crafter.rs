@@ -8,9 +8,9 @@
 //! `crafter_world.rs`, the picture `crafter_draw.rs`, the recipes' data `crafter_recipes.rs`.
 //!
 //! Known differences from Create, for the README:
-//! - Vanilla crafting recipes are baked into the content (Horizon gives a mod none to read):
-//!   shaped and shapeless ones only, from the prepared game data, and a data pack's changes to
-//!   them aren't seen (`crafter_recipes.rs`). `create:mechanical_crafting` is read as it is.
+//! - Vanilla crafting recipes match through the engine (`LevelRef::recipe_for`, data packs
+//!   included) for grids up to 3x3 (`crafter_recipes.rs`). `create:mechanical_crafting` is read as
+//!   it is.
 //! - The inventory of a grid (`getItemHandler`, a `CombinedInvWrapper`) is the one hands, funnels,
 //!   chutes, Deployers and arms fill and the arm empties, one item to each crafter in reading
 //!   order. A hopper or a dropper is Horizon's own container call on one crafter's one slot, so

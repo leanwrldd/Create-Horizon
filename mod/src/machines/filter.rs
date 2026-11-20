@@ -292,6 +292,19 @@ impl ItemFacts<'_> {
         self.host.is_some_and(|host| recipes::for_stack(host, kind, self.stack).is_some())
     }
 
+    /// `AllItemAttributeTypes.testRecipe`: `getRecipeFor(type, new SingleRecipeInput(stack))` has a
+    /// recipe (`LevelRef::recipe_for`).
+    fn cooks(&self, recipe_type: &str) -> bool {
+        self.host.is_some_and(|host| {
+            crate::compat::recipe_lookup::recipe_for(
+                host,
+                recipe_type,
+                &crate::compat::recipe_lookup::Input::Single(self.stack),
+            )
+            .is_some()
+        })
+    }
+
     fn enchantments_for_crafting(&self) -> Vec<String> {
         // `EnchantmentHelper.getEnchantmentsForCrafting`: a book's stored ones, else the item's own.
         let stored = self.stack.stored_enchantments();
@@ -326,9 +339,9 @@ impl Facts for ItemFacts<'_> {
             Singleton::Washable => self.recipe("create:splashing"),
             Singleton::Hauntable => self.recipe("create:haunting"),
             Singleton::Crushable => self.recipe("create:crushing") || self.recipe("create:milling"),
-            Singleton::Smeltable => self.recipe("create:baked_smelting"),
-            Singleton::Smokable => self.recipe("create:baked_smoking"),
-            Singleton::Blastable => self.recipe("create:baked_blasting"),
+            Singleton::Smeltable => self.cooks("minecraft:smelting"),
+            Singleton::Smokable => self.cooks("minecraft:smoking"),
+            Singleton::Blastable => self.cooks("minecraft:blasting"),
             Singleton::Compostable => arm_items::compostable(item),
         }
     }

@@ -54,7 +54,6 @@ NAMES = {
 
 RECIPES = {
     **_data("_saw_recipes.py", "CUTTING"),
-    **_data("_saw_recipes.py", "STONECUTTING"),
     # RuntimeDataGenerator.cuttingRecipes: written at load time in Create, baked here.
     **_data("_saw_recipes.py", "WOOD"),
     # `recipe/crafting/kinetics/mechanical_saw`, in Horizon's 26.3 form.

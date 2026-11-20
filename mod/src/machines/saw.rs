@@ -13,10 +13,12 @@
 //! - The recipe filter slot (`SawFilterSlot`, a value box, `machines/value_box.rs`) keeps the recipes whose first
 //!   result the filter accepts (`RecipeConditions.outputMatchesFilter`); a stack with several recipes left
 //!   cycles through them.
-//! - Stonecutting recipes are baked into `create:cutting` recipes of 50 ticks
-//!   (`_saw_recipes_gen.py`): `Host` cannot list the game's stonecutting recipes. A data pack that
-//!   changes stonecutting is not seen. The wood recipes Create writes at load time
-//!   (`RuntimeDataGenerator.cuttingRecipes`) are baked the same way, for vanilla woods only.
+//! - Stonecutting recipes (`allowStonecuttingOnSaw`) are the game's own, read through
+//!   `Host::recipes_of_type("minecraft:stonecutting")` (data packs included) and listed after the
+//!   `create:cutting` ones, where Create lists both in the recipe manager's order; they take 50
+//!   ticks and make their result once per item (`SawBlockEntity.start`). The wood recipes Create
+//!   writes at load time (`RuntimeDataGenerator.cuttingRecipes`) are baked as `create:cutting`
+//!   recipes (`_saw_recipes_gen.py`), for vanilla woods only.
 //! - Items are taken from the world by a scan of what lies on the blade every 2 ticks, not when
 //!   they land (`updateEntityAfterFallOn`). Belts hand items to the saw (`belt::handle_insertion`)
 //!   and the saw hands its results to a belt or depot beyond it; with none it drops them.
@@ -39,6 +41,7 @@ use create_kinetics::rules::drill as drill_rules;
 use create_kinetics::rules::saw::{self as rules, Cut, SLOTS, Step, TOP_SCAN};
 use create_kinetics::rules::saw_tree::{self as tree, Class, World};
 use create_kinetics::rules::sequenced::Machine;
+use create_kinetics::rules::vanilla_recipes;
 use create_kinetics::{Dir, Kind, Node, Pos, looking};
 use crate::compat::{
     BlockEntityContainerEvent, BlockEntityDraw, BlockEntityEvent, BlockEntitySubmitEvent,
@@ -337,7 +340,51 @@ fn recipes_for(host: &dyn Host, input: &ItemStack, filter: &super::chute_inv::Fi
         }
         found.push(Candidate { processing: parsed, step: None });
     }
+    if vanilla_recipes::ALLOW_STONECUTTING_ON_SAW {
+        for recipe in host.recipes_of_type(STONECUTTING) {
+            if let Some(processing) = stonecutting(host, &recipe.id, &recipe.json, input, filter) {
+                found.push(Candidate { processing, step: None });
+            }
+        }
+    }
     found
+}
+
+/// `RecipeType.STONECUTTING` recipes, which the saw also cuts (`allowStonecuttingOnSaw`).
+const STONECUTTING: &str = "minecraft:stonecutting";
+/// `SawBlockEntity.start`: `int time = 50` for a recipe that isn't a `CuttingRecipe`.
+const STONECUTTING_TIME: i32 = 50;
+
+/// A stonecutting recipe that cuts `input` as a processing recipe of one result (a `StonecutterRecipe`
+/// gives `getResultItem` once per item): its ingredient takes the item, it is for automation and the
+/// recipe filter accepts what it makes.
+fn stonecutting(
+    host: &dyn Host,
+    id: &str,
+    json: &crate::compat::serde_json::Value,
+    input: &ItemStack,
+    filter: &super::chute_inv::Filter,
+) -> Option<recipes::Processing> {
+    if !vanilla_recipes::can_be_automated(id) {
+        return None;
+    }
+    let ingredient = host.recipe_ingredient(&recipes::modern_ingredient(json.get("ingredient")?))?;
+    if !ingredient.test(input) {
+        return None;
+    }
+    let stack = host.recipe_result(json.get("result")?)?;
+    if !filter.test(host, &stack) {
+        return None;
+    }
+    Some(recipes::Processing {
+        id: id.to_owned(),
+        ingredients: vec![ingredient],
+        fluid_ingredients: Vec::new(),
+        results: vec![recipes::Output { stack, chance: 1.0 }],
+        fluid_results: Vec::new(),
+        processing_time: STONECUTTING_TIME,
+        heat: recipes::Heat::None,
+    })
 }
 
 /// `SawBlockEntity.start`: a cut begins for the item in slot 0.

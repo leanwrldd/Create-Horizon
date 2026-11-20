@@ -10,7 +10,7 @@ Create `mc1.21.1/dev` at 4148fd8: `AllBlocks.MECHANICAL_CRAFTER` (`SharedPropert
 The item `create:crafter_slot_cover` is in `materials.py`. The `create:mechanical_crafting`
 recipe of the Crushing Wheel is in `crushing_wheel.py`; Create's other three (Extendo Grip, Potato
 Cannon, Wand of Symmetry) make items this mod doesn't have. The vanilla crafting recipes the
-crafter also accepts are baked in `_crafter_recipes.py` (see `_crafter_recipes_gen.py`).
+crafter also accepts are matched by the engine (`LevelRef::recipe_for`), not baked.
 The behaviour is `native/api/src/machines/crafter*.rs`.
 """
 
@@ -23,15 +23,6 @@ TERRACOTTA_YELLOW = 40  # MapColor.TERRACOTTA_YELLOW
 # `SharedProperties.softMetal`: a gold block.
 SOFT_METAL = {"hardness": 3.0, "explosion_resistance": 6.0, "requires_tool": True,
               "sounds": "minecraft:gold_block"}
-
-
-def _data(name, const):
-    """A generated recipe table beside this file (the plugin loader skips `_` files)."""
-    path = Path(__file__).with_name(name)
-    spec = importlib.util.spec_from_file_location(f"create_content_{path.stem}", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return getattr(module, const)
 
 
 BLOCKS = {
@@ -67,5 +58,4 @@ RECIPES = {
                 "R": "#c:player_workstations/crafting_tables"},
         "result": {"id": "create:mechanical_crafter", "count": 3},
     },
-    **_data("_crafter_recipes.py", "BAKED"),
 }

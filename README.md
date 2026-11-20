@@ -201,20 +201,16 @@ and unit-tested only.
 
 Broad gaps across these modules:
 
-- No vanilla crafting, smelting, smoking or blasting recipe can be read by a mod, so the mixer doesn't do
-  shapeless crafting. (The Mechanical Crafter bakes the shaped and shapeless crafting recipes of the
-  prepared game data, 1,202 of them, as `create:crafter_baked_*` recipes:
-  `tools/content/_crafter_recipes_gen.py`; the fan bakes the smelting, smoking and blasting ones as
-  `create:baked_smelting`, `create:baked_smoking` and `create:baked_blasting`, and the items immune to
-  fire as the tag `create:fan_fire_resistant`: `tools/content/_fan_cooking_gen.py`. These copies are
-  temporary: drop them when the project moves to the new mod API's `recipe_for`. A data pack's changes
-  to vanilla's recipes are not seen until then.)
+- Vanilla's recipes are read through the new mod API (`LevelRef::recipe_for`, `Host::recipes_of_type`), data
+  packs included: the Mechanical Crafter's crafting (grids up to 3x3), the Encased Fan's smoking and blasting,
+  the Attribute Filter's smeltable, smokable and blastable, the saw's stonecutting, the Crafting Blueprint, the
+  mixer's shapeless crafting and the press's compressing of four or nine identical ingredients. Only the items
+  immune to fire are still a baked tag, `create:fan_fire_resistant` (`tools/content/_fan_cooking_gen.py`).
 - Copper shingles and tiles don't weather or wax, metal scaffolding has no collision, sliding doors swing
   like vanilla doors, and no connected textures are drawn.
 - Redstone and neighbour changes are polled each tick rather than heard.
-- Vanilla stonecutting recipes are baked into the saw's data (678 of them), and block hardness for the drill is a
-  baked table: Horizon gives a mod neither. The wood cutting and concrete washing recipes Create writes at load
-  time (`RuntimeDataGenerator`) are baked for vanilla's items.
+- The wood cutting and concrete washing recipes Create writes at load time (`RuntimeDataGenerator`) are baked
+  for vanilla's items.
 - Honey and chocolate flow and pour, but Horizon draws a mod fluid as its template (water), and an empty bucket
   didn't pick them back up in the test.
 - Tunnels (`native/api/src/machines/tunnel.rs` lists them all): their shape, sides and flaps follow the

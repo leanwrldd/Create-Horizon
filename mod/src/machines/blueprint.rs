@@ -2,7 +2,7 @@
 //! wall, floor or ceiling that holds a crafting recipe as ghost items and crafts it from what the
 //! player carries. The rules are `create_kinetics::rules::blueprint`; its header lists the known
 //! differences from Create (a block stands in for the hanging entity, there is no screen, the
-//! recipes are the baked crafting tables).
+//! recipes are vanilla's crafting recipes).
 //!
 //! Using it (stand-in for Create's menu; the lines show on the action bar):
 //! - a click crafts the recipe once from the carried items, a sneaking click with an empty hand
@@ -33,10 +33,11 @@ pub const ID: &str = "create:crafting_blueprint";
 const SLOTS: &str = "Slots";
 const VARIANT: &str = "Variant";
 const FOR: &str = "For";
-/// The baked crafting tables (`crafter_recipes.rs`), to drop when the project reads vanilla's
-/// recipes through the new mod API's `recipe_for`.
-const BAKED_SHAPED: &str = "create:crafter_baked_shaped";
-const BAKED_SHAPELESS: &str = "create:crafter_baked_shapeless";
+/// Vanilla's crafting recipes (`Host::recipes_of_type`, data packs included), told apart by their
+/// file's `type`: the Blueprint's "assign recipe" reads them by what they make.
+const CRAFTING: &str = "minecraft:crafting";
+const SHAPED: &str = "minecraft:crafting_shaped";
+const SHAPELESS: &str = "minecraft:crafting_shapeless";
 /// `SoundSource.PLAYERS`.
 const PLAYERS: usize = 7;
 const SUPPORT_EVERY: i64 = 20;
@@ -86,7 +87,7 @@ fn set_slots(nbt: &mut Compound, slots: &[Option<ItemStack>; 10]) {
 
 // --- the recipes ----------------------------------------------------------------------------------
 
-/// The entries an ingredient of a baked recipe accepts: an item, `#tag`, or a list of them.
+/// The entries an ingredient of a crafting recipe accepts: an item, `#tag`, or a list of them.
 fn accepted(ingredient: &Value) -> Vec<String> {
     match ingredient {
         Value::String(entry) => vec![entry.clone()],
@@ -116,16 +117,19 @@ fn ghost_stack(host: &dyn Host, ghost: &Ghost) -> Option<ItemStack> {
     })
 }
 
-/// Every baked crafting recipe whose result is `item`, as the ten ghost slots it fills.
+/// Every crafting recipe (shaped, then shapeless) whose result is `item`, as the ten ghost slots it fills.
 fn recipes_making(host: &dyn Host, item: &str) -> Vec<[Option<Ghost>; 10]> {
     let mut found = Vec::new();
-    for kind in [BAKED_SHAPED, BAKED_SHAPELESS] {
-        for recipe in host.recipes_of_type(kind) {
+    for kind in [SHAPED, SHAPELESS] {
+        for recipe in host.recipes_of_type(CRAFTING) {
             let json = &recipe.json;
+            if json.get("type").and_then(Value::as_str) != Some(kind) {
+                continue;
+            }
             if json.get("result").and_then(|r| r.get("id")).and_then(Value::as_str) != Some(item) {
                 continue;
             }
-            let ghosts = if kind == BAKED_SHAPED {
+            let ghosts = if kind == SHAPED {
                 let (Some(pattern), Some(key)) = (
                     json.get("pattern").and_then(Value::as_array),
                     json.get("key").and_then(Value::as_object),
@@ -200,9 +204,14 @@ fn assign(host: &mut dyn Host, pos: Pos, item: &ItemStack) {
 /// How many items the `variant`th recipe for `item` makes.
 fn result_count(host: &dyn Host, item: &str, variant: usize) -> Option<u32> {
     let mut all = Vec::new();
-    for kind in [BAKED_SHAPED, BAKED_SHAPELESS] {
-        for recipe in host.recipes_of_type(kind) {
-            let result = recipe.json.get("result")?;
+    for kind in [SHAPED, SHAPELESS] {
+        for recipe in host.recipes_of_type(CRAFTING) {
+            if recipe.json.get("type").and_then(Value::as_str) != Some(kind) {
+                continue;
+            }
+            let Some(result) = recipe.json.get("result") else {
+                continue;
+            };
             if result.get("id").and_then(Value::as_str) == Some(item) {
                 all.push(result.get("count").and_then(Value::as_u64).unwrap_or(1) as u32);
             }

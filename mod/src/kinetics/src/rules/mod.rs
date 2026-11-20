@@ -143,6 +143,7 @@ pub mod value_box;
 pub mod value_box_blocks;
 pub mod value_box_board;
 pub mod value_box_input;
+pub mod vanilla_recipes;
 pub mod vertical_gearbox;
 pub mod weighted_ejector;
 pub mod windmill;

@@ -1,9 +1,0 @@
-{
-  "type": "create:crafter_baked_shapeless",
-  "ingredients": [
-    "minecraft:open_eyeblossom"
-  ],
-  "result": {
-    "id": "minecraft:orange_dye"
-  }
-}

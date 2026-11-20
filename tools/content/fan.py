@@ -109,12 +109,7 @@ def _cooking():
     return module
 
 
-# Vanilla's smelting, smoking and blasting recipes, copied from the prepared game data as
-# `create:baked_*` recipes (`_fan_cooking_gen.py`): Horizon gives a mod no way to read them, and
-# the fan's smoking and blasting (`SmokingType`, `BlastingType`) ask for them. TEMPORARY: drop
-# these, the file and the tag below when the project moves to the new mod API's `recipe_for`.
 _COOKING = _cooking()
-RECIPES.update(_COOKING.COOKING)
 
 # `RuntimeDataGenerator.washingRecipes`: Create writes a splashing recipe from each concrete
 # powder to its concrete at load time, so its datagen output has none. Vanilla's 16 colours.
@@ -154,7 +149,7 @@ TAGS = {
     ],
     # What `BlastingType.canProcess` spares: Create 1.21.1's `DataComponents.FIRE_RESISTANT` became
     # `minecraft:damage_resistant` against `#minecraft:is_fire`, baked from the game's items
-    # (`_fan_cooking_gen.py`). TEMPORARY, as `_COOKING`.
+    # (`_fan_cooking_gen.py`).
     "create:item/fan_fire_resistant": _COOKING.FIRE_RESISTANT,
     # `AllBlocks.NOZZLE`: `.tag(AllBlockTags.BRITTLE.tag)`.
     "create:block/brittle": ["create:nozzle"],
