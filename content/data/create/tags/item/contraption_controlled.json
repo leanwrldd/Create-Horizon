@@ -19,6 +19,7 @@
     "create:mechanical_plough",
     "create:portable_storage_interface",
     "create:portable_fluid_interface",
-    "create:redstone_contact"
+    "create:redstone_contact",
+    "create:mechanical_roller"
   ]
 }

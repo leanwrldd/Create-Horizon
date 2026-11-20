@@ -204,6 +204,10 @@ fn write_scroll(host: &mut dyn Host, pos: Pos, block: &str, value: i32) {
     if block == "create:brass_tunnel" {
         tunnel_distribute::set_mode_group(host, pos, create_kinetics::rules::tunnel_brass::Mode::from_ordinal(value));
     }
+    // `RollerBlockEntity.onModeChanged`: the rollers along the same line take the mode and filter too.
+    if block == "create:mechanical_roller" {
+        super::roller::share_to_adjacent(host, pos);
+    }
     host.block_entity_sync(pos);
 }
 
@@ -229,6 +233,10 @@ fn write_filter(host: &mut dyn Host, pos: Pos, def: &BoxDef, side: Dir, item: Op
         current.item = one;
         current.amount = chute_rules::Amount { count: after.count, up_to: after.up_to };
         host.change_mod_block_entity(pos, &mut |e| chute_inv::write_filter(&mut e.nbt, &current));
+        // `RollerBlockEntity.onFilterChanged`.
+        if matches!(def.slot, Slot::Roller { .. }) {
+            super::roller::share_to_adjacent(host, pos);
+        }
     }
     host.block_entity_sync(pos);
 }
@@ -286,6 +294,14 @@ pub fn short_click(host: &mut dyn Host, player: &NativeServerPlayer, pos: Pos, d
         one.count = 1;
         one
     });
+    // `FilteringBehaviour.setFilter`'s predicate: the Roller takes only a block it can pave with.
+    if matches!(def.slot, Slot::Roller { .. })
+        && let Some(item) = &new
+        && !super::roller::accepts(&*host, &item.item)
+    {
+        super::roller::deny(host, player);
+        return;
+    }
     write_filter(host, pos, def, side, new.as_ref());
     if consume && let Some(held) = &stack {
         lock(&SHRINK).push((uuid, usize::from(player.selected_slot), held.item.to_string()));

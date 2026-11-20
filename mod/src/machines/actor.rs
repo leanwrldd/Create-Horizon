@@ -185,6 +185,18 @@ impl Store {
         rest
     }
 
+    /// `ItemHelper.extract(inventory, test, 1, true)` not empty: whether an item that passes `test` is in the
+    /// structure's storage, taking none.
+    pub fn has(&mut self, host: &dyn Host, test: &dyn Fn(&ItemStack) -> bool) -> bool {
+        let items = self.items(host);
+        items
+            .inventory
+            .slots
+            .iter()
+            .filter_map(|slot| slot.stack.as_ref().filter(|stack| stack.count > 0))
+            .any(|stack| items.to_stack(stack).is_some_and(|game| test(&game)))
+    }
+
     /// `ItemHelper.extract(inventory, test, mode, amount, false)`: up to (or exactly, when `exact`)
     /// `amount` items that pass `test`, taken slot by slot, all of the kind of the first found.
     pub fn extract(

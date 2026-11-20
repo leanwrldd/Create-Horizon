@@ -20,6 +20,8 @@ pub enum FilterKind {
     Items,
     Recipes,
     Fluids,
+    /// `RollerBlockEntity`'s filter: the block to pave with.
+    Paving,
 }
 
 impl FilterKind {
@@ -29,6 +31,7 @@ impl FilterKind {
             FilterKind::Items => "create.logistics.filter",
             FilterKind::Recipes => "create.logistics.recipe_filter",
             FilterKind::Fluids => "create.logistics.fluid_filter",
+            FilterKind::Paving => super::roller::FILTER_LABEL,
         }
     }
 }
@@ -184,6 +187,20 @@ static OBSERVER: [BoxDef; 1] = [filter(Slot::FilteredDetector { bottom: false },
 static STOCKPILE_SWITCH: [BoxDef; 1] =
     [filter(Slot::FilteredDetector { bottom: true }, FilterKind::Items, never, always)];
 static SMART_FLUID_PIPE: [BoxDef; 1] = [filter(Slot::SmartPipe, FilterKind::Fluids, never, always)];
+// `RollerBlockEntity.addBehaviours`: the paving filter (`RollerValueBox(3)`) and the mode (`RollerValueBox(-3)`), a
+// `ScrollOptionBehaviour<RollingMode>`.
+static ROLLER: [BoxDef; 2] = [
+    filter(Slot::Roller { h_offset: 3 }, FilterKind::Paving, never, always),
+    BoxDef {
+        net_id: 0,
+        slot: Slot::Roller { h_offset: -3 },
+        kind: Kind::Value {
+            label: super::roller::MODE_LABEL,
+            behaviour: Behaviour::Options { options: &super::roller::MODE_KEYS },
+        },
+        active: always,
+    },
+];
 
 /// The value boxes of block `block`, none for a block without any.
 pub fn boxes(block: &str) -> &'static [BoxDef] {
@@ -199,6 +216,7 @@ pub fn boxes(block: &str) -> &'static [BoxDef] {
         "create:content_observer" => &OBSERVER,
         "create:stockpile_switch" => &STOCKPILE_SWITCH,
         "create:smart_fluid_pipe" => &SMART_FLUID_PIPE,
+        "create:mechanical_roller" => &ROLLER,
         _ => &[],
     }
 }
@@ -260,6 +278,7 @@ mod tests {
             "create:content_observer",
             "create:stockpile_switch",
             "create:smart_fluid_pipe",
+            "create:mechanical_roller",
         ] {
             assert!(has_boxes(block), "{block}");
         }
@@ -284,6 +303,35 @@ mod tests {
             "create.kinetics.speed_controller.rotation_speed"
         );
         assert!(!def.shows_count(&p));
+    }
+
+    #[test]
+    fn the_roller_has_a_paving_filter_and_a_three_option_mode() {
+        let defs = boxes("create:mechanical_roller");
+        assert_eq!(defs.len(), 2);
+        assert!(defs[0].is_filter());
+        assert_eq!(defs[0].net_id, 1);
+        assert_eq!(defs[0].label(), "create.contraptions.mechanical_roller.pave_material");
+        assert_eq!(defs[1].net_id, 0);
+        assert_eq!(defs[1].label(), "create.contraptions.roller_mode");
+        let Kind::Value { behaviour: Behaviour::Options { options }, .. } = defs[1].kind else {
+            panic!("an option box")
+        };
+        assert_eq!(options.len(), 3);
+        // The filter shows no amount.
+        let get = |_: &str| None;
+        assert!(!defs[0].shows_count(&props("create:mechanical_roller", &get)));
+    }
+
+    #[test]
+    fn the_roller_boxes_are_hit_on_top_whatever_face_the_ray_names() {
+        let get = |key: &str| (key == "facing").then(|| "north".to_owned());
+        let p = props("create:mechanical_roller", &get);
+        let filter = hit_box("create:mechanical_roller", &p, Dir::Up, [11.0 / 16.0, 15.5 / 16.0, 11.0 / 16.0]).unwrap();
+        assert_eq!(filter.net_id, 1);
+        let mode = hit_box("create:mechanical_roller", &p, Dir::Up, [5.0 / 16.0, 15.5 / 16.0, 11.0 / 16.0]).unwrap();
+        assert_eq!(mode.net_id, 0);
+        assert!(hit_box("create:mechanical_roller", &p, Dir::Up, [0.5, 15.5 / 16.0, 0.5]).is_none());
     }
 
     #[test]

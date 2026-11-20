@@ -451,6 +451,7 @@
             "create:pulley_magnet",
             "create:mechanical_pump",
             "create:redstone_contact",
+            "create:mechanical_roller",
             "create:mechanical_saw",
             "create:schematicannon",
             "create:sequenced_gearshift",

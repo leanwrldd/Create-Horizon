@@ -1,6 +1,6 @@
 //! The actors that need more than a block break or a pick-up: the Redstone Contact
 //! (`ContactMovementBehaviour`) and the Contraption Controls (which only decide what is disabled,
-//! `actor.rs`). The Roller and the Seat's riders are not ported. The rest are in `actor_tools.rs`.
+//! `actor.rs`). The Roller is `roller_actor.rs`; the rest are in `actor_tools.rs`.
 
 use create_kinetics::rules::actor::Kind;
 use create_kinetics::rules::redstone_contact as rules;

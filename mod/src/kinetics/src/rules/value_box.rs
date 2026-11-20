@@ -175,6 +175,9 @@ pub enum Slot {
     FilteredDetector { bottom: bool },
     /// `SmartFluidPipeBlockEntity.SmartPipeFilterSlot`.
     SmartPipe,
+    /// `RollerBlockEntity.RollerValueBox(hOffset)`: on top of the block, 3 pixels to one side of its middle for the
+    /// filter (`hOffset` 3) and 3 to the other for the mode (-3), turned with the block's facing.
+    Roller { h_offset: i32 },
     /// `CenteredSideValueBoxTransform(allowed)`, with the plain default of (8, 8, 15.5).
     Centered(Sides),
 }
@@ -199,7 +202,7 @@ fn sided_rotation(side: Dir) -> Vec<(Axis, f64)> {
 impl Slot {
     /// Whether the box depends on the face of the block that was looked at (`ValueBoxTransform.Sided`).
     pub fn sided(self) -> bool {
-        !matches!(self, Slot::Saw | Slot::SmartPipe)
+        !matches!(self, Slot::Saw | Slot::SmartPipe | Slot::Roller { .. })
     }
 
     /// `ValueBoxTransform.getScale`.
@@ -208,6 +211,15 @@ impl Slot {
             // `SmartPipeFilterSlot.getScale`: `super.getScale() * 1.02f`.
             Slot::SmartPipe => SCALE * 1.02,
             _ => SCALE,
+        }
+    }
+
+    /// What `testHit` divides the scale by: 2, and 3 for the Roller's (`RollerValueBox.testHit`:
+    /// `distanceTo(offset) < scale / 3`), whose two boxes sit close together.
+    fn hit_divisor(self) -> f64 {
+        match self {
+            Slot::Roller { .. } => 3.0,
+            _ => 2.0,
         }
     }
 
@@ -239,7 +251,7 @@ impl Slot {
             // `BrassTunnelBlockEntity.isValidFaceForFilter`: the sides the tunnel has an opening on.
             Slot::BrassTunnelFilter => p.flag(&format!("fact:side_{}", side.name())),
             Slot::BrassTunnelMode => side == Dir::Up,
-            Slot::Saw | Slot::SmartPipe => true,
+            Slot::Saw | Slot::SmartPipe | Slot::Roller { .. } => true,
             Slot::Deployer => {
                 let Some(facing) = p.dir("facing") else {
                     return false;
@@ -336,6 +348,10 @@ impl Slot {
                 Some(rotate_centered(voxel_space(8.0, y, 15.5), horizontal_angle(side), Axis::Y))
             }
             Slot::FilteredDetector { .. } => Some(sided_offset(voxel_space(8.0, 8.0, 15.5), side)),
+            Slot::Roller { h_offset } => {
+                let angle = horizontal_angle(p.dir("facing")?) + 180.0;
+                Some(rotate_centered(voxel_space(8.0 + f64::from(h_offset), 15.5, 11.0), angle, Axis::Y))
+            }
             Slot::SmartPipe => {
                 let face = p.text("face").unwrap_or_else(|| "floor".into());
                 let (y, z) = match face.as_str() {
@@ -385,6 +401,11 @@ impl Slot {
                 }
                 turns
             }
+            Slot::Roller { .. } => {
+                // `RollerValueBox.rotate`: `rotateYDegrees(horizontalAngle(facing) + 180).rotateXDegrees(90)`.
+                let angle = horizontal_angle(p.dir("facing").unwrap_or(Dir::North)) + 180.0;
+                vec![(Axis::Y, angle), (Axis::X, 90.0)]
+            }
             Slot::SmartPipe => {
                 let x = if p.is("face", "ceiling") { -45.0 } else { 45.0 };
                 vec![(Axis::Y, smart_pipe_angle_y(p)), (Axis::X, x)]
@@ -409,7 +430,7 @@ impl Slot {
         let Some(offset) = self.offset(p, side) else {
             return false;
         };
-        distance(local_hit, offset) < self.scale() / 2.0
+        distance(local_hit, offset) < self.scale() / self.hit_divisor()
     }
 
     /// `ValueBoxTransform.shouldRender`: the box is there for this face.
@@ -704,6 +725,31 @@ mod tests {
         assert!(!Slot::SpeedController.side_active(&p, Dir::East));
         assert!(!Slot::SpeedController.side_active(&p, Dir::Up));
         assert!(near(Slot::SpeedController.offset(&p, Dir::South).unwrap(), [0.5, 11.0 / 16.0, 15.5 / 16.0]));
+    }
+
+    #[test]
+    fn the_roller_has_two_boxes_on_top_turned_with_its_facing() {
+        let facing = |name: &'static str| move |key: &str| (key == "facing").then(|| name.to_owned());
+        let filter = Slot::Roller { h_offset: 3 };
+        let mode = Slot::Roller { h_offset: -3 };
+        // North: `horizontalAngle + 180` is a full turn, so the boxes sit as written: x 11 and 5 px, z 11 px.
+        let get = facing("north");
+        let p = props("create:mechanical_roller", &get);
+        assert!(near(filter.offset(&p, Dir::Up).unwrap(), [11.0 / 16.0, 15.5 / 16.0, 11.0 / 16.0]));
+        assert!(near(mode.offset(&p, Dir::Up).unwrap(), [5.0 / 16.0, 15.5 / 16.0, 11.0 / 16.0]));
+        assert_eq!(filter.rotations(&p, Dir::Up), vec![(Axis::Y, 360.0), (Axis::X, 90.0)]);
+        // South: half a turn about the block's centre.
+        let get = facing("south");
+        let p = props("create:mechanical_roller", &get);
+        assert!(near(filter.offset(&p, Dir::Up).unwrap(), [5.0 / 16.0, 15.5 / 16.0, 5.0 / 16.0]));
+        // Not sided: it answers whatever face the ray met, and counts a hit within a sixth of a block
+        // (`scale / 3`), not a quarter.
+        assert!(!filter.sided());
+        assert!(filter.exists(&p, Dir::North));
+        assert!(filter.test_hit(&p, Dir::Up, [5.0 / 16.0 + 0.15, 15.5 / 16.0, 5.0 / 16.0]));
+        assert!(!filter.test_hit(&p, Dir::Up, [5.0 / 16.0 + 0.2, 15.5 / 16.0, 5.0 / 16.0]));
+        assert!(!mode.test_hit(&p, Dir::Up, [5.0 / 16.0, 15.5 / 16.0, 5.0 / 16.0]));
+        assert!(mode.test_hit(&p, Dir::Up, [11.0 / 16.0, 15.5 / 16.0, 5.0 / 16.0]));
     }
 
     #[test]

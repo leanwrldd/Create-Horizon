@@ -111,6 +111,7 @@ mechanical_mixer
 mechanical_piston
 mechanical_press
 mechanical_pump
+mechanical_roller
 mechanical_saw
 metal_girder_encased_shaft
 millstone
