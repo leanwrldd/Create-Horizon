@@ -647,6 +647,18 @@ impl Host for Adapter<'_> {
         let Some(entity) = host.block_entity(level, pos) else { return false };
         entity.replace_data(host, data).unwrap_or(false)
     }
+    fn block_entity_nbt(&mut self, dimension: &str, pos: [i32; 3]) -> Option<String> {
+        let tag = self.block_entity_tag(dimension, pos)?;
+        Some(crate::machines::display_link_target::to_snbt(&tag))
+    }
+    fn set_block_entity(&mut self, dimension: &str, pos: [i32; 3], nbt: &str) -> bool {
+        // `/data merge block`: the fields given are written over the entity's, the rest stay.
+        let Ok((Tag::Compound(data), _)) = parse_snbt(nbt) else { return false };
+        let Some(host) = self.server_mut() else { return false };
+        let Some(level) = host.level(dimension) else { return false };
+        let Some(entity) = host.block_entity(level, pos) else { return false };
+        entity.merge_data(host, data).unwrap_or(false)
+    }
     fn block_name_in_tag(&self, block: &str, tag: &str) -> Result<bool, NativeBlockReadError> {
         let host = self.base().ok_or(NativeBlockReadError::InactiveContext)?;
         let key = host.block_state_id(block).map(|state| state.block()).ok_or(NativeBlockReadError::InvalidState)?;
@@ -854,6 +866,50 @@ impl Host for Adapter<'_> {
         events::stack_old(&*host, &resource.to_stack(taken)?)
     }
 
+    // --- fluids by capability --------------------------------------------------------------------------------
+
+    /// Offers `amount` of `fluid` to the tanks of the block at `pos` from `face`; says how much was NOT taken.
+    fn fluid_insert(&mut self, pos: [i32; 3], face: Direction, fluid: &str, amount: i32) -> i32 {
+        let want = amount.max(0) as u32;
+        let Some(level) = self.level_here() else { return amount };
+        let Some(host) = self.server_mut() else { return amount };
+        let Some(key) = host.fluid_key(fluid) else { return amount };
+        let Some(cap) = level.capability(host, &mod_api::FLUIDS, pos, Some(face)) else { return amount };
+        let resource = mod_api::FluidResource::of(&mod_api::FluidStack::new(key, 1));
+        let moved = host
+            .transaction(|host, tx| -> Result<u32, ()> {
+                let mut moved = 0;
+                for tank in 0..cap.size(host) {
+                    if moved >= want {
+                        break;
+                    }
+                    moved += cap.insert(host, tx, tank, &resource, want - moved).min(want - moved);
+                }
+                Ok(moved)
+            })
+            .unwrap_or(0);
+        (want - moved) as i32
+    }
+    /// Drains up to `amount` of whatever the first filled tank of the block at `pos` holds, seen from `face`.
+    fn fluid_extract(&mut self, dimension: &str, pos: [i32; 3], face: Direction, amount: i32) -> Option<(String, i32)> {
+        let want = amount.max(0) as u32;
+        let host = self.server_mut()?;
+        let level = host.level(dimension)?;
+        let cap = level.capability(host, &mod_api::FLUIDS, pos, Some(face))?;
+        let tank = (0..cap.size(host)).find(|tank| cap.amount(host, *tank) > 0)?;
+        let resource = cap.resource(host, tank)?;
+        let taken = host.transaction(|host, tx| -> Result<u32, ()> { Ok(cap.extract(host, tx, tank, &resource, want)) }).ok()?;
+        let id = resource.to_stack(1).key()?.id(&*host);
+        (taken > 0).then_some((id, taken as i32))
+    }
+    fn apply_screen_blur(&self) -> bool {
+        match self {
+            Adapter::Client(host) => host.apply_screen_blur(),
+            Adapter::ClientMut(host) => host.apply_screen_blur(),
+            _ => false,
+        }
+    }
+
     fn set_inventory_slot_typed(
         &mut self,
         uuid: u128,
@@ -880,6 +936,43 @@ impl Host for Adapter<'_> {
         };
         player.set_inventory_slot(host, slot as u32, stack).map_err(|_| NativeInventoryError::Dead)?;
         Ok(held)
+    }
+
+    /// The Deployer's hand: a stack the fake player holds for one action (`perform_action_scoped`), its eye where the
+    /// Deployer puts it. The fake is the game's connectionless player for the level, found by this uuid.
+    fn use_as_player(
+        &mut self,
+        stack: ItemStack,
+        eye: [f64; 3],
+        yaw: f32,
+        pitch: f32,
+        target: NativeUseTarget,
+        sneaking: bool,
+    ) -> Option<NativeFakeUse> {
+        /// One fake for every deployer: `create:deployer` in a uuid.
+        const FAKE: u128 = 0x6372_6561_7465_3a64_6570_6c6f_7965_7231;
+        let host = self.server_mut()?;
+        let level = host.level(host.dimension())?;
+        let fake = host.fake_player(level, FAKE, "[Create Deployer]")?;
+        let action = match target {
+            NativeUseTarget::Block { pos, face, point } => {
+                mod_api::PlayerAction::UseOn { hand: mod_api::Hand::Main, pos, hit: mod_api::BlockHit::new(point, face.normal(), false) }
+            }
+            NativeUseTarget::Item => mod_api::PlayerAction::UseItem { hand: mod_api::Hand::Main },
+            NativeUseTarget::Entity { id, location } => mod_api::PlayerAction::InteractOn {
+                hand: mod_api::Hand::Main,
+                target: host.entity(u32::try_from(id).ok()?)?,
+                location,
+            },
+        };
+        let held = events::stack_new(&*host, &stack);
+        let setup = mod_api::PlayerActionSetup::new(held, eye, yaw, pitch, sneaking);
+        let done = fake.perform_action_scoped(host, action, setup).ok()?;
+        Some(NativeFakeUse {
+            consumed: done.outcome == mod_api::ActionOutcome::Consumed,
+            held: done.held.as_ref().and_then(|stack| events::stack_old(&*host, stack)),
+            other: done.other.iter().filter_map(|stack| events::stack_old(&*host, stack)).collect(),
+        })
     }
 
     // --- components on a stack ---------------------------------------------------------------------------------
@@ -991,6 +1084,18 @@ impl Host for Adapter<'_> {
         // `acting_player` is a server service: nobody acts on a client.
         let Adapter::Server(server) = self else { return None };
         Some(host_services::player_view(self.new_host(), server.players().acting_player()?))
+    }
+
+    fn carried_stack(&mut self, slot: i32) -> Option<&mut ItemStack> {
+        let ptr = items::carried_stack(self.new_host(), slot)?;
+        // SAFETY: the pointer is into a boxed entry that `items::inventory_tick` keeps until the hook returns.
+        Some(unsafe { &mut *ptr })
+    }
+
+    fn carried_items(&self) -> Vec<(String, u32)> {
+        let Adapter::Server(server) = self else { return Vec::new() };
+        let Some(player) = server.players().acting_player() else { return Vec::new() };
+        items::carried_items(self.new_host(), player)
     }
 
     fn held_stack(&self, uuid: u128) -> Option<ItemStack> {

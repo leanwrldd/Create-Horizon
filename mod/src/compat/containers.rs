@@ -221,7 +221,7 @@ struct CustomFluids {
     at: BlockSide,
 }
 
-fn stack_of_fluid(host: &dyn mod_api::Host, stack: &FluidStack) -> Option<NativeFluidStack> {
+pub(super) fn stack_of_fluid(host: &dyn mod_api::Host, stack: &FluidStack) -> Option<NativeFluidStack> {
     Some(NativeFluidStack {
         fluid: stack.key()?.id(host),
         amount: stack.amount as i32,

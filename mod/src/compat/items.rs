@@ -85,9 +85,85 @@ pub fn use_on(host: HostSide<'_>, event: &mut mod_api::UseOnEvent<'_>) -> Option
     }
 }
 
+/// The slots the old `Host::carried_stack` handed out during one `inventory_tick`: the old stack as the module
+/// edits it, and what it was when read. Written back after the hook if it changed.
+struct Carried {
+    slot: i32,
+    stack: Option<ItemStack>,
+    before: Option<ItemStack>,
+}
+
+/// The tick in progress: whose inventory, which slot is the hook's own and its (new) stack, valid for the hook only.
+struct TickScope {
+    player: PlayerRef,
+    slot: i32,
+    stack: *const mod_api::ItemStack,
+    carried: Vec<Box<Carried>>,
+}
+
+thread_local! {
+    static TICK: std::cell::RefCell<Option<TickScope>> = const { std::cell::RefCell::new(None) };
+}
+
+/// `Host::carried_stack`: the stack in `slot` of the player whose `inventory_tick` is running, to read and change in
+/// place (the change is written to the slot when the hook returns). `None` outside the hook and for an empty slot.
+/// The pointer lives until the hook returns.
+pub fn carried_stack(host: &dyn mod_api::Host, slot: i32) -> Option<*mut ItemStack> {
+    TICK.with(|cell| {
+        let mut scope = cell.borrow_mut();
+        let scope = scope.as_mut()?;
+        if let Some(have) = scope.carried.iter_mut().find(|carried| carried.slot == slot) {
+            return have.stack.as_mut().map(|stack| stack as *mut ItemStack);
+        }
+        let old = if slot == scope.slot {
+            // SAFETY: `inventory_tick` below keeps the event's stack alive until it drops the scope.
+            stack_old(host, unsafe { &*scope.stack })
+        } else {
+            let number = create_kinetics::rules::inventory_slots::inventory_number(slot)?;
+            let (_, found) = scope.player.inventory_slots(host)?.into_iter().find(|(index, _)| *index == number)?;
+            stack_old(host, &found)
+        };
+        scope.carried.push(Box::new(Carried { slot, before: old.clone(), stack: old }));
+        scope.carried.last_mut()?.stack.as_mut().map(|stack| stack as *mut ItemStack)
+    })
+}
+
+/// `Host::carried_items`: the plain stacks of the main inventory of the acting player, summed by item.
+pub fn carried_items(host: &dyn mod_api::Host, player: PlayerRef) -> Vec<(String, u32)> {
+    let stacks: Vec<ItemStack> = player
+        .inventory_slots(host)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(slot, _)| *slot < 36)
+        .filter_map(|(_, stack)| stack_old(host, &stack))
+        .filter(|stack| stack.damage == 0 && stack.extra.is_none())
+        .collect();
+    create_kinetics::rules::inventory_slots::tally(stacks.iter().map(|stack| (&*stack.item, stack.count)))
+}
+
 pub fn inventory_tick(host: &mut dyn ServerHost, event: &mut mod_api::InventoryTickEvent<'_>) {
     let mut old = InventoryTickEvent { slot: event.slot, selected: event.selected };
-    create().inventory_tick(&mut Adapter::Server(host), &mut old);
+    let player = host.players().acting_player();
+    if let Some(player) = player {
+        TICK.with(|cell| {
+            *cell.borrow_mut() =
+                Some(TickScope { player, slot: event.slot, stack: event.stack as *const _, carried: Vec::new() });
+        });
+    }
+    create().inventory_tick(&mut Adapter::Server(&mut *host), &mut old);
+    let Some(player) = player else { return };
+    let Some(scope) = TICK.with(|cell| cell.borrow_mut().take()) else { return };
+    for carried in scope.carried {
+        let Carried { slot, stack, before } = *carried;
+        if stack == before {
+            continue;
+        }
+        let Some(number) = create_kinetics::rules::inventory_slots::inventory_number(slot) else { continue };
+        let new = stack.as_ref().and_then(|stack| stack_new(&*host, stack));
+        if let Err(refusal) = player.set_inventory_slot(&mut *host, number, new) {
+            eprintln!("create: carried stack in slot {slot} was not written: {refusal:?}");
+        }
+    }
 }
 
 pub fn tooltip(host: &dyn ClientHost, event: &mut mod_api::TooltipEvent<'_>) {

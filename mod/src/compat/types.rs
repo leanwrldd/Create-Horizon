@@ -988,8 +988,34 @@ impl<'a> CubeFace<'a> {
     }
 }
 
-/// `parse_snbt` of the old API: text NBT. The new API has no parser reachable from a mod (gap): always an error.
-pub fn parse_snbt(_text: &str) -> Result<(Tag, usize), String> {
-    gap("parse_snbt");
-    Err("SNBT parsing is not available in the new API".into())
+/// A parsed SNBT tree as the game's tag.
+fn tag_of(value: create_kinetics::rules::snbt::Value) -> Tag {
+    use create_kinetics::rules::snbt::Value;
+    match value {
+        Value::Byte(v) => Tag::Byte(v),
+        Value::Short(v) => Tag::Short(v),
+        Value::Int(v) => Tag::Int(v),
+        Value::Long(v) => Tag::Long(v),
+        Value::Float(v) => Tag::Float(v.to_bits()),
+        Value::Double(v) => Tag::Double(v.to_bits()),
+        Value::Str(v) => Tag::String(v.as_str().into()),
+        Value::ByteArray(v) => Tag::ByteArray(v.into_iter().map(|b| b as u8).collect()),
+        Value::IntArray(v) => Tag::IntArray(v),
+        Value::LongArray(v) => Tag::LongArray(v),
+        Value::List(v) => Tag::List(v.into_iter().map(tag_of).collect()),
+        Value::Compound(fields) => {
+            let mut out = Compound::new();
+            for (key, value) in fields {
+                out.insert(key.as_str().into(), tag_of(value));
+            }
+            Tag::Compound(out)
+        }
+    }
+}
+
+/// `parse_snbt` of the old API: text NBT and the bytes it read. The new API hands a mod no parser, so
+/// `create_kinetics::rules::snbt` reads it.
+pub fn parse_snbt(text: &str) -> Result<(Tag, usize), String> {
+    let (value, used) = create_kinetics::rules::snbt::parse(text)?;
+    Ok((tag_of(value), used))
 }
