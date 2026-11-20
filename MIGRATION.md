@@ -90,8 +90,8 @@ the same name) or `adapted (wired)` (the new API has another name or another mec
 
 ### Not wired
 
-* `menu_input_closed` (and `Host::open_menu_with_input`): the Toolbox's menu. The new `open_menu` opens a chest
-  menu, but nothing hands the slots back when it closes; this needs a small design with the game running.
+* `menu_input_closed` (and `Host::open_menu_with_input`): the Toolbox's menu. Missing is a content menu type for it (see
+  "Still neutral" below); `open_mod_menu`, `back_mod_menu_slots` and `menu_closed` would do the rest.
 * `block_changed`, `block_entity_inside`, `item_model_property`, `block_entity_accepts_fluid`: no module answers them.
 
 ## Needs testing in game (step 2 part B)
@@ -182,12 +182,37 @@ These are the places where the new API has no equivalent in the context the old 
   (`events::cache_slots`), since that hook has no host to name an item with.
 * **`server_item_in_tag`** through `Host::tags()`.
 
-Still neutral, and why: the fluid calls (`fluid_tanks`, `fluid_insert`, `fluid_extract`) need the fluid capabilities wired and
-`fluid_tanks` takes `&self`, which cannot lend the `&mut` host a capability handler needs; `use_as_player` (the Deployer: needs
-a `PlayerAction` mapping), `carried_stack` and `carried_items` (they belong to the `inventory_tick` item hook), `held`,
-`block_states`, `block_entity_nbt` and `set_block_entity` (SNBT text, no parser), `open_menu_with_input` (menus), `client_state`
-(the GUI size comes from the draw context of the HUD hook), `client_resources`, `data`, and what the hooks step owns: network
-sends, key state, HUD and screen drawing, commands.
+Closed in the gap pass (type-checked and rules-tested only, none of it has run in the game):
+
+* **`carried_stack`, `carried_items`** (`compat/items.rs`): `inventory_tick` sets a thread-local scope for the hook (the acting
+  player, the hook's own slot and stack); `carried_stack(slot)` loads the old stack (the hook's own slot from the event's stack,
+  any other from `PlayerRef::inventory_slots`), hands out `&mut` to a boxed copy, and after the hook returns every copy that
+  changed is written with `PlayerRef::set_inventory_slot`. Slot numbers are the hook's (0 to 35, 100..103 armour, -106 off hand),
+  mapped by `rules::inventory_slots`. This restores the Clipboard's page writes, the package and linked-controller writes, and the
+  symmetry wand's reads. `carried_items` sums the acting player's plain main-inventory stacks. (`held_stack` was already done.)
+* **`block_entity_nbt`, `set_block_entity`, `parse_snbt`**: no SNBT reader reaches a mod, so `rules::snbt` parses (tested);
+  `block_entity_nbt` is the entity's data written as SNBT (`display_link_target::to_snbt`), `set_block_entity` merges the parsed
+  compound with `BlockEntityRef::merge_data` (`/data merge`).
+* **`fluid_insert`, `fluid_extract`**: through the `FLUIDS` capability inside `host.transaction` (`insert` returns what was not taken,
+  `extract` drains the first filled tank).
+* **`use_as_player`** (the Deployer): `ServerHost::fake_player` (one fake, a fixed uuid) and `PlayerRef::perform_action_scoped`
+  with `PlayerActionSetup` (held stack, eye, yaw, pitch, sneaking); block, item and entity targets are `UseOn`, `UseItem`
+  and `InteractOn`; the answer's `held` and `other` are the old `NativeFakeUse`.
+* **`apply_screen_blur`**: `Host::apply_screen_blur` of the new client host.
+
+Still neutral, and why:
+
+* `fluid_tanks`: a read-only tank view. The only way to a block's tanks is `LevelRef::capability(&mut dyn ServerHost, &FLUIDS, ..)`
+  (then `size`, `resource`, `amount`, `capacity` on the handler, all `&mut dyn ServerHost`), but `Host::fluid_tanks` takes `&self` and
+  its callers (basin, fluids, fluid_pipe, fluid_pipe_attachments, content_observer_target) hold `&dyn Host`. Missing is a `&dyn Host`
+  (shared) fluid tank read in the new API; or the callers go `&mut` (tried: 11 call sites in five other modules).
+* `open_menu_with_input` (the Toolbox): the new API opens a block entity's menu (`PlayerRef::open_menu`) or a content mod menu
+  (`PlayerRef::open_mod_menu`, then `back_mod_menu_slots` with an `ItemPlace::Mod` provider for the slots, `menu_closed` to read
+  them back). It needs a content menu type for the Toolbox (27 container slots) in `tools/content`, which this layer cannot
+  declare: missing is that menu type, not an API call.
+* `block_states`, `data`, `held`: no module calls the old `Host` version (`cog_placement` reads the new `Host::block_states`
+  itself), so nothing depends on them.
+* `client_state` (the GUI size comes from the draw context of the HUD hook) and `client_resources`.
 
 ## What the smoke runs showed
 
