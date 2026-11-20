@@ -27,22 +27,27 @@
 //!   lava and milk fill and empty the basin (the other fluid containers of `GenericItemFilling`
 //!   are not ported); a sponge drains it.
 //! - Items with a crafting remainder leave nothing behind (`getRemainingItems`).
-//! - Recipes: only `create:mixing` and `create:compacting` files. Horizon's `recipes_of_type`
-//!   answers only types outside `minecraft`, so the mixer's shapeless crafting recipes and the
-//!   press's square crafting recipes (and brewing) are missing.
+//! - Recipes: the `create:mixing` and `create:compacting` files, and vanilla's crafting recipes
+//!   (`Host::recipes_of_type("minecraft:crafting")`, data packs included) the way
+//!   `MechanicalMixerBlockEntity.matchStaticFilters` and `MechanicalPressBlockEntity.matchStaticFilters`
+//!   take them: shapeless ones of two or more ingredients to the mixer, shaped or shapeless ones of
+//!   four or nine identical ingredients to the press (`rules::vanilla_recipes`), each as a
+//!   `BasinRecipe.convertShapeless` (one ingredient per slot, one result). Brewing in the mixer
+//!   (`allowBrewingInMixer`) is missing.
 
 // Shared with the mixer, which doesn't use every helper.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use create_kinetics::belt::movement_facing;
 use create_kinetics::rules::basin::{
     self as rules, HeatCondition, HeatLevel, INPUT_SLOTS, SLOTS, SLOT_LIMIT, Spout, TANKS,
     TANK_CAPACITY,
 };
+use create_kinetics::rules::vanilla_recipes;
 use create_kinetics::Dir;
 use crate::compat::serde_json::Value;
 use crate::compat::{
@@ -58,6 +63,8 @@ use crate::util;
 
 pub(crate) const ID: &str = "create:basin";
 const MIXING: &str = "create:mixing";
+/// Vanilla's crafting recipes, which the mixer and the press take some of.
+const CRAFTING: &str = "minecraft:crafting";
 const COMPACTING: &str = "create:compacting";
 
 /// Horizon's own key for a block entity's tanks (`native_block_entity_fluids`).
@@ -345,6 +352,7 @@ impl Kind {
 
 /// An item ingredient: an `Ingredient`, or NeoForge's `neoforge:block_tag` (an item whose block is
 /// in a block tag: Create's mud recipe).
+#[derive(Clone)]
 pub(crate) enum ItemIngredient {
     Plain(Ingredient),
     BlockTag(String),
@@ -360,6 +368,7 @@ impl ItemIngredient {
 }
 
 /// `SizedFluidIngredient`: one fluid or a fluid tag, and how much.
+#[derive(Clone)]
 pub(crate) enum FluidIngredient {
     Single(String, i32),
     Tag(String, i32),
@@ -394,12 +403,14 @@ impl FluidIngredient {
 }
 
 /// A result stack and its `chance` (`ProcessingOutput`).
+#[derive(Clone)]
 pub(crate) struct Output {
     pub stack: ItemStack,
     pub chance: f32,
 }
 
 /// A `create:mixing` or `create:compacting` recipe (`BasinRecipe`).
+#[derive(Clone)]
 pub(crate) struct Recipe {
     /// `create:mixing/brass_ingot`.
     pub id: String,
@@ -467,22 +478,110 @@ fn parse(host: &dyn Host, id: &str, kind: Kind, json: &Value) -> Option<Recipe> 
     })
 }
 
-/// Every recipe of `kind`, in the order the game holds them.
+/// The items an ingredient lists, in order (`Ingredient.getItems`); none for an empty cell.
+fn item_list(ingredient: &Ingredient) -> Vec<String> {
+    let inner = &ingredient.0;
+    if !inner.order.is_empty() {
+        return inner.order.clone();
+    }
+    let mut items: Vec<String> = inner.items.iter().cloned().collect();
+    items.sort();
+    items
+}
+
+/// A vanilla crafting recipe as a basin recipe, if the mixer or the press takes it
+/// (`rules::vanilla_recipes`): `BasinRecipe.convertShapeless`, one ingredient per cell and the
+/// result item.
+fn from_crafting(host: &dyn Host, id: &str, json: &Value) -> Option<Recipe> {
+    let shapeless = match json.get("type")?.as_str()? {
+        "minecraft:crafting_shapeless" => true,
+        "minecraft:crafting_shaped" => false,
+        _ => return None,
+    };
+    // `Recipe.getIngredients`: a shapeless recipe's list, a shaped one's cells (empty ones too).
+    let mut cells: Vec<Option<Ingredient>> = Vec::new();
+    if shapeless {
+        for entry in json.get("ingredients")?.as_array()? {
+            cells.push(Some(host.recipe_ingredient(&crate::recipes::modern_ingredient(entry))?));
+        }
+    } else {
+        let key = json.get("key")?.as_object()?;
+        for row in json.get("pattern")?.as_array()? {
+            for c in row.as_str()?.chars() {
+                cells.push(match c {
+                    ' ' => None,
+                    c => Some(
+                        host.recipe_ingredient(&crate::recipes::modern_ingredient(key.get(&c.to_string())?))?,
+                    ),
+                });
+            }
+        }
+    }
+    let lists: Vec<Vec<String>> =
+        cells.iter().map(|cell| cell.as_ref().map(item_list).unwrap_or_default()).collect();
+    let kind = if vanilla_recipes::press_takes(&lists, id) {
+        Kind::Compacting
+    } else if vanilla_recipes::mixer_takes(shapeless, &lists, id) {
+        Kind::Mixing
+    } else {
+        return None;
+    };
+    let stack = host.recipe_result(json.get("result")?)?;
+    Some(Recipe {
+        id: id.to_owned(),
+        kind,
+        ingredients: cells.into_iter().flatten().map(ItemIngredient::Plain).collect(),
+        fluids: Vec::new(),
+        results: vec![Output { stack, chance: 1.0 }],
+        fluid_results: Vec::new(),
+        processing_time: 0,
+        heat: HeatCondition::None,
+    })
+}
+
+type CraftingCache = Option<(usize, usize, Arc<Vec<Recipe>>)>;
+static CRAFTING_RECIPES: Mutex<CraftingCache> = Mutex::new(None);
+
+/// The vanilla crafting recipes the mixer and the press take, found once: the game hands out the
+/// same table until a reload, so the answer is kept while it is the same table.
+fn crafting_recipes(host: &dyn Host) -> Arc<Vec<Recipe>> {
+    let table = host.recipes_of_type(CRAFTING);
+    let key = (table.as_ptr() as usize, table.len());
+    let mut cache = CRAFTING_RECIPES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((ptr, len, found)) = cache.as_ref()
+        && (*ptr, *len) == key
+    {
+        return Arc::clone(found);
+    }
+    let found: Arc<Vec<Recipe>> =
+        Arc::new(table.iter().filter_map(|recipe| from_crafting(host, &recipe.id, &recipe.json)).collect());
+    *cache = Some((key.0, key.1, Arc::clone(&found)));
+    found
+}
+
+/// Every recipe of `kind`, in the order the game holds them (Create's own, then vanilla's crafting
+/// recipes it takes).
 pub(crate) fn recipes(host: &dyn Host, kind: Kind) -> Vec<Recipe> {
-    host.recipes_of_type(kind.recipe_type())
+    let mut all: Vec<Recipe> = host
+        .recipes_of_type(kind.recipe_type())
         .iter()
         .filter_map(|recipe| parse(host, &recipe.id, kind, &recipe.json))
-        .collect()
+        .collect();
+    all.extend(crafting_recipes(host).iter().filter(|recipe| recipe.kind == kind).cloned());
+    all
 }
 
 /// The recipe called `id` (`create:mixing/brass_ingot`), whichever of the two types it is.
 pub(crate) fn recipe_by_id(host: &dyn Host, id: &str) -> Option<Recipe> {
-    [Kind::Mixing, Kind::Compacting].into_iter().find_map(|kind| {
-        host.recipes_of_type(kind.recipe_type())
-            .iter()
-            .find(|recipe| recipe.id == id)
-            .and_then(|recipe| parse(host, &recipe.id, kind, &recipe.json))
-    })
+    [Kind::Mixing, Kind::Compacting]
+        .into_iter()
+        .find_map(|kind| {
+            host.recipes_of_type(kind.recipe_type())
+                .iter()
+                .find(|recipe| recipe.id == id)
+                .and_then(|recipe| parse(host, &recipe.id, kind, &recipe.json))
+        })
+        .or_else(|| crafting_recipes(host).iter().find(|recipe| recipe.id == id).cloned())
 }
 
 fn max_stack(host: &dyn Host, stack: &ItemStack) -> u32 {

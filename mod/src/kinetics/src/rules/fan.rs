@@ -232,8 +232,7 @@ impl Kind {
     }
 
     /// The recipe type a type reads for its own recipes: `create:splashing` and `create:haunting`.
-    /// Smoking and blasting read vanilla's cooking recipes instead, which a mod can't read: see
-    /// [`BAKED_SMOKING`], [`BAKED_SMELTING`] and [`BAKED_BLASTING`].
+    /// Smoking and blasting read vanilla's cooking recipes instead (`LevelRef::recipe_for`).
     pub const fn recipe_type(self) -> Option<&'static str> {
         match self {
             Kind::Splashing => Some("create:splashing"),
@@ -245,15 +244,8 @@ impl Kind {
 
 // --- smoking and blasting: vanilla's cooking recipes (`SmokingType`, `BlastingType`) ----------------
 
-/// Vanilla's `minecraft:smoking`, `minecraft:smelting` and `minecraft:blasting` recipes, copied
-/// from the prepared game data as recipes of these types (`tools/content/_fan_cooking_gen.py`).
-/// TEMPORARY: Horizon gives a mod no way to read vanilla's recipes; drop these and the copy when
-/// the project moves to the new mod API's `recipe_for`.
-pub const BAKED_SMOKING: &str = "create:baked_smoking";
-pub const BAKED_SMELTING: &str = "create:baked_smelting";
-pub const BAKED_BLASTING: &str = "create:baked_blasting";
 /// The items that `DataComponents.FIRE_RESISTANT` was (now `minecraft:damage_resistant` against
-/// `#minecraft:is_fire`), as an item tag baked from the game's items. TEMPORARY, as above.
+/// `#minecraft:is_fire`), as an item tag baked from the game's items (`recipe_for` doesn't cover item components).
 pub const FIRE_RESISTANT_TAG: &str = "create:fan_fire_resistant";
 
 /// `BlastingType.canProcess`: a smelting or blasting recipe takes the item, or it is not fire

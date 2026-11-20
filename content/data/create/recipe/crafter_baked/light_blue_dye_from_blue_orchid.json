@@ -1,9 +1,0 @@
-{
-  "type": "create:crafter_baked_shapeless",
-  "ingredients": [
-    "minecraft:blue_orchid"
-  ],
-  "result": {
-    "id": "minecraft:light_blue_dye"
-  }
-}

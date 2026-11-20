@@ -3,21 +3,23 @@
 //! The matching is `create_kinetics::rules::crafter_recipes`; this reads the recipes from the data.
 //!
 //! Known differences from Create, for `crafter.rs`'s list:
-//! - Horizon gives a mod no crafting recipe (`recipes_of_type` reads only types outside
-//!   `minecraft`), so the vanilla shaped and shapeless crafting recipes are baked into the content
-//!   as `create:crafter_baked_shaped` and `create:crafter_baked_shapeless`
-//!   (`tools/content/_crafter_recipes_gen.py`, from the prepared game data). A data pack's
-//!   crafting recipes are not seen; transmuting, dyeing and special recipes (shulker boxes,
-//!   fireworks, banners, maps...) are not baked. The first recipe that fits wins, shaped before
-//!   shapeless, in file order, where Create takes the recipe manager's first.
+//! - Vanilla's crafting recipes (shaped, shapeless, special ones such as dyeing, fireworks, banners
+//!   and maps, data packs included) match through the new mod API's `LevelRef::recipe_for`
+//!   (`compat::recipe_lookup`), as `getRecipeFor(RecipeType.CRAFTING, ..)` does, and the first
+//!   match is refused when `isRecipeAllowed` says so (a `_manual_only` recipe, a firework rocket
+//!   of more items than `maxFireworkIngredientsInCrafter`): `rules::vanilla_recipes`. The engine's
+//!   matcher takes grids up to 3x3, so a grid whose bounding box is larger finds no vanilla
+//!   recipe (Create would still match a shapeless one spread over a large grid).
 //! - `create:mechanical_crafting` is read as it is (`Host::recipes_of_type`), so a data pack can
 //!   add to it.
 
 use create_kinetics::rules::crafter_grid::Grid;
-use create_kinetics::rules::crafter_recipes::{Mode, Shaped, shaped_matches, shapeless_matches};
+use create_kinetics::rules::crafter_recipes::{Mode, Shaped, shaped_matches};
+use create_kinetics::rules::vanilla_recipes;
 use crate::compat::serde_json::Value;
 use crate::compat::{Hooks, Host, Ingredient, ItemStack};
 
+use crate::compat::recipe_lookup::{self, Input};
 use crate::recipes::modern_ingredient;
 
 /// A module of shared code: no hooks of its own.
@@ -31,8 +33,8 @@ pub fn hooks() -> Box<dyn Hooks> {
 
 /// `AllRecipeTypes.MECHANICAL_CRAFTING`.
 const MECHANICAL: &str = "create:mechanical_crafting";
-const BAKED_SHAPED: &str = "create:crafter_baked_shaped";
-const BAKED_SHAPELESS: &str = "create:crafter_baked_shapeless";
+/// `RecipeType.CRAFTING`.
+const CRAFTING: &str = "minecraft:crafting";
 
 /// The pattern's characters, row by row (`" "` is a space), trimmed to its items.
 fn pattern_of(json: &Value) -> Option<Shaped<char>> {
@@ -99,37 +101,22 @@ fn shaped(
     result(host, json)
 }
 
-fn shapeless(
-    host: &dyn Host,
-    json: &Value,
-    (_, _, cells): &(usize, usize, Vec<Option<ItemStack>>),
-) -> Option<ItemStack> {
-    let list = json.get("ingredients")?.as_array()?;
-    if list.len() != cells.iter().flatten().count() {
-        return None;
-    }
-    let ingredients: Vec<Ingredient> =
-        list.iter().map(|i| ingredient(host, i)).collect::<Option<_>>()?;
-    if !shapeless_matches(&ingredients, cells, &takes) {
-        return None;
-    }
-    result(host, json)
-}
-
 /// `RecipeGridHandler.tryToApplyRecipe`: what the grid makes, if anything.
 pub fn apply(host: &dyn Host, grid: &Grid<ItemStack>) -> Option<ItemStack> {
     let input = grid.input();
     if input.0 == 0 || input.1 == 0 {
         return None;
     }
-    for recipe in host.recipes_of_type(BAKED_SHAPED) {
-        if let Some(made) = shaped(host, &recipe.json, Mode::Mirrored, &input) {
-            return Some(made);
-        }
-    }
-    for recipe in host.recipes_of_type(BAKED_SHAPELESS) {
-        if let Some(made) = shapeless(host, &recipe.json, &input) {
-            return Some(made);
+    // `allowRegularCraftingInCrafter`, then `getRecipeFor(RecipeType.CRAFTING, ..)` filtered by
+    // `isRecipeAllowed` (the engine's matcher takes up to 3x3).
+    if vanilla_recipes::ALLOW_REGULAR_CRAFTING_IN_CRAFTER && input.0 <= 3 && input.1 <= 3 {
+        let slots = &input.2;
+        let crafting = Input::Crafting { width: input.0, height: input.1, slots };
+        if let Some(found) = recipe_lookup::recipe_for(host, CRAFTING, &crafting) {
+            let occupied = slots.iter().flatten().count();
+            if vanilla_recipes::crafter_allows(&found.id, occupied) {
+                return Some(found.output);
+            }
         }
     }
     for recipe in host.recipes_of_type(MECHANICAL) {

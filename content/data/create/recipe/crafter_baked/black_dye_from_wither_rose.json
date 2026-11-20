@@ -1,9 +1,0 @@
-{
-  "type": "create:crafter_baked_shapeless",
-  "ingredients": [
-    "minecraft:wither_rose"
-  ],
-  "result": {
-    "id": "minecraft:black_dye"
-  }
-}

@@ -1,9 +1,0 @@
-{
-  "type": "create:crafter_baked_shapeless",
-  "ingredients": [
-    "minecraft:lily_of_the_valley"
-  ],
-  "result": {
-    "id": "minecraft:white_dye"
-  }
-}

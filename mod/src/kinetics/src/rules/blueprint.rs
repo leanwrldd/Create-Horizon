@@ -11,10 +11,9 @@
 //!   a sneaking click with an item sets the recipe that makes it (as Create's "assign recipe" button
 //!   does for a recipe viewer): tags become Attribute Filters, several items a List Filter, a single
 //!   item itself; clicking again with the same item moves on to the next recipe for it.
-//! - Recipes come from the baked crafting tables the Mechanical Crafter reads
-//!   (`create:crafter_baked_shaped`/`shapeless`), because a mod can't read vanilla's crafting
-//!   recipes on this Horizon build: the same table to drop when the project moves to the new
-//!   mod API's `recipe_for`. A data pack's crafting recipes are not seen.
+//! - Recipes come from vanilla's shaped and shapeless crafting recipes (`Host::recipes_of_type`,
+//!   data packs included), the same ones the Mechanical Crafter matches through `recipe_for`.
+//!   Special recipes (dyeing, fireworks...) have no fixed ingredients and are not offered.
 //! - Crafting takes the ingredients with `Host::take_items`, which takes plain stacks only (no
 //!   components) from the carried inventory: an ingredient with components isn't used.
 //! - There is no overlay (`BlueprintOverlayRenderer`) listing what the player has; the action bar

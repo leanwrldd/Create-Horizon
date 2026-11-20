@@ -1,9 +1,0 @@
-{
-  "type": "create:crafter_baked_shapeless",
-  "ingredients": [
-    "minecraft:melon_slice"
-  ],
-  "result": {
-    "id": "minecraft:melon_seeds"
-  }
-}

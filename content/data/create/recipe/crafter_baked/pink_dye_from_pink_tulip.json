@@ -1,9 +1,0 @@
-{
-  "type": "create:crafter_baked_shapeless",
-  "ingredients": [
-    "minecraft:pink_tulip"
-  ],
-  "result": {
-    "id": "minecraft:pink_dye"
-  }
-}

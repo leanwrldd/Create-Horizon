@@ -6,13 +6,11 @@
 //! Known differences from Create, for the README:
 //! - The current is rebuilt every 30 ticks and when the speed or facing changes, not also when a
 //!   neighbour changes. Placing a block in front takes up to 1.5 seconds to cut the air.
-//! - Smoking and blasting read copies of vanilla's smoking, smelting and blasting recipes
-//!   (`create:baked_smoking`, `create:baked_smelting` and `create:baked_blasting`, made from the
-//!   prepared game data by `tools/content/_fan_cooking_gen.py`), because Horizon's `Host` can't
-//!   read vanilla's recipes; a data pack's changes to them are not seen. Items that are fire
-//!   resistant are the baked item tag `create:fan_fire_resistant` (the `minecraft:damage_resistant`
-//!   of the game's items; `FIRE_RESISTANT` in Create 1.21.1). DROP THESE COPIES when the project
-//!   moves to the new mod API's `recipe_for`.
+//! - Smoking and blasting match vanilla's smoking, smelting and blasting recipes through the new mod
+//!   API's `LevelRef::recipe_for` (`compat::recipe_lookup`), data packs included, and skip a
+//!   recipe whose id ends in `_manual_only` (`CAN_BE_AUTOMATED`). Items that are fire resistant are
+//!   the baked item tag `create:fan_fire_resistant` (the `minecraft:damage_resistant` of the game's
+//!   items; `FIRE_RESISTANT` in Create 1.21.1), which `recipe_for` does not cover.
 //! - Items on depots and belts under the current are not processed (only item entities are).
 //! - Players are pushed by a message to their client (`push_player`), which a dedicated server's
 //!   movement check may not like; their fall distance and the anti-fly timer are not reset.
@@ -37,6 +35,8 @@ use crate::compat::{
     UseItemOnEvent,
 };
 
+use crate::compat::recipe_lookup::{self, Found, Input};
+use create_kinetics::rules::vanilla_recipes;
 use crate::{kinetic, util};
 
 pub const ID: &str = "create:encased_fan";
@@ -46,6 +46,10 @@ const CENTRE: [f32; 3] = [0.5; 3];
 const PUSH_CHANNEL: &str = "create:fan_push";
 /// `SoundSource.NEUTRAL`.
 const NEUTRAL: usize = 6;
+/// `RecipeType.SMOKING`, `SMELTING` and `BLASTING`, matched by `LevelRef::recipe_for`.
+const SMOKING: &str = "minecraft:smoking";
+const SMELTING: &str = "minecraft:smelting";
+const BLASTING: &str = "minecraft:blasting";
 
 struct Fan;
 
@@ -533,14 +537,20 @@ fn affect_entities(
 
 // --- processing items (`FanProcessing`) ------------------------------------------------------------
 
-/// `type.canProcess(stack, level)`. Smoking and blasting read vanilla's cooking recipes, which a
-/// mod can't: the copies `create:baked_*` stand in (`rules::fan::BAKED_*`).
+/// `getRecipeFor(type, new SingleRecipeInput(stack), level).filter(CAN_BE_AUTOMATED)`: the engine's
+/// recipe matcher, `LevelRef::recipe_for`, for a vanilla cooking type (data packs included).
+fn cooking(host: &dyn Host, recipe_type: &str, stack: &ItemStack) -> Option<Found> {
+    recipe_lookup::recipe_for(host, recipe_type, &Input::Single(stack))
+        .filter(|found| vanilla_recipes::can_be_automated(&found.id))
+}
+
+/// `type.canProcess(stack, level)`.
 fn type_can_process(host: &dyn Host, kind: Kind, stack: &ItemStack) -> bool {
-    let baked = |recipe_type: &str| crate::recipes::for_stack(host, recipe_type, stack).is_some();
     match kind {
-        Kind::Smoking => baked(fan::BAKED_SMOKING),
+        Kind::Smoking => cooking(host, SMOKING, stack).is_some(),
         Kind::Blasting => {
-            let (smelting, blasting) = (baked(fan::BAKED_SMELTING), baked(fan::BAKED_BLASTING));
+            let (smelting, blasting) =
+                (cooking(host, SMELTING, stack).is_some(), cooking(host, BLASTING, stack).is_some());
             // `stack.has(DataComponents.FIRE_RESISTANT)`, asked only when no recipe takes it.
             let resistant = || host.server_item_in_tag(stack, fan::FIRE_RESISTANT_TAG).unwrap_or(false);
             fan::blasting_can_process(smelting, blasting, !(smelting || blasting) && resistant())
@@ -553,14 +563,12 @@ fn type_can_process(host: &dyn Host, kind: Kind, stack: &ItemStack) -> bool {
 
 /// `RecipeApplier.applyRecipeOn` for a recipe that isn't Create's (a vanilla cooking recipe):
 /// `ItemHelper.multipliedOutput(stack, result)`, the result times the count, split by stack size.
-fn cooked(host: &dyn Host, stack: &ItemStack, recipe: &crate::recipes::Processing) -> Vec<ItemStack> {
-    let Some(out) = recipe.results.first() else {
-        return Vec::new();
-    };
-    let max = host.max_stack_size(&out.stack.item).unwrap_or(64);
-    fan::multiplied(stack.count, out.stack.count, max)
+fn cooked(host: &dyn Host, stack: &ItemStack, recipe: &Found) -> Vec<ItemStack> {
+    let out = &recipe.output;
+    let max = host.max_stack_size(&out.item).unwrap_or(64);
+    fan::multiplied(stack.count, out.count, max)
         .into_iter()
-        .map(|count| ItemStack { count, ..out.stack.clone() })
+        .map(|count| ItemStack { count, ..out.clone() })
         .collect()
 }
 
@@ -575,18 +583,17 @@ fn type_process(
     match kind {
         // `SmokingType.process`.
         Kind::Smoking => {
-            let recipe = crate::recipes::for_stack(host, fan::BAKED_SMOKING, stack)?;
+            let recipe = cooking(host, SMOKING, stack)?;
             Some(cooked(host, stack, &recipe))
         }
         // `BlastingType.process`: smelting, else blasting, unless smoking makes the same item.
         Kind::Blasting => {
-            let smoking = crate::recipes::for_stack(host, fan::BAKED_SMOKING, stack);
-            let smelting = crate::recipes::for_stack(host, fan::BAKED_SMELTING, stack)
-                .or_else(|| crate::recipes::for_stack(host, fan::BAKED_BLASTING, stack));
-            let first = |recipe: &Option<crate::recipes::Processing>| {
-                recipe.as_ref().and_then(|r| r.results.first()).map(|out| out.stack.item.clone())
+            let smoking = cooking(host, SMOKING, stack);
+            let smelting = cooking(host, SMELTING, stack).or_else(|| cooking(host, BLASTING, stack));
+            // `ItemStack.isSameItem` of the two results.
+            let same = || {
+                matches!((&smoking, &smelting), (Some(a), Some(b)) if a.output.item == b.output.item)
             };
-            let same = || first(&smoking) == first(&smelting);
             match fan::blast(smelting.is_some(), smoking.is_some(), same) {
                 fan::Blast::Smelt => smelting.map(|recipe| cooked(host, stack, &recipe)),
                 fan::Blast::Destroy => Some(Vec::new()),

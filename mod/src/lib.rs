@@ -613,12 +613,7 @@ struct Mod;
 
 /// Every `create:` recipe type in `data/create/recipe` (`tools/check_content.py` lists what the data uses).
 const CREATE_RECIPE_TYPES: &[&str] = &[
-    "create:baked_blasting",
-    "create:baked_smelting",
-    "create:baked_smoking",
     "create:compacting",
-    "create:crafter_baked_shaped",
-    "create:crafter_baked_shapeless",
     "create:crushing",
     "create:cutting",
     "create:deploying",

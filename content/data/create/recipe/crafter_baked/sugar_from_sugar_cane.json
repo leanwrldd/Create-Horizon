@@ -1,9 +1,0 @@
-{
-  "type": "create:crafter_baked_shapeless",
-  "ingredients": [
-    "minecraft:sugar_cane"
-  ],
-  "result": {
-    "id": "minecraft:sugar"
-  }
-}

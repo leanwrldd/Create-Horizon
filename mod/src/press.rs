@@ -24,9 +24,9 @@
 //! - Create is told when a basin's contents change (`contentsChanged`); the press looks at the
 //!   basin every five ticks while idle, and again every 200, as the mixer does.
 //! - `currentRecipe` is kept as `RecipeId`, so a cycle survives a reload; Create forgets it.
-//! - Crafting recipes of two by two or three by three identical ingredients (Create's
-//!   `canCompress`) are not read: no mod can read vanilla crafting recipes. Only compacting
-//!   recipes run in a basin.
+//! - Crafting recipes of four or nine identical ingredients (Create's `canCompress`,
+//!   `allowShapedSquareInPress`) run in a basin like compacting recipes (`machines/basin.rs`,
+//!   `rules::vanilla_recipes`).
 //! - No particles, no advancement, and a press can be placed directly above a basin
 //!   (`MechanicalPressBlock.canSurvive` needs a block read a placement hook doesn't have).
 

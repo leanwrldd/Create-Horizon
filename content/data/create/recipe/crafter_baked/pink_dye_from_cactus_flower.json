@@ -1,9 +1,0 @@
-{
-  "type": "create:crafter_baked_shapeless",
-  "ingredients": [
-    "minecraft:cactus_flower"
-  ],
-  "result": {
-    "id": "minecraft:pink_dye"
-  }
-}
