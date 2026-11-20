@@ -596,6 +596,26 @@ pub struct Candidate {
     pub reversed: bool,
 }
 
+/// `ChainConveyorFrogportTarget.register`'s "Jump to opposite chain if motion reversed": a port on
+/// a chain whose conveyor now turns the other way (`reversed` against `target.flipped`) moves to
+/// the same spot seen from the conveyor at the chain's far end: the position counts from there,
+/// the chain points back, `flipped` toggles, and `relative_pos` is that conveyor's offset from the
+/// port (`port` is the port's own position, `conveyor` the one the target names). `None` when the
+/// target needs no jump (a wheel, or the conveyor still turns the way it did).
+pub fn jump_target(target: &Target, reversed: bool, chain_length: f32, port: Pos, conveyor: Pos) -> Option<Target> {
+    let connection = target.connection?;
+    if reversed == target.flipped {
+        return None;
+    }
+    let other = [conveyor[0] + connection[0], conveyor[1] + connection[1], conveyor[2] + connection[2]];
+    Some(Target {
+        relative_pos: [other[0] - port[0], other[1] - port[1], other[2] - port[2]],
+        chain_pos: chain_length - target.chain_pos,
+        connection: Some(negate(connection)),
+        flipped: !target.flipped,
+    })
+}
+
 /// The stand-in for the click on a chain that sets a Frogport's target (Create picks the point
 /// on the client): the nearest point to the port on any conveyor's wheel or chains that is at or
 /// above the port's bottom and within [`PORT_RANGE`] of it (`PackagePortTargetSelectionHandler
@@ -1033,6 +1053,26 @@ mod tests {
         assert_eq!(dropped.len(), 1);
         assert!(conveyor.connections.is_empty());
         assert_eq!(conveyor.remove_connection([10, 0, 0]), None);
+    }
+
+    #[test]
+    fn a_port_on_a_chain_jumps_to_the_opposite_chain_when_the_wheel_reverses() {
+        let stats = connection_stats([16, 0, 2], false);
+        let target = Target { relative_pos: [-8, 1, 0], chain_pos: 5.0, connection: Some([16, 0, 2]), flipped: false };
+        // Still turning the way it was set up: nothing moves; a wheel target never jumps.
+        assert_eq!(jump_target(&target, false, stats.chain_length, [8, 0, 0], [0, 1, 0]), None);
+        let wheel = Target { connection: None, ..target.clone() };
+        assert_eq!(jump_target(&wheel, true, stats.chain_length, [8, 0, 0], [0, 1, 0]), None);
+        // Reversed: the far conveyor, counted from there, the chain pointing back.
+        let jumped = jump_target(&target, true, stats.chain_length, [8, 0, 0], [0, 1, 0]).unwrap();
+        assert_eq!(jumped.connection, Some([-16, 0, -2]));
+        assert_eq!(jumped.relative_pos, [8, 1, 2]);
+        assert!((jumped.chain_pos - (stats.chain_length - 5.0)).abs() < 1e-6);
+        assert!(jumped.flipped);
+        // And back again when it turns round once more.
+        let back = jump_target(&jumped, false, stats.chain_length, [8, 0, 0], [16, 1, 2]).unwrap();
+        assert_eq!(back.connection, target.connection);
+        assert!(!back.flipped);
     }
 
     #[test]
