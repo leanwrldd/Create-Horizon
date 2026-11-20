@@ -117,7 +117,8 @@ fn tick(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     }
 
     let dimension = host.dimension();
-    let powered = host.neighbor_signal(dimension, pos) > 0;
+    // `MechanicalCrafterBlock.neighborChanged`: the signal the neighbour event left (`signals`).
+    let powered = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
     let Some(own) = world::read(&*host, pos, event.entity) else {
         return;
     };

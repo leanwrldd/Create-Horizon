@@ -298,7 +298,7 @@ impl Hooks for Interfaces {
         }
     }
 
-    /// `PortableStorageInterfaceBlockEntity.tick` and `neighbourChanged` (power, polled).
+    /// `PortableStorageInterfaceBlockEntity.tick` and `neighbourChanged` (power, from the neighbour event: `signals`).
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         if !is_ours(&event.entity.id) {
             return;
@@ -306,7 +306,7 @@ impl Hooks for Interfaces {
         let pos = event.pos;
         let dimension = host.dimension();
         let now = util::game_time(&*host);
-        let powered = host.neighbor_signal(dimension, pos) > 0;
+        let powered = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
         let (step, power, link) = with_link(dimension, pos, now, |link| {
             let power = link.power(powered);
             let step = link.tick(TIMEOUT);

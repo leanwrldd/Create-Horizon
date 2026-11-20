@@ -7,7 +7,8 @@
 //!   (`detachKinetics`); here the network is solved again in the next tick, which looks the same.
 //! - A powered clutch with a generator on each side keeps both sides turning (Create keeps the
 //!   side the clutch was already attached to and may let the other go still).
-//! - The redstone signal is read every tick from the block entity, not on neighbour updates.
+//! - The redstone signal is read from the block entity's tick, but the world is asked only after a
+//!   neighbour update (`mod/src/signals.rs`) or on a 20-tick heartbeat.
 
 use crate::{Axis, Dir};
 

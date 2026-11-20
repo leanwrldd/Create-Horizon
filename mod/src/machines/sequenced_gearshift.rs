@@ -221,7 +221,8 @@ impl Hooks for Sequencer {
             return;
         };
         let theory = kinetic::stress_at(host, pos).1;
-        let signal = host.neighbor_signal(host.dimension(), pos) > 0;
+        // `SequencedGearshiftBlock.neighborChanged`: the signal the neighbour event left (`signals`).
+        let signal = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
 
         let mut state = None;
         // `onSpeedChanged`. A network that has just been loaded reports no speed for a few ticks:

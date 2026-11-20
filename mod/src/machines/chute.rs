@@ -316,7 +316,7 @@ fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) {
 
     if smart {
         if phase % 2 == 0 {
-            sync_powered(host, pos);
+            sync_powered(host, pos, Some(&mut entity.nbt));
         }
     } else if phase % STATE_RATE == 0 {
         refresh_state(host, pos);
@@ -371,10 +371,14 @@ fn finish_sync(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, now: 
     host.block_entity_sync(pos);
 }
 
-/// The Smart Chute's `powered` follows redstone (`SmartChuteBlock.tick`).
-fn sync_powered(host: &mut dyn Host, pos: Pos) {
+/// The Smart Chute's `powered` follows redstone (`SmartChuteBlock.neighborChanged`). With the block
+/// entity's NBT the signal is the one the neighbour event left (`signals`); without it, read now.
+fn sync_powered(host: &mut dyn Host, pos: Pos, nbt: Option<&mut Compound>) {
     let dimension = host.dimension();
-    let powered = host.neighbor_signal(dimension, pos) > 0;
+    let powered = match nbt {
+        Some(nbt) => crate::signals::read(host, nbt, pos),
+        None => host.neighbor_signal(dimension, pos),
+    } > 0;
     let now = host.block_property(pos, "powered").as_deref() == Some("true");
     if powered != now {
         host.set_block_property(pos, "powered", if powered { "true" } else { "false" });
@@ -1135,7 +1139,7 @@ impl Hooks for Chutes {
     fn place_block(&self, host: &mut dyn Host, event: &mut PlaceBlockEvent<'_>) {
         match &*event.stack.item {
             CHUTE => refresh_state(host, event.pos),
-            SMART_CHUTE => sync_powered(host, event.pos),
+            SMART_CHUTE => sync_powered(host, event.pos, None),
             _ => {}
         }
     }

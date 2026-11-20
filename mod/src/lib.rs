@@ -22,6 +22,7 @@ mod parts_gen;
 mod ponder;
 mod press;
 pub(crate) mod recipes;
+pub(crate) mod signals;
 pub mod solid;
 pub(crate) mod util;
 

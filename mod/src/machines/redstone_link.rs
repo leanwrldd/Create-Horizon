@@ -180,11 +180,6 @@ fn flag(host: &dyn Host, pos: Pos, key: &str) -> bool {
     host.block_property(pos, key).as_deref() == Some("true")
 }
 
-/// `RedstoneLinkBlock.getPower`: the strongest signal beside the link.
-fn power_around(host: &mut dyn Host, pos: Pos) -> i32 {
-    host.neighbor_signal(host.dimension(), pos)
-}
-
 fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) {
     let dimension = host.dimension();
     let level = signal::host_level(host);
@@ -239,7 +234,8 @@ fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) {
     if transmitter {
         // `RedstoneLinkBlock.updateTransmittedSignal`: the signal beside it is what it transmits,
         // and its `powered` state follows.
-        let power = power_around(host, pos);
+        // `RedstoneLinkBlock.neighborChanged` calls it; the signal is the one the neighbour event left (`signals`).
+        let power = crate::signals::read(host, &mut entity.nbt, pos);
         if (power > 0) != powered {
             host.set_block_property_with(pos, "powered", if power > 0 { "true" } else { "false" }, UPDATE_CLIENTS);
         }
