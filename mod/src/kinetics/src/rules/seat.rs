@@ -104,6 +104,32 @@ pub fn ride_command(dimension: &str, rider: u128, vehicle: u128) -> String {
     format!("execute in {dimension} run ride {} mount {}", uuid_text(rider), uuid_text(vehicle))
 }
 
+/// A seat carried by a structure (`Contraption.getSeats`, `AbstractContraptionEntity.addSittingPassenger`):
+/// the marker stands [`MARKER_HEIGHT`] above the bottom of the seat block's cell, so from the
+/// block's centre it is this vector (which the structure turns with its blocks).
+pub fn carried_lift() -> [f64; 3] {
+    [0.0, MARKER_HEIGHT - 0.5, 0.0]
+}
+
+/// How far (in blocks) a set-down seat may be from where its marker last was and still be the one
+/// the rider sits on: the blocks snap to the grid, a turning structure by up to half a cell.
+pub const SETTLE_RANGE: f64 = 2.0;
+
+/// The seat the rider of a structure that was just set down sits on (`Contraption.getSeatMapping`
+/// keeps the rider's seat; the blocks have moved, so here it is the nearest free seat block to
+/// where the marker last was). `cells` are the free seat blocks near it.
+pub fn settle_cell(marker: [f64; 3], cells: &[[i32; 3]]) -> Option<[i32; 3]> {
+    let mut best: Option<([i32; 3], f64)> = None;
+    for cell in cells {
+        let at = marker_position(*cell);
+        let d: f64 = (0..3).map(|i| (at[i] - marker[i]).powi(2)).sum();
+        if d <= SETTLE_RANGE * SETTLE_RANGE && best.is_none_or(|(_, b)| d < b) {
+            best = Some((*cell, d));
+        }
+    }
+    best.map(|(cell, _)| cell)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +185,14 @@ mod tests {
             ride_command("minecraft:overworld", 0x1, uuid),
             "execute in minecraft:overworld run ride 00000000-0000-0000-0000-000000000001 mount 43524541-5445-5345-4154-000000000005"
         );
+    }
+
+    #[test]
+    fn a_set_down_rider_takes_the_nearest_free_seat() {
+        let marker = marker_position([4, 70, 4]);
+        assert_eq!(settle_cell(marker, &[[4, 71, 4], [4, 70, 4]]), Some([4, 70, 4]));
+        assert_eq!(settle_cell(marker, &[[9, 70, 4]]), None);
+        assert_eq!(settle_cell(marker, &[]), None);
+        assert!(carried_lift()[1] < 0.0);
     }
 }

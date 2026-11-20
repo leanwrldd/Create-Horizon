@@ -10,7 +10,7 @@
 //! each tick its structure runs, with the [`Pose`] it already has for the Portable Interfaces (where
 //! the structure is at any game time) and the [`Structure`] it carries (a pulley's and an elevator's
 //! differ in `isActive` and `disableActorOnStart`), and [`stop`] just before it sets the structure
-//! down. A rope pulley and a gantry also call [`restart`] (`Contraption.stop` with the structure
+//! down. A rope pulley, piston and gantry also call [`restart`] (`Contraption.stop` with the structure
 //! still running) when their speed turns round or stops. `tick`
 //! works out each actor block's world position (`toGlobalVector(centre + getActiveAreaOffset)`),
 //! the moment it enters a new block position (`shouldActorTrigger`) and calls
@@ -326,6 +326,17 @@ pub fn tick(
         return false;
     };
     let key: Key = (dimension.to_owned(), controller);
+    // The riders of the seats on the structure go with it (`positionRider`).
+    let seats: Vec<Pos> = live
+        .moving
+        .blocks
+        .iter()
+        .filter(|b| create_kinetics::rules::seat::colour_of_block(&b.state.name).is_some())
+        .map(|b| b.local)
+        .collect();
+    if !seats.is_empty() {
+        super::seat::carry(host, controller, live.moving.anchor, &seats, pose, now);
+    }
     let mut run = with_runs(|runs| runs.remove(&key))
         .filter(|run| run.blocks == live.moving.blocks.len())
         .unwrap_or_else(|| Run::start(&live.moving, now, controller, structure));
@@ -374,6 +385,7 @@ pub fn tick(
 /// hand goes back into its block's data. Only the cached structure the set-down places from is
 /// changed (`engine::set_live`), so no entity is needed. Forgets the structure's actors.
 pub fn stop(host: &mut dyn Host, controller: Pos, nbt: &Compound) {
+    super::seat::release(&*host, controller);
     stop_moving(host, controller, nbt, false);
 }
 
