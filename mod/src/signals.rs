@@ -7,7 +7,7 @@
 //!
 //! Now `parts.rs` hands the event here: [`heard`] marks the position dirty, and a block entity's tick calls
 //! [`read`], which asks the world only when the position is dirty, has never been read, or on a slow
-//! heartbeat ([`HEARTBEAT`]) that stands in for the updates Horizon may not send (Create gets a load-time read
+//! heartbeat (`rules::signals`) that stands in for the updates Horizon may not send (Create gets a load-time read
 //! from `onPlace`/`firstTick`; a power change two blocks away through a conductor depends on the game firing
 //! the neighbour update of the neighbour). The last answer is kept in the block entity's own NBT, so a new
 //! block at the same position starts with a fresh read.
@@ -17,12 +17,10 @@ use std::sync::{LazyLock, Mutex, PoisonError};
 
 use crate::compat::{Compound, Host, Tag};
 use crate::util;
+use create_kinetics::rules::signals::should_read;
 
 /// The block entity key of the last signal read.
 const HEARD: &str = "HeardSignal";
-
-/// Ticks between reads made whatever the events said; a position is spread over them by its coordinates.
-pub const HEARTBEAT: i64 = 20;
 
 /// Every position a block entity has read, by dimension: whether `neighborChanged` fired there since.
 static POSITIONS: LazyLock<Mutex<HashMap<(&'static str, [i32; 3]), bool>>> = LazyLock::new(Mutex::default);
@@ -44,7 +42,8 @@ pub fn read(host: &mut dyn Host, nbt: &mut Compound, pos: [i32; 3]) -> i32 {
         std::mem::take(positions.entry((dimension, pos)).or_insert(true))
     };
     let known = util::has(nbt, HEARD);
-    if !dirty && known && !beat(host, pos) {
+    // The decision is `rules::signals::should_read`.
+    if !should_read(dirty, known, util::game_time(host), pos) {
         return util::int(nbt, HEARD);
     }
     let signal = host.neighbor_signal(dimension, pos);
@@ -52,9 +51,4 @@ pub fn read(host: &mut dyn Host, nbt: &mut Compound, pos: [i32; 3]) -> i32 {
         nbt.insert(HEARD.into(), Tag::Int(signal));
     }
     signal
-}
-
-fn beat(host: &dyn Host, pos: [i32; 3]) -> bool {
-    let spread = i64::from(pos[0]) + 3 * i64::from(pos[1]) + 7 * i64::from(pos[2]);
-    (util::game_time(host) + spread).rem_euclid(HEARTBEAT) == 0
 }

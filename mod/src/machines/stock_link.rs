@@ -106,8 +106,8 @@ impl Hooks for StockLinks {
         }
         let pos = event.pos;
         let now = util::game_time(&*host);
-        let dimension = host.dimension();
-        let power = host.neighbor_signal(dimension, pos).clamp(0, 15) as u8;
+        // `PackagerLinkBlock.neighborChanged`: the signal the neighbour event left (`signals`).
+        let power = crate::signals::read(host, &mut event.entity.nbt, pos).clamp(0, 15) as u8;
         let changes = network::tick_link(host, pos, &event.entity.nbt, true, power, now);
         let mut changed = false;
         for (key, value) in changes {

@@ -125,6 +125,7 @@ pub mod seat;
 pub mod sequenced;
 pub mod sequenced_gearshift;
 pub mod shop_commands;
+pub mod signals;
 pub mod smart_fluid_pipe;
 pub mod snbt;
 pub mod solid;

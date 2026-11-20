@@ -243,7 +243,8 @@ impl Hooks for Requesters {
             }
         }
         let freq = network::freq_of(&event.entity.nbt);
-        let signal_now = host.neighbor_signal(dimension, pos) > 0;
+        // `RedstoneRequesterBlock.neighborChanged`: the signal the neighbour event left (`signals`).
+        let signal_now = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
         if let Some(freq) = freq {
             let change = state.on_redstone_power_changed(signal_now, || network::summary(host, freq, true));
             if change.changed {
