@@ -570,6 +570,10 @@ impl Hooks for Packagers {
         if store(event.entity, &state, sign_text) || tick.changed {
             host.block_entity_sync(pos);
         }
+        // `getAvailableItems` -> `submitNewArrivals`: what came into the inventory is told to the promise queues waiting for it.
+        if !repackager {
+            super::logistics::check_arrivals(host, pos, now);
+        }
         if tick.finished
             && let Some(wake) = WAKE_FROGS.get()
         {
