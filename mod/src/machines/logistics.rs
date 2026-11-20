@@ -78,6 +78,10 @@ struct Runtime {
     tuned: BTreeMap<u128, Freq>,
     /// A block just placed, until its block entity ticks: the frequency and owner it starts with.
     placed: BTreeMap<(String, Pos), (Option<Freq>, u128)>,
+    /// The game time `GlobalLogisticsManager.tick` last ran for.
+    last_promise_tick: i64,
+    /// What each packager's inventory held when it was last read (`PackagerBlockEntity.availableItems`), for `submitNewArrivals`.
+    readings: BTreeMap<(String, Pos), Summary<ItemStack>>,
 }
 
 impl Runtime {
@@ -157,6 +161,11 @@ pub fn tick_link(host: &mut dyn Host, pos: Pos, nbt: &Compound, global: bool, po
             freq
         }
     };
+    // `GlobalLogisticsManager.tick` (`ServerLevel` overworld only): every network's promises age once a tick.
+    if dimension == "minecraft:overworld" && rt.last_promise_tick != now {
+        rt.last_promise_tick = now;
+        rt.logistics.networks.tick();
+    }
     let id = rt.id_for(&dimension, pos);
     let mut link = Link::new(id, freq, global);
     link.redstone_power = int(nbt, POWER).clamp(0, 15) as u8;
@@ -321,7 +330,8 @@ pub fn summary(host: &mut dyn Host, freq: Freq, accurate: bool) -> Summary<ItemS
     })
 }
 
-struct Rng;
+/// The numbers `LogisticsManager` draws from `java.util.Random`.
+pub struct Rng;
 
 impl Random for Rng {
     fn next_int(&mut self) -> i32 {
@@ -343,7 +353,14 @@ pub fn broadcast(host: &mut dyn Host, freq: Freq, kind: RequestType, order: &Con
     if !result.accepted {
         return false;
     }
-    for dispatch in result.dispatches {
+    perform(host, result.dispatches, &packagers);
+    true
+}
+
+/// `LogisticsManager.performPackageRequests`: each packager is told its requests (its link flashes, `attemptToSend` runs until the
+/// list is done, at most a hundred times). `packagers` says where each packager is (`links_with_packagers`).
+pub fn perform(host: &mut dyn Host, dispatches: Vec<net::Dispatch<ItemStack>>, packagers: &[(PackagerId, Pos)]) {
+    for dispatch in dispatches {
         let Some((_, at)) = packagers.iter().find(|(id, _)| *id == dispatch.packager) else {
             continue;
         };
@@ -355,7 +372,95 @@ pub fn broadcast(host: &mut dyn Host, freq: Freq, kind: RequestType, order: &Con
             packager_glue::attempt_requests(host, at, list);
         });
     }
-    true
+}
+
+/// The links present on a network as the rules' views, with where each packager is. `ignored` is the identity of an inventory the
+/// views leave out (`LogisticsManager.getStockOf` and a restocking gauge's own packager).
+pub fn links_with_packagers(host: &mut dyn Host, freq: Freq, ignored: Option<u64>) -> (Vec<LinkView<ItemStack>>, Vec<(PackagerId, Pos)>) {
+    let now = util::game_time(&*host);
+    let entries = entries_of(&mut runtime(), freq, now);
+    build_views(host, &entries, ignored)
+}
+
+/// `InventoryIdentifier` of what the packager at `packager` takes from: the id a restocking gauge ignores.
+pub fn packager_inventory_id(host: &mut dyn Host, packager: Pos) -> Option<u64> {
+    let facing = util::facing(&*host, packager, "facing")?;
+    let target = util::add(packager, facing.opposite().normal());
+    target_inv::read(host, target)?;
+    Some(inventory_id(&*host, target))
+}
+
+/// `Create.LOGISTICS.getUnloadedLinkCount`.
+pub fn unloaded_links(freq: Freq) -> u32 {
+    runtime().logistics.networks.unloaded_link_count(freq) as u32
+}
+
+/// `LogisticsManager.SUMMARIES.invalidate`.
+pub fn invalidate_summary(freq: Freq) {
+    runtime().logistics.invalidate_summary(freq);
+}
+
+/// The promise queue of a network (`getQueuedPromises`), none while no Stock Link is on it, handed to `f` (the table is locked for
+/// the length of it: `f` must not call back into this file).
+pub fn with_queue<R>(freq: Freq, f: impl FnOnce(Option<&mut create_kinetics::rules::request_promises::Queue<ItemStack>>) -> R) -> R {
+    let mut rt = runtime();
+    f(rt.logistics.networks.queued_promises(freq))
+}
+
+/// The network the player last tuned a linked block to, kept (a stack of Factory Gauges all carry one frequency).
+pub fn tuned_peek(player: u128) -> Option<Freq> {
+    runtime().tuned.get(&player).copied()
+}
+
+/// `PackagerBlockEntity.submitNewArrivals`, for the Packager at `packager`: what its inventory gained since it was last read is told
+/// to the promise queue of every Stock Link network on it and of every restocking Factory Gauge on it. Read every five ticks, and only
+/// while some queue is waiting.
+pub fn check_arrivals(host: &mut dyn Host, packager: Pos, now: i64) {
+    if (now + link_rules::lazy_salt(packager, 5)) % 5 != 0 {
+        return;
+    }
+    let mut freqs: Vec<Freq> = Vec::new();
+    let mut gauges: Vec<Pos> = Vec::new();
+    for d in Dir::ALL {
+        let at = util::add(packager, d.normal());
+        let block = host.block(at);
+        if block == STOCK_LINK {
+            if link_connection(&*host, at) != Some(d) {
+                continue;
+            }
+            if let Some(freq) = host.mod_block_entity(at).and_then(|entity| freq_of(&entity.nbt))
+                && runtime().logistics.networks.has_queued_promises(freq)
+            {
+                freqs.push(freq);
+            }
+        } else if block == FACTORY_GAUGE && super::factory_gauge::connected_direction(&*host, at) == Some(d) {
+            gauges.push(at);
+        }
+    }
+    let dimension = host.dimension().to_owned();
+    if freqs.is_empty() && gauges.is_empty() {
+        runtime().readings.remove(&(dimension, packager));
+        return;
+    }
+    let Some(facing) = util::facing(&*host, packager, "facing") else {
+        return;
+    };
+    let target = util::add(packager, facing.opposite().normal());
+    let held = target_inv::read(host, target).unwrap_or_default();
+    let stacks: Vec<(ItemStack, u32)> = held.iter().map(|(_, stack)| (items::key(stack), stack.count)).collect();
+    let after = net::available_items(&stacks, None);
+    let arrivals = {
+        let mut rt = runtime();
+        let before = rt.readings.insert((dimension, packager), after.clone());
+        net::new_arrivals(before.as_ref(), &after)
+    };
+    if arrivals.is_empty() {
+        return;
+    }
+    runtime().logistics.networks.submit_arrivals(&freqs, &arrivals);
+    for gauge in gauges {
+        super::factory_gauge::restock_arrivals(host, gauge, &arrivals);
+    }
 }
 
 /// How many links hold the network up now (`InventorySummary.contributingLinks`), for a status line.

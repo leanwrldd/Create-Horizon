@@ -805,6 +805,40 @@ impl Issue {
             Issue::NoItem => "factory_panel.no_item",
         }
     }
+
+    /// The English text of `lang_key` (`create.<key>` in Create's `en_us.json`).
+    pub fn message(self) -> &'static str {
+        match self {
+            Issue::ConnectionAborted => "Input connection aborted",
+            Issue::AlreadyConnected => "Gauges are already connected",
+            Issue::CannotAddMoreInputs => "Cannot add more inputs to this gauge",
+            Issue::SameOrientation => "Blocks must have the same orientation",
+            Issue::SameSurface => "Blocks must be on the same surface",
+            Issue::TooFarApart => "Blocks are too far away from each other",
+            Issue::InputInRestockMode => "Input gauge cannot be in restock mode",
+            Issue::NoItem => "Input gauge must have an item first",
+        }
+    }
+}
+
+/// `FactoryPanelBlock.getStateForPlacement`: `FaceAttachedHorizontalDirectionalBlock.getStateForPlacement` (`look` is the first of
+/// `getNearestLookingDirections`, `horizontal` is `getHorizontalDirection`: looking up attaches to the ceiling, down to the floor, any
+/// other way to a wall facing back at the player), then a gauge on the floor faces the opposite way.
+pub fn placement(look: crate::Dir, horizontal: crate::Dir) -> (super::stock_link::AttachFace, crate::Dir) {
+    use super::stock_link::AttachFace;
+    match look {
+        crate::Dir::Up => (AttachFace::Ceiling, horizontal),
+        crate::Dir::Down => (AttachFace::Floor, horizontal.opposite()),
+        wall => (AttachFace::Wall, wall.opposite()),
+    }
+}
+
+/// The panel a gauge item put on a block goes into when the click's spot can't be read (Create picks the slot nearest to the click,
+/// `FactoryPanelBlock.getTargetedSlot`): the first free one, bottom row first.
+pub fn next_free_slot(active: [bool; 4]) -> Option<Slot> {
+    [Slot::BottomLeft, Slot::BottomRight, Slot::TopLeft, Slot::TopRight]
+        .into_iter()
+        .find(|slot| !active[Slot::ALL.iter().position(|s| s == slot).unwrap_or(0)])
 }
 
 /// `checkForIssues(from, to)` for two panels: connecting `from` as an input to `to`.
@@ -940,6 +974,41 @@ impl Support {
 mod tests {
     use super::*;
     use crate::rules::logistics_network::PackagerView;
+
+    #[test]
+    fn a_gauge_faces_back_at_the_player_and_a_floor_gauge_the_other_way() {
+        use crate::Dir;
+        use crate::rules::stock_link::AttachFace;
+        assert_eq!(placement(Dir::North, Dir::South), (AttachFace::Wall, Dir::South));
+        assert_eq!(placement(Dir::Up, Dir::East), (AttachFace::Ceiling, Dir::East));
+        assert_eq!(placement(Dir::Down, Dir::East), (AttachFace::Floor, Dir::West));
+    }
+
+    #[test]
+    fn a_new_panel_takes_the_first_free_slot_bottom_row_first() {
+        // `Slot::ALL` order: top left, top right, bottom left, bottom right.
+        assert_eq!(next_free_slot([false; 4]), Some(Slot::BottomLeft));
+        assert_eq!(next_free_slot([false, false, true, false]), Some(Slot::BottomRight));
+        assert_eq!(next_free_slot([false, false, true, true]), Some(Slot::TopLeft));
+        assert_eq!(next_free_slot([true; 4]), None);
+    }
+
+    #[test]
+    fn every_refusal_has_a_message() {
+        for issue in [
+            Issue::ConnectionAborted,
+            Issue::AlreadyConnected,
+            Issue::CannotAddMoreInputs,
+            Issue::SameOrientation,
+            Issue::SameSurface,
+            Issue::TooFarApart,
+            Issue::InputInRestockMode,
+            Issue::NoItem,
+        ] {
+            assert!(!issue.message().is_empty());
+            assert!(issue.lang_key().starts_with("factory_panel."));
+        }
+    }
 
     struct Fixed;
     impl Random for Fixed {

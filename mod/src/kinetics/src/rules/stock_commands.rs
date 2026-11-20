@@ -86,7 +86,7 @@ fn parse_count(text: &str) -> Result<Count, String> {
     }
 }
 
-fn parse_flag(text: &str) -> Result<bool, String> {
+pub(crate) fn parse_flag(text: &str) -> Result<bool, String> {
     match text {
         "true" | "yes" | "on" => Ok(true),
         "false" | "no" | "off" => Ok(false),
@@ -95,7 +95,7 @@ fn parse_flag(text: &str) -> Result<bool, String> {
 }
 
 /// The words of a line, with the rest of it after `n` words kept whole (an address may hold spaces).
-fn rest_after(line: &str, words: usize) -> &str {
+pub(crate) fn rest_after(line: &str, words: usize) -> &str {
     let mut rest = line.trim_start();
     for _ in 0..words {
         rest = rest.trim_start().split_once(char::is_whitespace).map_or("", |(_, tail)| tail);

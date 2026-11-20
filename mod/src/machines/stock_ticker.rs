@@ -15,7 +15,11 @@
 //! - Create's request screen (the item grid, categories, the recipe viewer, the lock button, the hat) is replaced by commands, and no
 //!   shopkeeper has to be seated beside the ticker (`isKeeperPresent`). The categories and the lock are not offered; a network
 //!   owner is kept from the Stock Link's placer (`mayInteract`) and unlocked networks are open to everyone.
-//! - Sales to Shopping Lists (`receivedPayments`) are not here: they come with the Table Cloth.
+//! - A shopkeeper doesn't have to be seated for `/stock` (`isKeeperPresent`), but a Table Cloth shop needs one (a mob on a Seat beside
+//!   the ticker, or a Blaze Burner), as in Create. Right-click the ticker holding a Shopping List to hand it over: the payment goes into
+//!   the ticker's 27 payment slots (`receivedPayments`, reachable by hoppers and the like) and the goods are ordered to the list's address
+//!   (`StockTickerInteractionHandler.interactWithShop`); Create has you hand the list to the shopkeeper itself. A click with anything else
+//!   first collects the payments (`StockTickerBlock.useItemOn`), and only an empty ticker opens.
 //! - The order and the address live in memory per player, not in the block.
 
 use std::collections::BTreeMap;
@@ -29,13 +33,16 @@ use create_kinetics::rules::packager::RequestType;
 use create_kinetics::rules::redstone_requester::AutoRequestData;
 use create_kinetics::rules::stock_commands::{self as commands, Stock};
 use create_kinetics::rules::stock_ticker::{self as rules, OrderList, OrderRequest};
+use create_kinetics::rules::package::Big;
 use crate::compat::{
-    BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent, Compound, Flow, Hooks, Host, ItemStack, NativeCommand,
+    BlockEntityContainerEvent, ModContainer, NativeInventoryKind, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent, Compound, Flow, Hooks, Host, ItemStack, NativeCommand,
     PerformCommandEvent, PlaceBlockEvent, RegisterCommandsEvent, RightClickBlockEvent, StateForPlacementEvent, Tag, Text,
     UseItemOnEvent,
 };
 
 use super::logistics as network;
+use super::package as items;
+use super::table_cloth;
 use crate::util;
 
 const PREVIOUS_ADDRESS: &str = "PreviousAddress";
@@ -76,6 +83,104 @@ pub fn take_programmed(uuid: u128) -> Option<Programmed> {
 
 fn tell(host: &mut dyn Host, uuid: u128, line: impl Into<String>) {
     host.tell(uuid, Text::literal(line.into()));
+}
+
+/// `receivedPayments`: `new SmartInventory(27, this, 64, false)`.
+const PAYMENT_SLOTS: usize = rules::PAYMENT_SLOTS;
+/// `AllBlockEntityTypes.HEATER`: the blocks that count as a shopkeeper beside the ticker.
+const HEATER: &str = "create:blaze_burner";
+
+/// `StockTickerBlockEntity.isKeeperPresent`: a mob on a Seat beside the ticker (in its row or the one below) or a Blaze Burner beside it.
+pub fn keeper_present(host: &dyn Host, ticker: Pos) -> bool {
+    let dimension = host.dimension();
+    rules::keeper_present(
+        ticker,
+        &|seat| !super::seat::riders_at(host, dimension, seat).is_empty(),
+        &|at| host.block(at) == HEATER,
+    )
+}
+
+/// `StockTickerBlock.useItemOn`: what the payment slots hold goes to the player (placed back into the inventory). Whether there was any.
+fn collect_payments(host: &mut dyn Host, uuid: u128, pos: Pos) -> bool {
+    let Some(entity) = host.mod_block_entity(pos) else {
+        return false;
+    };
+    let paid: Vec<ItemStack> = entity.items.iter().flatten().cloned().collect();
+    if paid.is_empty() {
+        return false;
+    }
+    host.change_mod_block_entity(pos, &mut |entity| entity.items = vec![None; PAYMENT_SLOTS]);
+    for stack in paid {
+        if let Some(rest) = host.give_stack(uuid, stack) {
+            let at = host.acting_player().map_or([0.0; 3], |p| p.position);
+            util::spawn_item(host, at, &rest, [0.0; 3], 0);
+        }
+    }
+    host.play_sound("minecraft:entity.item.pickup", util::centre(pos), 2, 0.2, 1.4);
+    true
+}
+
+fn deny(host: &mut dyn Host, uuid: u128, line: &str) {
+    if let Some(player) = host.acting_player() {
+        host.play_sound("create:deny", player.position, 7, 1.0, 1.0);
+    }
+    host.action_bar(uuid, Text::literal(line.to_owned()));
+}
+
+/// `StockTickerInteractionHandler.interactWithShop` with the Shopping List in the player's hand.
+fn sell(host: &mut dyn Host, uuid: u128, pos: Pos, held: &ItemStack) {
+    let Some(list) = table_cloth::list_of(held) else {
+        return;
+    };
+    let Some(freq) = ticker_freq(host, pos) else {
+        return;
+    };
+    let (goods, payment) = table_cloth::bake(host, &list);
+    // "Must be up-to-date".
+    let recent = network::summary(host, freq, true);
+    let Some(entity) = host.mod_block_entity(pos) else {
+        return;
+    };
+    let mut received: Vec<Option<Big<ItemStack>>> =
+        entity.items.iter().map(|slot| slot.as_ref().map(|stack| (items::key(stack), stack.count))).collect();
+    received.resize(PAYMENT_SLOTS, None);
+    let stacks = host.player_stacks(uuid).unwrap_or_default();
+    let player: Vec<Option<Big<ItemStack>>> =
+        stacks.iter().take(rules::PLAYER_SLOTS).map(|slot| slot.as_ref().map(|stack| (items::key(stack), stack.count))).collect();
+    let outcome = {
+        let view: &dyn Host = &*host;
+        let max = |key: &ItemStack| view.max_stack_size(&key.item).unwrap_or(64);
+        rules::sell(freq, list.shop_network, (&goods, &payment), &recent, &received, &player, &max)
+    };
+    match outcome {
+        rules::Sale::WrongNetwork => deny(host, uuid, "This list is for another shop"),
+        rules::Sale::StockTooLow => deny(host, uuid, "Purchase cancelled: Stock levels lower than expected"),
+        rules::Sale::CashRegisterFull => deny(host, uuid, "Purchase cancelled: Not enough space in Cash Register"),
+        rules::Sale::TooBroke => deny(host, uuid, "You cannot afford this purchase"),
+        rules::Sale::Sold { removed, received, order } => {
+            for (slot, count) in removed {
+                let Some(Some(stack)) = stacks.get(slot) else {
+                    continue;
+                };
+                let left = stack.count.saturating_sub(count);
+                let new = (left > 0).then(|| ItemStack { count: left, ..stack.clone() });
+                let _ = host.set_inventory_slot_typed(uuid, NativeInventoryKind::Player, slot, Some(stack), new);
+            }
+            let slots: Vec<Option<ItemStack>> =
+                received.into_iter().map(|slot| slot.map(|(key, count)| ItemStack { count, ..key })).collect();
+            host.change_mod_block_entity(pos, &mut |entity| entity.items = slots.clone());
+            let address = table_cloth::address_of(held);
+            // Its result isn't looked at, as in Create (`broadcastPackageRequest(RequestType.PLAYER, order, null, address)`).
+            network::broadcast(host, freq, RequestType::Player, &order, &address);
+            host.change_mod_block_entity(pos, &mut |entity| {
+                util::put(&mut entity.nbt, PREVIOUS_ADDRESS, Tag::String(address.as_str().into()));
+            });
+            items::shrink_held(uuid, table_cloth::SHOPPING_LIST);
+            if !order.is_empty() {
+                host.play_sound("create:stock_ticker_trade", util::centre(pos), 2, 1.0, 1.0);
+            }
+        }
+    }
 }
 
 fn key_of(item: &str) -> ItemStack {
@@ -293,6 +398,17 @@ impl Hooks for Tickers {
         }
     }
 
+    /// `receivedPayments`, reachable from every side (`registerCapabilities`).
+    fn block_entity_container(&self, _: &dyn Host, event: &mut BlockEntityContainerEvent<'_>) -> Option<ModContainer> {
+        (event.block == network::STOCK_TICKER).then(|| ModContainer {
+            slots: PAYMENT_SLOTS,
+            faces: [(); 6].map(|()| (0..PAYMENT_SLOTS).collect()),
+            inputs: (0..PAYMENT_SLOTS).collect(),
+            outputs: (0..PAYMENT_SLOTS).collect(),
+            menu: None,
+        })
+    }
+
     /// `StockTickerBlock.getStateForPlacement`: it faces the player (the other way when sneaking).
     fn state_for_placement(
         &self,
@@ -334,6 +450,10 @@ impl Hooks for Tickers {
             && let Some(entity) = host.mod_block_entity(pos)
         {
             network::link_removed(host, pos, &entity.nbt, false);
+            // `StockTickerBlockEntity.destroy`: the payments are dropped.
+            for stack in entity.items.iter().flatten() {
+                util::spawn_item(host, util::centre(pos), stack, [0.0; 3], 10);
+            }
         }
         Flow::Continue
     }
@@ -354,6 +474,9 @@ impl Hooks for Tickers {
             return Flow::Continue;
         }
         if !util::first_click(&*host, player.uuid, pos) {
+            return Flow::Cancel;
+        }
+        if collect_payments(host, player.uuid, pos) {
             return Flow::Cancel;
         }
         open(host, player.uuid, pos);
@@ -379,6 +502,14 @@ impl Hooks for Tickers {
             return Flow::Continue;
         }
         if !util::first_click(&*host, player.uuid, pos) {
+            return Flow::Cancel;
+        }
+        if &*event.stack.item == table_cloth::SHOPPING_LIST {
+            let held = event.stack.clone();
+            sell(host, player.uuid, pos, &held);
+            return Flow::Cancel;
+        }
+        if collect_payments(host, player.uuid, pos) {
             return Flow::Cancel;
         }
         open(host, player.uuid, pos);
