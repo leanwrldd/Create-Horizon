@@ -116,6 +116,7 @@
     "create:sequenced_gearshift",
     "create:encased_fluid_pipe",
     "create:rotation_speed_controller",
+    "create:stock_ticker",
     "create:stockpile_switch",
     "create:white_toolbox",
     "create:orange_toolbox",

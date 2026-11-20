@@ -1,0 +1,28 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 1.5,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "map_color": 0,
+    "render_shape": "MODEL",
+    "sounds": "minecraft:netherite_block"
+  },
+  "state_properties": {
+    "axis": {
+      "type": "enum",
+      "values": [
+        "x",
+        "z"
+      ]
+    },
+    "powered": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "axis": "x",
+    "powered": "false"
+  }
+}

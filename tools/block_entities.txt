@@ -80,6 +80,7 @@ green_valve_handle
 hand_crank
 hose_pulley
 item_drain
+item_hatch
 item_vault
 large_cogwheel
 large_water_wheel
@@ -146,6 +147,7 @@ red_toolbox
 red_valve_handle
 redstone_contact
 redstone_link
+redstone_requester
 repackager
 rope_pulley
 rose_quartz_lamp
@@ -164,6 +166,8 @@ steam_whistle
 steam_whistle_extension
 sticker
 sticky_mechanical_piston
+stock_link
+stock_ticker
 stockpile_switch
 stressometer
 turntable

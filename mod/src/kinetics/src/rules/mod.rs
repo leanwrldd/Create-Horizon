@@ -130,6 +130,8 @@ pub mod spout_blocks;
 pub mod steam_engine;
 pub mod steam_engine_whistle;
 pub mod sticker;
+pub mod stock_commands;
+pub mod stock_link;
 pub mod stock_ticker;
 pub mod stockpile_switch;
 pub mod super_glue;
