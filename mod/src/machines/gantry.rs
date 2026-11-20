@@ -132,9 +132,10 @@ static LAST_SIGNAL: LazyLock<Mutex<HashMap<(String, Pos), bool>>> = LazyLock::ne
 
 /// `GantryShaftBlock.neighborChanged`, polled: when this shaft's own signal changed, or a powered
 /// neighbour of its line should power it, the line is read and the shafts that change are set.
-fn poll_power(host: &mut dyn Host, pos: Pos, facing: Dir, powered: bool) {
+fn poll_power(host: &mut dyn Host, nbt: &mut Compound, pos: Pos, facing: Dir, powered: bool) {
     let dimension = host.dimension().to_owned();
-    let signal = host.neighbor_signal(&dimension, pos) > 0;
+    // This shaft's own signal is the one the neighbour event left (`signals`); the rest of the line is asked only in a walk.
+    let signal = crate::signals::read(host, nbt, pos) > 0;
     let key = (dimension.clone(), pos);
     let changed = {
         let mut last = lock(&LAST_SIGNAL);
@@ -713,7 +714,7 @@ fn tick_shaft(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     let Some((facing, part, powered)) = shaft_at(&*host, pos) else {
         return;
     };
-    poll_power(host, pos, facing, powered);
+    poll_power(host, &mut event.entity.nbt, pos, facing, powered);
     // A powered shaft turns with the carriage beside it; an unpowered one is a plain shaft.
     let node = Node::passive(if powered { Kind::gantry_shaft(facing) } else { Kind::Shaft(facing.axis()) });
     let previous = kinetic::speed(event.entity);

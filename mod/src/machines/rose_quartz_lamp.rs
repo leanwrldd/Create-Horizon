@@ -57,7 +57,7 @@ fn lamps_around(host: &dyn Host, origin: Pos) -> Vec<Pos> {
     cluster(origin, |pos| host.block(pos) == ID)
 }
 
-fn tick(host: &mut dyn Host, pos: Pos) {
+fn tick(host: &mut dyn Host, pos: Pos, nbt: &mut Compound) {
     let dimension = host.dimension();
     let mut lamp = read(host, pos);
     // `RoseQuartzLampBlock.tick`, the tick `scheduleActivation` asked for.
@@ -69,8 +69,8 @@ fn tick(host: &mut dyn Host, pos: Pos) {
         lamp = next;
         host.update_signal_neighbors(dimension, pos);
     }
-    // `RoseQuartzLampBlock.neighborChanged`.
-    let signal_now = host.neighbor_signal(dimension, pos) > 0;
+    // `RoseQuartzLampBlock.neighborChanged`: the signal the neighbour event left (`signals`).
+    let signal_now = crate::signals::read(host, nbt, pos) > 0;
     match react(lamp, signal_now) {
         Reaction::None => {}
         Reaction::Unpower => set(host, pos, "powered", false),
@@ -132,7 +132,7 @@ impl Hooks for RoseQuartzLamp {
 
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         if event.entity.id == ID {
-            tick(host, event.pos);
+            tick(host, event.pos, &mut event.entity.nbt);
         }
     }
 

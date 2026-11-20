@@ -89,7 +89,7 @@ impl Hooks for ChainDrive {
         // `ChainGearshiftBlockEntity.neighbourChanged` and `ChainGearshiftBlock.neighborChanged`.
         let mut signal = 0;
         if event.entity.id == GEARSHIFT {
-            signal = host.neighbor_signal(host.dimension(), pos).clamp(0, 15);
+            signal = crate::signals::read(host, &mut event.entity.nbt, pos).clamp(0, 15);
             let was = host.block_property(pos, "powered").as_deref() == Some("true");
             if was != powered(signal) {
                 host.set_block_property(pos, "powered", if powered(signal) { "true" } else { "false" });

@@ -118,7 +118,8 @@ impl Hooks for ContraptionControls {
         if event.entity.id != ID {
             return;
         }
-        let signal = host.neighbor_signal(host.dimension(), event.pos) > 0;
+        // `ContraptionControlsBlock.neighborChanged`: the signal the neighbour event left (`signals`).
+        let signal = crate::signals::read(host, &mut event.entity.nbt, event.pos) > 0;
         if let Some(next) = controls_of(&event.entity.nbt).power_update(signal) {
             write_controls(&mut event.entity.nbt, next);
             host.block_entity_sync(event.pos);
