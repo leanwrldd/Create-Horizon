@@ -188,10 +188,18 @@ pub fn menu_clicked(host: &mut dyn ServerHost, event: &mut mod_api::MenuClickedE
         button: event.button,
         mode: event.mode,
     };
+    // A view `Host::open_menu_with_input` opened takes its clicks here.
+    if menu_input::clicked(host, event) {
+        return;
+    }
     create().menu_clicked(&mut Adapter::Server(host), &mut old);
 }
 
 pub fn menu_closed(host: &mut dyn ServerHost, event: &mut mod_api::MenuClosedEvent) {
+    // The view of `Host::open_menu_with_input` closes: `menu_input_closed` first, then the plain close.
+    if let Some(view) = menu_input::closed(event.window) {
+        menu_input::closed_to_modules(host, event, view);
+    }
     let mut old = MenuClosedEvent { uuid: event.uuid, window: event.window };
     create().menu_closed(&mut Adapter::Server(host), &mut old);
 }

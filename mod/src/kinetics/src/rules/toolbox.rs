@@ -287,7 +287,7 @@ impl Toolbox {
 }
 
 /// `ItemStack.isSameItemSameComponents`.
-fn same_stack(a: &Item, b: &Item) -> bool {
+pub fn same_stack(a: &Item, b: &Item) -> bool {
     a.id == b.id && a.components == b.components
 }
 

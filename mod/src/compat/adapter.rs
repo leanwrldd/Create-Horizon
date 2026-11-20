@@ -441,6 +441,17 @@ impl Host for Adapter<'_> {
         let Some(player) = host.players().acting_player() else { return 0 };
         host_services::give(host, player, &ItemStack::new(item, count))
     }
+    fn open_menu_with_input(
+        &mut self,
+        uuid: u128,
+        rows: u8,
+        title: Text,
+        items: Vec<Option<ItemStack>>,
+        input: std::ops::Range<usize>,
+    ) -> Option<i32> {
+        let host = self.server_mut()?;
+        menu_input::open(host, uuid, rows, title, items, input)
+    }
     fn give_stack(&mut self, uuid: u128, stack: ItemStack) -> Option<ItemStack> {
         let Some(host) = self.server_mut() else { return Some(stack) };
         let Some(player) = host.player(uuid) else { return Some(stack) };
