@@ -41,7 +41,7 @@ use super::contraption::{
 use super::actor;
 use super::actor_draw;
 use super::portable_interface_motion as psi_motion;
-use create_kinetics::rules::actor::{Carrier, Structure};
+use create_kinetics::rules::actor::{Carrier, Structure, speed_reversed};
 use crate::{kinetic, util};
 
 const NORMAL: &str = "create:mechanical_piston";
@@ -310,6 +310,11 @@ impl Hooks for Piston {
         // `onSpeedChanged`: the structure follows the old speed up to now, then the new one.
         if changed {
             if state.running {
+                // `LinearActuatorBlockEntity.onSpeedChanged`: a piston that turns round (or stops)
+                // stops its actors (`Contraption.stop`).
+                if speed_reversed(previous, rpm) {
+                    actor::restart(host, pos, &entity.nbt);
+                }
                 let velocity = piston_rules::velocity(psi_motion::moving_rpm(entity, previous), facing);
                 let offset = piston_rules::offset_at(state.offset, state.time, velocity, now as f64, state.range);
                 util::set_float(&mut entity.nbt, OFFSET, offset);
