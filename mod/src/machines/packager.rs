@@ -22,7 +22,8 @@
 //! - Boxes that can't leave yet wait in a queue (`QueuedExitingPackages`).
 //!
 //! Known differences from Create:
-//! - The block has no `linked` state change (no Stock Link yet) and no computer peripheral.
+//! - No computer peripheral. A Stock Link sets the block's `linked` state (the link's tick, `stock_link.rs`), and a linked
+//!   packager ignores redstone (`redstoneModeActive`) and serves the network's orders (`attempt_requests`).
 //! - Create's comparator reads 15 while a box is held or in motion; here it reads what a vanilla
 //!   comparator reads from a one-slot container.
 //! - The inventory is read from saved data and can't be asked first: see `packager_inv.rs`.
@@ -284,7 +285,46 @@ fn attempt_to_send(host: &mut dyn Host, pos: Pos, state: &mut State<ItemStack>, 
     if repackager {
         return super::repackager::attempt(host, pos, target, face, state, now, sign);
     }
+    pack_from(host, target, face, state, now, sign, None)
+}
+
+/// `PackagerBlockEntity.attemptToSend(queuedRequests)`: the Stock Ticker's, Redstone Requester's and
+/// Factory Gauge's orders, as the network rules planned them for this packager. The first request is
+/// served (finished ones leave the list), and the box is addressed and carries its place in the order.
+/// Returns whether a box was made; a request that finds nothing is dropped, as Create does.
+pub(crate) fn attempt_requests(host: &mut dyn Host, pos: Pos, requests: &mut Vec<package_rules::Request<ItemStack>>) -> bool {
+    let now = util::game_time(&*host);
+    let (Some(entity), Some((target, face))) = (host.mod_block_entity(pos), target_of(&*host, pos)) else {
+        requests.clear();
+        return false;
+    };
+    let mut state = read(&entity.nbt);
+    let sent = pack_from(host, target, face, &mut state, now, "", Some(requests));
+    if sent {
+        host.change_mod_block_entity(pos, &mut |e| {
+            store(e, &state, None);
+        });
+        host.block_entity_sync(pos);
+    }
+    sent
+}
+
+/// The packing of `attempt_to_send` (the redstone way, `requests` none) and of `attempt_requests`.
+fn pack_from(
+    host: &mut dyn Host,
+    target: Pos,
+    face: Dir,
+    state: &mut State<ItemStack>,
+    now: i64,
+    sign: &str,
+    mut requests: Option<&mut Vec<package_rules::Request<ItemStack>>>,
+) -> bool {
     let Some(held) = target_inv::read(host, target) else {
+        if let Some(requests) = requests.as_deref_mut()
+            && !requests.is_empty()
+        {
+            requests.remove(0);
+        }
         return false;
     };
     let slots: Vec<Option<Slot<ItemStack>>> = held
@@ -299,7 +339,7 @@ fn attempt_to_send(host: &mut dyn Host, pos: Pos, state: &mut State<ItemStack>, 
             })
         })
         .collect();
-    let Some(packed) = package_rules::pack(&slots, None) else {
+    let Some(packed) = package_rules::pack(&slots, requests.as_deref_mut()) else {
         return false;
     };
     // Take what was decided; the box holds what actually came out.
@@ -328,7 +368,14 @@ fn attempt_to_send(host: &mut dyn Host, pos: Pos, state: &mut State<ItemStack>, 
         None => items::containing(&*host, &contents),
     };
     items::clear_address(&*host, &mut created);
-    if !rules_blank(sign) {
+    // `if (fixedAddress != null) addAddress; if (requestQueue) setOrder; if (!requestQueue && !sign.isBlank()) addAddress(sign)`.
+    if let Some(address) = &packed.address {
+        items::set_address(&*host, &mut created, address);
+    }
+    if let Some(order) = &packed.order {
+        items::set_order(&*host, &mut created, order);
+    }
+    if requests.is_none() && !rules_blank(sign) {
         items::set_address(&*host, &mut created, sign);
     }
     state.send(created, now);
@@ -485,13 +532,17 @@ impl Hooks for Packagers {
         let dimension = host.dimension();
         let signal = host.neighbor_signal(&dimension, pos) > 0;
         let block_powered = host.block_property(pos, "powered").as_deref() == Some("true");
+        // `redstoneModeActive`: a packager with a Stock Link on it ignores redstone (it is `linked`).
+        let linked = host.block_property(pos, "linked").as_deref() == Some("true");
         match rules::edge(block_powered, signal) {
             Edge::Rising => {
                 host.set_block_property(pos, "powered", "true");
-                let address = sign_address(host, pos);
-                attempt_to_send(host, pos, &mut state, now, &address, repackager);
-                sign = Some(address);
-                state.activate(now);
+                if !linked {
+                    let address = sign_address(host, pos);
+                    attempt_to_send(host, pos, &mut state, now, &address, repackager);
+                    sign = Some(address);
+                    state.activate(now);
+                }
             }
             Edge::Falling => {
                 host.set_block_property(pos, "powered", "false");
@@ -502,7 +553,7 @@ impl Hooks for Packagers {
         let salt = (i64::from(pos[0]) * 31 + i64::from(pos[1]) * 17 + i64::from(pos[2]) * 7).rem_euclid(rules::LAZY_PERIOD);
         if (now + salt) % rules::LAZY_PERIOD == 0 && state.powered {
             state.powered = signal;
-            if state.powered || repackager {
+            if (state.powered && !linked) || repackager {
                 let address = sign_address(host, pos);
                 attempt_to_send(host, pos, &mut state, now, &address, repackager);
                 sign = Some(address);
