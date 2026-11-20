@@ -172,9 +172,8 @@ impl Host for Adapter<'_> {
         let Some(level) = host.level(host.dimension()) else { return false };
         let Some(handle) = host.block_entity(level, pos) else { return false };
         let mut ok = true;
-        if entity.nbt != before.nbt {
-            ok &= handle.replace_data(&mut **host, entity.nbt.clone()).is_ok();
-        }
+        // The slots go first: a refused slot write leaves the data as it was too, so the saved state (a
+        // depot's `HeldItem`) never describes items the slots don't hold.
         if entity.items != before.items {
             // Each changed slot is written in one transaction, as the new API journals them.
             let slots: Vec<(u32, Option<mod_api::ItemStack>)> = entity
@@ -193,8 +192,14 @@ impl Host for Adapter<'_> {
                 })
                 .is_ok();
         }
+        if !ok {
+            return false;
+        }
         if entity.items != before.items {
             events::cache_slots(pos, &entity.items);
+        }
+        if entity.nbt != before.nbt {
+            ok &= handle.replace_data(&mut **host, entity.nbt.clone()).is_ok();
         }
         if entity.data != before.data {
             ok &= handle.set_data_slots(&mut **host, entity.data.clone()).is_ok();
