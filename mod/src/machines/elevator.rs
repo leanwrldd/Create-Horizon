@@ -533,6 +533,8 @@ fn tick_pulley(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
             out
         };
         let pose = psi_motion::Pose::Translating { origin: &origin };
+        let (_, _, cabin_arrived) = elevator::replay_as(snapshot, rpm, now - snapshot.time, held_now);
+        actor::note_elevator(&dimension, pos, cabin_arrived);
         let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, Structure::Elevator);
         let want = psi_motion::tick(host, pos, &live.moving, &pose, now) | acted;
         if want != held_now {

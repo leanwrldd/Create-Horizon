@@ -58,6 +58,8 @@ pub(super) enum Extra {
     Deployer(Box<Hand>),
     /// A Redstone Contact's `lastContact`.
     Contact(Option<Pos>),
+    /// A bell's `temporaryData`: the elevator's `moved` flag, or a Haunted Bell's recharge.
+    Bell { moved: bool, recharge: Option<i32> },
 }
 
 /// `DeployerFakePlayer`'s state: what is in its hand, the block it is mining, the stall's timer.
@@ -105,7 +107,7 @@ pub(super) fn visit(cx: &mut Cx<'_>, actor: &mut Actor, cell: Pos) {
         Kind::Deployer => deployer_visit(cx, actor, cell),
         Kind::Funnel { brass } => funnel(cx, actor, cell, brass),
         Kind::Roller => super::roller_actor::visit(cx, actor, cell),
-        Kind::Seat | Kind::Controls | Kind::Contact => {
+        Kind::Seat | Kind::Controls | Kind::Contact | Kind::Bell(_) | Kind::Campfire | Kind::Dispenser { .. } => {
             super::actor_more::visit(cx, actor, cell);
         }
     }
@@ -117,8 +119,13 @@ pub(super) fn tick(cx: &mut Cx<'_>, actor: &mut Actor) {
         Kind::Drill | Kind::Saw | Kind::Plough | Kind::Roller => breaker_tick(cx, actor),
         Kind::Deployer => deployer_tick(cx, actor),
         Kind::Harvester | Kind::Funnel { .. } => {}
-        Kind::Seat | Kind::Controls | Kind::Contact => super::actor_more::tick(cx, actor),
+        Kind::Seat | Kind::Controls | Kind::Contact | Kind::Bell(_) | Kind::Campfire | Kind::Dispenser { .. } => super::actor_more::tick(cx, actor),
     }
+}
+
+/// `onSpeedChanged`: only the bells use it.
+pub(super) fn speed_changed(cx: &mut Cx<'_>, actor: &mut Actor, old: [f64; 3]) {
+    super::actor_more::speed_changed(cx, actor, old);
 }
 
 /// `stopMoving`.
@@ -127,7 +134,7 @@ pub(super) fn stop(cx: &mut Cx<'_>, actor: &mut Actor) {
         Kind::Drill | Kind::Saw | Kind::Plough | Kind::Roller => cancel_stall(cx, actor),
         Kind::Deployer => deployer_stop(cx, actor),
         Kind::Harvester | Kind::Funnel { .. } => {}
-        Kind::Seat | Kind::Controls | Kind::Contact => super::actor_more::stop(cx, actor),
+        Kind::Seat | Kind::Controls | Kind::Contact | Kind::Bell(_) | Kind::Campfire | Kind::Dispenser { .. } => super::actor_more::stop(cx, actor),
     }
 }
 
@@ -476,7 +483,7 @@ fn hand_mut(actor: &mut Actor) -> &mut Hand {
     }
     match &mut actor.extra {
         Extra::Deployer(hand) => hand,
-        Extra::None | Extra::Contact(_) => unreachable!("the hand was just made"),
+        Extra::None | Extra::Contact(_) | Extra::Bell { .. } => unreachable!("the hand was just made"),
     }
 }
 
