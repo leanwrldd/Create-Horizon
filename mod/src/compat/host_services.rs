@@ -39,13 +39,16 @@ impl Adapter<'_> {
 
 // --- particles -----------------------------------------------------------------------------------------------
 
-/// The new API issues a particle key at registration only; `register_particles` asks for the three the glue uses.
+/// The new API issues a particle key at registration only; `register_particles` asks for the ones the glue uses.
 static PARTICLE_KEYS: LazyLock<Mutex<HashMap<&'static str, mod_api::ParticleKey>>> = LazyLock::new(Mutex::default);
 
-const PARTICLE_IDS: [(ParticleType, &str); 3] = [
+const PARTICLE_IDS: [(ParticleType, &str); 6] = [
     (ParticleType::LargeSmoke, "minecraft:large_smoke"),
     (ParticleType::HappyVillager, "minecraft:happy_villager"),
     (ParticleType::Dust, "minecraft:dust"),
+    (ParticleType::Smoke, "minecraft:smoke"),
+    (ParticleType::CampfireCosySmoke, "minecraft:campfire_cosy_smoke"),
+    (ParticleType::CampfireSignalSmoke, "minecraft:campfire_signal_smoke"),
 ];
 
 /// Called from `Hooks::register`.

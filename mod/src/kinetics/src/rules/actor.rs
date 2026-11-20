@@ -27,6 +27,12 @@ pub enum Kind {
     Controls,
     /// `ContactMovementBehaviour`.
     Contact,
+    /// `BellMovementBehaviour` (and `HauntedBellMovementBehaviour`): `actor_misc.rs`.
+    Bell(super::actor_misc::BellKind),
+    /// `CampfireMovementBehaviour`, for the campfire and the soul campfire.
+    Campfire,
+    /// `DispenserMovementBehaviour` (`dropper: false`) or `DropperMovementBehaviour`.
+    Dispenser { dropper: bool },
 }
 
 pub const DRILL: &str = "create:mechanical_drill";
@@ -54,6 +60,12 @@ pub fn kind_of(block: &str) -> Option<Kind> {
         CONTROLS => Kind::Controls,
         CONTACT => Kind::Contact,
         other if super::seat::colour_of_block(other).is_some() => Kind::Seat,
+        other if super::actor_misc::bell_kind(other).is_some() => {
+            Kind::Bell(super::actor_misc::bell_kind(other)?)
+        }
+        super::actor_misc::CAMPFIRE | super::actor_misc::SOUL_CAMPFIRE => Kind::Campfire,
+        super::actor_misc::DISPENSER => Kind::Dispenser { dropper: false },
+        super::actor_misc::DROPPER => Kind::Dispenser { dropper: true },
         _ => return None,
     })
 }
@@ -126,7 +138,8 @@ pub fn active_area_offset(kind: Kind, facing: Option<Dir>, extracting: bool) -> 
         }
         // `ContactMovementBehaviour.getActiveAreaOffset`.
         Kind::Contact => scale(n, SIXTY_FIVE),
-        Kind::Seat | Kind::Controls => [0.0; 3],
+        // The default `getActiveAreaOffset`: the block's own centre.
+        Kind::Seat | Kind::Controls | Kind::Bell(_) | Kind::Campfire | Kind::Dispenser { .. } => [0.0; 3],
     }
 }
 

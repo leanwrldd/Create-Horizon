@@ -85,6 +85,19 @@ fn with_runs<R>(f: impl FnOnce(&mut HashMap<Key, Run>) -> R) -> R {
     f(guard.get_or_insert_with(HashMap::new))
 }
 
+static ARRIVALS: Mutex<Option<HashMap<Key, bool>>> = Mutex::new(None);
+
+fn with_arrivals<R>(f: impl FnOnce(&mut HashMap<Key, bool>) -> R) -> R {
+    let mut guard = ARRIVALS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    f(guard.get_or_insert_with(HashMap::new))
+}
+
+/// An elevator's controller tells its actors, before it ticks them, whether the cabin has arrived
+/// (`ElevatorContraption.arrived`, which `BellMovementBehaviour.tick` reads).
+pub fn note_elevator(dimension: &str, controller: Pos, arrived: bool) {
+    with_arrivals(|map| map.insert((dimension.to_owned(), controller), arrived));
+}
+
 /// How long a run nobody ticked stays (a controller that was removed or unloaded).
 const STALE: i64 = 400;
 
@@ -290,6 +303,8 @@ pub(super) struct Cx<'a> {
     pub carrier: Carrier,
     #[allow(dead_code)]
     pub controller: Pos,
+    /// `ElevatorContraption.arrived`, when the structure is an elevator's cabin (`BellMovementBehaviour`).
+    pub elevator_arrived: Option<bool>,
 }
 
 impl Cx<'_> {
@@ -360,24 +375,33 @@ pub fn tick(
     let mut store = Store::new(live);
     let t = now as f64;
     let mut stalled = false;
+    let elevator_arrived = if structure == Structure::Elevator {
+        Some(with_arrivals(|map| map.get(&key).copied().unwrap_or(false)))
+    } else {
+        None
+    };
     for actor in &mut run.actors {
         let facing = actor.state.dir("facing");
         let offset = rules::active_area_offset(actor.kind, facing, actor.state.flag("extracting"));
         let centre = pose.centre(t, actor.local);
         let turned = pose.rotate(t, offset);
         let position = [centre[0] + turned[0], centre[1] + turned[1], centre[2] + turned[2]];
+        let old_motion = actor.ctx.motion;
         let visited = actor.ctx.arrive(position, &|v| pose.unrotate(t, v), false);
         if !rules::is_active(actor.kind, actor.ctx.disabled, facing, actor.ctx.relative_motion, structure.is_pulley())
             && !rules::must_tick_while_disabled(actor.kind)
         {
             continue;
         }
-        let mut cx = Cx { host: &mut *host, store: &mut store, pose, now, carrier, controller };
+        let mut cx = Cx { host: &mut *host, store: &mut store, pose, now, carrier, controller, elevator_arrived };
         if let Some(cell) = visited
             && !actor.ctx.stall
         {
             tools::visit(&mut cx, actor, cell);
             actor.ctx.visited();
+        }
+        if old_motion != actor.ctx.motion {
+            tools::speed_changed(&mut cx, actor, old_motion);
         }
         tools::tick(&mut cx, actor);
         stalled |= actor.ctx.stall;
@@ -420,7 +444,7 @@ fn stop_moving(host: &mut dyn Host, controller: Pos, nbt: &Compound, keep: bool)
     let pose = Pose::Translating { origin: &origin };
     for actor in &mut run.actors {
         let mut cx =
-            Cx { host: &mut *host, store: &mut store, pose: &pose, now: 0, carrier: Carrier::Controlled, controller };
+            Cx { host: &mut *host, store: &mut store, pose: &pose, now: 0, carrier: Carrier::Controlled, controller, elevator_arrived: None };
         tools::stop(&mut cx, actor);
         actor.ctx.stop();
     }

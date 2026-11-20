@@ -874,6 +874,9 @@ pub enum ParticleType {
     LargeSmoke,
     HappyVillager,
     Dust,
+    Smoke,
+    CampfireCosySmoke,
+    CampfireSignalSmoke,
 }
 
 /// The old particle options: only what the glue builds (`simple`, `dust`).

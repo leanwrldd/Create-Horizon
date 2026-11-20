@@ -5,6 +5,7 @@
 
 pub mod actor;
 pub mod actor_facts;
+pub mod actor_misc;
 pub mod analog_lever;
 pub mod arm;
 pub mod arm_items;
