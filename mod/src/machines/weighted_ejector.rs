@@ -635,8 +635,8 @@ fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) {
     // `updateSignal`.
     let salt = i64::from(pos[0]) + 3 * i64::from(pos[1]) + 7 * i64::from(pos[2]);
     if (now + salt).rem_euclid(POLL) == 0 {
-        let dimension = host.dimension();
-        let powered = host.neighbor_signal(dimension, pos) > 0;
+        // `EjectorBlock.neighborChanged`: the signal the neighbour event left (`signals`).
+        let powered = crate::signals::read(host, &mut entity.nbt, pos) > 0;
         if powered != data.powered {
             entity.nbt.insert(POWERED.into(), Tag::Byte(i8::from(powered)));
             data.powered = powered;

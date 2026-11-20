@@ -226,7 +226,7 @@ fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) {
     let now = util::game_time(host);
     let phase = now + salt(pos);
 
-    if phase % 2 == 0 && sync_powered(host, pos, &v) {
+    if phase % 2 == 0 && sync_powered(host, pos, &v, Some(&mut entity.nbt)) {
         return;
     }
     if phase % STATE_RATE == 0 && refresh_state(host, pos, entity, &v) {
@@ -260,10 +260,14 @@ fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) {
     }
 }
 
-/// `AbstractFunnelBlock.tick`: the state's `powered` follows redstone.
-fn sync_powered(host: &mut dyn Host, pos: Pos, v: &View) -> bool {
+/// `AbstractFunnelBlock.neighborChanged` and `tick`: the state's `powered` follows redstone. With the
+/// block entity's NBT the signal is the one the neighbour event left (`signals`); without it, read now.
+fn sync_powered(host: &mut dyn Host, pos: Pos, v: &View, nbt: Option<&mut Compound>) -> bool {
     let dimension = host.dimension();
-    let powered = host.neighbor_signal(dimension, pos) > 0;
+    let powered = match nbt {
+        Some(nbt) => crate::signals::read(host, nbt, pos),
+        None => host.neighbor_signal(dimension, pos),
+    } > 0;
     if powered != v.powered {
         host.set_block_property(pos, "powered", bool_name(powered));
         return true;
@@ -758,7 +762,7 @@ impl Hooks for Funnels {
         let Some(v) = view(host, pos) else {
             return;
         };
-        if sync_powered(host, pos, &v) {
+        if sync_powered(host, pos, &v, None) {
             return;
         }
         if let Some(mut entity) = host.mod_block_entity(pos) {

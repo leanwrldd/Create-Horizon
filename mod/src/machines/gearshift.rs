@@ -87,9 +87,10 @@ impl Hooks for SplitShaft {
         else {
             return;
         };
-        // `neighborChanged`: the block follows the signal. Create re-attaches the network a tick
-        // after a change; here the next solve sees the new kind.
-        let signal = powered(host.neighbor_signal(host.dimension(), pos));
+        // `neighborChanged` (GearshiftBlock, ClutchBlock): the block follows the signal, heard from the
+        // neighbour event (`signals`). Create re-attaches the network a tick after a change; here the
+        // next solve sees the new kind.
+        let signal = powered(crate::signals::read(host, &mut event.entity.nbt, pos));
         let was = host.block_property(pos, "powered").as_deref() == Some("true");
         if was != signal {
             host.set_block_property(pos, "powered", if signal { "true" } else { "false" });

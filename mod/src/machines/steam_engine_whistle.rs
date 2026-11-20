@@ -170,7 +170,7 @@ fn tick_whistle(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     boiler::register(dimension, tank.controller, pos, Attached::Whistle, now);
 
     // `neighborChanged`: the block follows the redstone.
-    let powered = host.neighbor_signal(dimension, pos) > 0;
+    let powered = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
     if powered != flag(&*host, pos, "powered") {
         host.set_block_property(pos, "powered", if powered { "true" } else { "false" });
     }

@@ -482,8 +482,8 @@ impl Hooks for Packagers {
         }
 
         // Redstone: the rising edge of the neighbour signal sends, a held one sends every 10 ticks.
-        let dimension = host.dimension();
-        let signal = host.neighbor_signal(&dimension, pos) > 0;
+        // `PackagerBlock.neighborChanged`: the signal the neighbour event left (`signals`).
+        let signal = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
         let block_powered = host.block_property(pos, "powered").as_deref() == Some("true");
         match rules::edge(block_powered, signal) {
             Edge::Rising => {

@@ -35,6 +35,14 @@ impl BlockPart for CreateBlock {
         events::update_shape(level, event)
     }
     fn neighbor_changed(&self, level: &mut dyn LevelTicksHost, event: &mut NeighborChangedEvent) {
+        // `neighborChanged`: tells the block entity at `pos`, if it reads redstone, to read again (signals.rs).
+        // (A mod's own level isn't named by the event: its blocks fall back on the heartbeat read.)
+        let dimension = match event.dimension {
+            mod_api::LevelDimension::Nether => "minecraft:the_nether",
+            mod_api::LevelDimension::End => "minecraft:the_end",
+            _ => "minecraft:overworld",
+        };
+        crate::signals::heard(dimension, [event.pos.x, event.pos.y, event.pos.z]);
         events::neighbor_changed(level, event)
     }
     fn tick_block(&self, level: &mut dyn LevelWriteHost, event: &mut TickBlockEvent) -> Flow {

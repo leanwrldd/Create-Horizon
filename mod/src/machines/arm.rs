@@ -292,7 +292,8 @@ fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) {
     // Where the move was a tick ago, at the speed it had.
     saved.arm.progress = rules::progress_at(saved.start, saved.since, old_speed, now - 1, 0.0);
 
-    let powered = host.neighbor_signal(host.dimension(), pos) > 0;
+    // `ArmBlock.neighborChanged`: the signal the neighbour event left (`signals`).
+    let powered = crate::signals::read(host, &mut entity.nbt, pos) > 0;
     let lazy_due = (now + salt(pos)).rem_euclid(rules::LAZY_PERIOD) == 0;
     let search_due = (now + salt(pos)).rem_euclid(rules::SEARCH_RATE) == 0;
     let redstone_changed = powered != saved.arm.locked;

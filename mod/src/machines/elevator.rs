@@ -181,8 +181,8 @@ fn tick_contact(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         }
     }
 
-    // `neighborChanged`, polled: a signal on the contact.
-    let has_signal = host.neighbor_signal(&dimension, pos) > 0;
+    // `ElevatorContactBlock.neighborChanged`: a signal on the contact, from the neighbour event (`signals`).
+    let has_signal = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
     let reaction = elevator::neighbour_changed(powered, has_signal, calling);
     if let Some(on) = reaction.powered {
         host.set_block_property(pos, "powered", if on { "true" } else { "false" });

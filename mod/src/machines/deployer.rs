@@ -709,9 +709,8 @@ impl Hooks for Deployers {
         let old = read(&event.entity.nbt);
         let mut saved = old;
 
-        // `redstoneUpdate`.
-        let dimension = host.dimension();
-        let powered = host.neighbor_signal(dimension, pos) > 0;
+        // `DeployerBlock.neighborChanged` -> `redstoneUpdate`: the signal the neighbour event left (`signals`).
+        let powered = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
         if powered != saved.locked {
             saved.locked = powered;
             sync = true;

@@ -60,14 +60,14 @@ impl Hooks for Stickers {
         }
     }
 
-    /// `StickerBlock.neighborChanged`, polled.
+    /// `StickerBlock.neighborChanged`: the signal comes from the neighbour event (`signals`).
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         if event.entity.id != ID {
             return;
         }
         let pos = event.pos;
         let Some((_, state)) = state_of(&*host, pos) else { return };
-        let signal = host.neighbor_signal(host.dimension(), pos) > 0;
+        let signal = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
         let first = !util::boolean(&event.entity.nbt, SEEN);
         if first {
             event.entity.nbt.insert(SEEN.into(), Tag::Byte(1));
