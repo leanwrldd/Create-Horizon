@@ -66,7 +66,8 @@ impl Hooks for Harvesters {
         event: &mut StateForPlacementEvent<'_>,
     ) -> Option<Option<BlockStateId>> {
         let context = event.context;
-        if !is_attached_actor(&context.item) {
+        // The Roller overrides `getStateForPlacement` (`roller.rs`).
+        if !matches!(&*context.item, HARVESTER | PLOUGH) {
             return None;
         }
         let clicked = util::dir(context.face);

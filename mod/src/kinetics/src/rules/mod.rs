@@ -107,6 +107,8 @@ pub mod redstone_link;
 pub mod redstone_requester;
 pub mod repackager;
 pub mod request_promises;
+pub mod roller;
+pub mod roller_facts;
 pub mod rose_quartz_lamp;
 pub mod sandpaper;
 pub mod saw;

@@ -454,6 +454,7 @@
             "create:mechanical_pump",
             "create:redstone_contact",
             "create:redstone_requester",
+            "create:mechanical_roller",
             "create:mechanical_saw",
             "create:schematicannon",
             "create:sequenced_gearshift",

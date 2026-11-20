@@ -213,6 +213,7 @@
     "create:redstone_contact",
     "create:redstone_link",
     "create:redstone_requester",
+    "create:mechanical_roller",
     "create:rose_quartz_lamp",
     "create:sand_paper",
     "create:red_sand_paper",

@@ -95,6 +95,7 @@
     "create:pulley_magnet",
     "create:redstone_contact",
     "create:redstone_link",
+    "create:mechanical_roller",
     "create:mechanical_saw",
     "create:schematic_table",
     "create:white_seat",

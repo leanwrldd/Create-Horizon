@@ -1,8 +1,8 @@
 //! What each actor does on a moving structure: the Drill and the Saw (`DrillMovementBehaviour`,
 //! `SawMovementBehaviour`), the Plough (`PloughMovementBehaviour`), the Harvester
 //! (`HarvesterMovementBehaviour`), the Deployer (`DeployerMovementBehaviour`) and the Funnels
-//! (`FunnelMovementBehaviour`). The engine hook is `actor.rs`; the rules are
-//! `create_kinetics::rules::{actor, harvester, plough}`. This file reads the world, asks the rules
+//! (`FunnelMovementBehaviour`) and, in `roller_actor.rs`, the Roller (`RollerMovementBehaviour`). The engine hook is
+//! `actor.rs`; the rules are `create_kinetics::rules::{actor, harvester, plough, roller}`. This file reads the world, asks the rules
 //! and applies the answer.
 //!
 //! Known differences from Create:
@@ -48,7 +48,7 @@ pub fn hooks() -> Box<dyn Hooks> {
 /// `BlockSoundGroup` ordinal of `SoundSource.BLOCKS`.
 const BLOCKS: usize = 4;
 /// `BlockBreakingMovementBehaviour`'s wait after a falling block (`WaitingTicks`).
-const FALLING_WAIT: i32 = 10;
+pub(super) const FALLING_WAIT: i32 = 10;
 
 /// What an actor remembers beyond its context and breaker.
 #[derive(Default)]
@@ -104,7 +104,8 @@ pub(super) fn visit(cx: &mut Cx<'_>, actor: &mut Actor, cell: Pos) {
         Kind::Harvester => harvest(cx, actor, cell),
         Kind::Deployer => deployer_visit(cx, actor, cell),
         Kind::Funnel { brass } => funnel(cx, actor, cell, brass),
-        Kind::Roller | Kind::Seat | Kind::Controls | Kind::Contact => {
+        Kind::Roller => super::roller_actor::visit(cx, actor, cell),
+        Kind::Seat | Kind::Controls | Kind::Contact => {
             super::actor_more::visit(cx, actor, cell);
         }
     }
@@ -113,20 +114,20 @@ pub(super) fn visit(cx: &mut Cx<'_>, actor: &mut Actor, cell: Pos) {
 /// `tick`.
 pub(super) fn tick(cx: &mut Cx<'_>, actor: &mut Actor) {
     match actor.kind {
-        Kind::Drill | Kind::Saw | Kind::Plough => breaker_tick(cx, actor),
+        Kind::Drill | Kind::Saw | Kind::Plough | Kind::Roller => breaker_tick(cx, actor),
         Kind::Deployer => deployer_tick(cx, actor),
         Kind::Harvester | Kind::Funnel { .. } => {}
-        Kind::Roller | Kind::Seat | Kind::Controls | Kind::Contact => super::actor_more::tick(cx, actor),
+        Kind::Seat | Kind::Controls | Kind::Contact => super::actor_more::tick(cx, actor),
     }
 }
 
 /// `stopMoving`.
 pub(super) fn stop(cx: &mut Cx<'_>, actor: &mut Actor) {
     match actor.kind {
-        Kind::Drill | Kind::Saw | Kind::Plough => cancel_stall(cx, actor),
+        Kind::Drill | Kind::Saw | Kind::Plough | Kind::Roller => cancel_stall(cx, actor),
         Kind::Deployer => deployer_stop(cx, actor),
         Kind::Harvester | Kind::Funnel { .. } => {}
-        Kind::Roller | Kind::Seat | Kind::Controls | Kind::Contact => super::actor_more::stop(cx, actor),
+        Kind::Seat | Kind::Controls | Kind::Contact => super::actor_more::stop(cx, actor),
     }
 }
 
@@ -211,6 +212,10 @@ fn cancel_stall(cx: &mut Cx<'_>, actor: &mut Actor) {
 
 /// `BlockBreakingMovementBehaviour.destroyBlock`: broken with the drops into the structure's storage.
 fn destroy(cx: &mut Cx<'_>, actor: &Actor, pos: Pos) {
+    if actor.kind == Kind::Roller {
+        super::roller_actor::destroy(cx, actor, pos);
+        return;
+    }
     if let Some(drops) = cx.host.destroy_block(pos, None, true) {
         for stack in drops {
             cx.collect_or_drop(&actor.ctx, stack);
@@ -220,7 +225,10 @@ fn destroy(cx: &mut Cx<'_>, actor: &Actor, pos: Pos) {
 
 /// `BlockBreakingMovementBehaviour.tick` and `tickBreaker`.
 fn breaker_tick(cx: &mut Cx<'_>, actor: &mut Actor) {
-    let speed = rules::breaking_speed(actor.ctx.animation_speed(), cx.carrier);
+    let mut speed = rules::breaking_speed(actor.ctx.animation_speed(), cx.carrier);
+    if actor.kind == Kind::Roller {
+        speed = rules::roller_breaking_speed(speed);
+    }
     let kind = actor.kind;
     let step = {
         let host: &dyn Host = &*cx.host;
@@ -245,6 +253,10 @@ fn breaker_tick(cx: &mut Cx<'_>, actor: &mut Actor) {
     }
     // The wait after a falling block, then the position is visited again.
     if let Some(last) = actor.breaker.tick_waiting(&mut actor.ctx) {
+        if actor.kind == Kind::Roller {
+            super::roller_actor::visit(cx, actor, last);
+            return;
+        }
         breaker_visit(cx, actor, last);
         if actor.kind == Kind::Saw {
             saw_visit(cx, actor);
@@ -261,6 +273,10 @@ fn host_block(cx: &Cx<'_>, pos: Pos) -> String {
 
 /// `onBlockBroken` of each breaker.
 fn on_block_broken(cx: &mut Cx<'_>, actor: &mut Actor, pos: Pos, broken: &str) {
+    if actor.kind == Kind::Roller {
+        super::roller_actor::on_broken(cx, actor, pos, broken);
+        return;
+    }
     if actor.kind == Kind::Saw {
         // `SawMovementBehaviour.onBlockBroken`: leaves don't take a tree with them; otherwise the
         // tree the block held up falls, its drops into the storage or thrown at the saw's motion.

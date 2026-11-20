@@ -39,6 +39,9 @@ PREFIXES = (
     "create.kinetics.speed_controller.",
     "create.tunnel.selection_mode.",
     "create.mechanical_arm.selection_mode.",
+    # The Mechanical Roller's boxes: the mode's label and options, and the filter's label.
+    "create.contraptions.roller_mode",
+    "create.contraptions.mechanical_roller.pave_material",
 )
 KEYS = ("create.gui.assembly.exception", "create.recipe.sequenced_assembly")
 

@@ -1,6 +1,7 @@
 //! What the actors on a structure draw besides their block's model: a Drill's turning head, a
 //! Saw's blade, a Harvester's blade (`DrillRenderer.renderInContraption`,
-//! `SawRenderer.renderInContraption`, `HarvesterRenderer.renderInContraption`). A controller says
+//! `SawRenderer.renderInContraption`, `HarvesterRenderer.renderInContraption`, `RollerRenderer.renderInContraption`).
+//! A controller says
 //! how its structure moves ([`set_motion`]) just before it draws the blocks, and
 //! `contraption::draw_blocks` asks [`draw_actor`] for each block.
 //!
@@ -110,6 +111,15 @@ pub(super) fn draw_actor(host: &dyn Host, draw: &mut BlockEntityDraw, state: &St
             } else {
                 draw_blade(host, draw, facing, rate);
             }
+        }
+        actor::Kind::Roller => {
+            // `RollerRenderer.renderInContraption`: the wheel (still while the structure is stalled) and the
+            // frame. Create turns the wheel the other way when the structure moves backwards; the client has
+            // no motion's direction, so it turns one way. Its `translate(0, -.25, 0)` is in world space there,
+            // here along the structure's own down.
+            let rate = if matches!(motion, Motion::Stalled) { 0.0 } else { rate };
+            super::roller::draw_wheel(host, draw, facing, rate);
+            super::roller::draw_frame(host, draw, facing);
         }
         _ => {}
     }

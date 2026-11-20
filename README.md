@@ -18,11 +18,11 @@ is not pinned to one Horizon commit.
 | Materials | 19 | 20 | 95% |
 | Logistics | 41 | 52 | 79% |
 | Fluids | 18 | 18 | 100% |
-| Contraptions | 38 | 42 | 90% |
+| Contraptions | 39 | 42 | 93% |
 | Schematics | 5 | 5 | 100% |
 | Curiosities | 12 | 13 | 92% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **224** | **246** | **91.1%** |
+| **All** | **225** | **246** | **91.5%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
