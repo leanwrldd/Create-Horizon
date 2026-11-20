@@ -371,6 +371,14 @@ impl Hooks for Frogports {
 
         // `lazyTick`: registers with the conveyor, then works.
         if (now + i64::from(pos[0] + pos[1] + pos[2]).rem_euclid(rules::LAZY_PERIOD)) % rules::LAZY_PERIOD == 0 {
+            // A port on a chain whose wheel turns the other way jumps to the opposite chain.
+            if let (Some(old), Some(filter)) = (&target, filter_of(&event.entity.nbt)) {
+                if let Some(jumped) = super::chain_conveyor::jump_if_reversed(&*host, pos, old, &filter) {
+                    util::put(&mut event.entity.nbt, TARGET, target_tag(&jumped));
+                    host.block_entity_sync(pos);
+                    target = Some(jumped);
+                }
+            }
             if let Some(target) = &target {
                 if let Some(filter) = filter_of(&event.entity.nbt) {
                     let conveyor = conveyor_of(pos, target);

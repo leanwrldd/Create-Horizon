@@ -92,6 +92,23 @@ fn state() -> MutexGuard<'static, Option<HashMap<Key, Runtime>>> {
     STATE.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The game time a test sets.
+    static CLOCK: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// The game time of the level (a test sets its own).
+fn game_time(host: &dyn Host) -> i64 {
+    #[cfg(test)]
+    {
+        let _ = host;
+        CLOCK.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    util::game_time(host)
+}
+
 fn with_map<R>(f: impl FnOnce(&mut HashMap<Key, Runtime>) -> R) -> R {
     let mut guard = state();
     f(guard.get_or_insert_with(HashMap::new))
@@ -222,10 +239,10 @@ fn ensure(host: &dyn Host, dimension: &str, pos: Pos) -> bool {
     with_map(|map| {
         map.entry(key).or_insert(Runtime {
             conveyor,
-            last_tick: util::game_time(host),
+            last_tick: game_time(host),
             ports_seen: BTreeMap::new(),
             dirty: false,
-            saved_at: util::game_time(host),
+            saved_at: game_time(host),
         });
     });
     true
@@ -268,7 +285,7 @@ impl Env<ItemStack> for World<'_> {
 /// `PackagePortTarget.ChainConveyorFrogportTarget.register`: a Frogport at `port_offset` (the
 /// port's offset from the conveyor) tells the conveyor its address and where it works.
 pub fn register_port(host: &dyn Host, conveyor: Pos, port_offset: Pos, target: &Target, filter: &str) {
-    let now = util::game_time(host);
+    let now = game_time(host);
     with_conveyor(host, conveyor, |rt| {
         rt.conveyor.routing.receive_port_info(filter, target.connection.unwrap_or([0, 0, 0]));
         let port = Port { position: target.chain_pos, connection: target.connection, filter: filter.to_owned() };
@@ -278,6 +295,22 @@ pub fn register_port(host: &dyn Host, conveyor: Pos, port_offset: Pos, target: &
         }
         rt.ports_seen.insert(port_offset, now);
     });
+}
+
+/// `register`'s jump to the opposite chain when the conveyor turns the other way: the port's new
+/// target (the caller saves it), after the old registration is taken off.
+pub fn jump_if_reversed(host: &dyn Host, port: Pos, target: &Target, filter: &str) -> Option<Target> {
+    let connection = target.connection?;
+    let conveyor = offset_pos(port, target.relative_pos);
+    let entity = host.mod_block_entity(conveyor)?;
+    let reversed = kinetic::speed(&entity) < 0.0;
+    let stats = rules::connection_stats(connection, reversed);
+    let jumped = rules::jump_target(target, reversed, stats.chain_length, port, conveyor)?;
+    if host.block(offset_pos(conveyor, connection)) != ID {
+        return None;
+    }
+    deregister_port(host, conveyor, [-target.relative_pos[0], -target.relative_pos[1], -target.relative_pos[2]], filter);
+    Some(jumped)
 }
 
 /// `deregister`.
@@ -404,7 +437,7 @@ impl Hooks for Conveyors {
         }
         let pos = event.pos;
         let dimension = host.dimension().to_owned();
-        let now = util::game_time(host);
+        let now = game_time(host);
         let key = (dimension.clone(), pos);
 
         // Into memory, and out of the table for the length of the tick: the world is asked from
@@ -778,7 +811,7 @@ fn add_connection(host: &mut dyn Host, pos: Pos, offset: Pos) {
         rt.conveyor.connections.insert(offset);
         rt.dirty = true;
     });
-    let now = util::game_time(&*host);
+    let now = game_time(&*host);
     host.change_mod_block_entity(pos, &mut |entity| {
         let mut conveyor = read(&entity.nbt);
         conveyor.connections.insert(offset);
@@ -801,7 +834,7 @@ fn remove_connection_at(host: &mut dyn Host, pos: Pos, offset: Pos) {
     for boxed in dropped {
         util::spawn_item(host, util::centre(pos), &boxed.item, [0.0; 3], 10);
     }
-    let now = util::game_time(&*host);
+    let now = game_time(&*host);
     host.change_mod_block_entity(pos, &mut |entity| {
         let mut conveyor = read(&entity.nbt);
         conveyor.connections.remove(&offset);
@@ -902,6 +935,20 @@ mod tests {
     }
 
     #[test]
+    fn a_package_keeps_its_address_through_saving() {
+        let mut item = stack("create:cardboard_package_12x12");
+        item.data_mut().set_other("create:package_address", Some(Tag::String("depot".into())));
+        let mut conveyor: Conveyor<ItemStack> = Conveyor::default();
+        conveyor.looping.push(Package { position: 10.0, address: "depot".into(), item, just_flipped: false });
+        let mut nbt = Compound::new();
+        for (key, value) in diff(&nbt, &conveyor, 1) {
+            util::put(&mut nbt, key, value);
+        }
+        let back = read(&nbt);
+        assert_eq!(back.looping[0].address, "depot");
+    }
+
+    #[test]
     fn the_chain_sprite_is_keyed_as_the_atlas_keys_vanilla_sprites() {
         assert!(!SPRITE.contains(':'), "{SPRITE}");
         assert!(SPRITE.starts_with("block/"));
@@ -911,5 +958,125 @@ mod tests {
     fn an_empty_entity_reads_as_a_conveyor_with_nothing() {
         let conveyor = read(&Compound::new());
         assert!(conveyor.connections.is_empty() && conveyor.looping.is_empty() && conveyor.travelling.is_empty());
+    }
+
+    // --- the glue, run against a world double -------------------------------------------------------
+
+    const GLUE_DIM: &str = "test:chain_glue";
+
+    /// A world of block entities that the conveyor hook and a stand-in Frogport register run in.
+    #[derive(Default)]
+    struct Glue {
+        blocks: HashMap<Pos, String>,
+        entities: HashMap<Pos, crate::compat::ModBlockEntity>,
+        sounds: Vec<String>,
+    }
+
+    impl Host for Glue {
+        fn dimension(&self) -> &'static str {
+            GLUE_DIM
+        }
+        fn block(&self, pos: Pos) -> String {
+            self.blocks.get(&pos).cloned().unwrap_or_default()
+        }
+        fn mod_block_entity(&self, pos: Pos) -> Option<crate::compat::ModBlockEntity> {
+            self.entities.get(&pos).cloned()
+        }
+        fn change_mod_block_entity(&mut self, pos: Pos, change: &mut dyn FnMut(&mut crate::compat::ModBlockEntity)) -> bool {
+            self.entities.get_mut(&pos).map(|e| change(e)).is_some()
+        }
+        fn chunk_is_loaded(&self, _: &str, _: [i32; 2]) -> bool {
+            true
+        }
+        fn block_entity_sync(&mut self, _: Pos) {}
+        fn play_sound(&mut self, sound: &str, _: [f64; 3], _: usize, _: f32, _: f32) -> bool {
+            self.sounds.push(sound.to_owned());
+            true
+        }
+    }
+
+    impl Glue {
+        fn conveyor(&mut self, pos: Pos, connection: Pos) {
+            let mut conveyor: Conveyor<ItemStack> = Conveyor::default();
+            conveyor.connections.insert(connection);
+            let mut entity = crate::compat::ModBlockEntity { id: ID.into(), nbt: kinetic::new_entity(), ..Default::default() };
+            store(&mut entity, &conveyor, 0);
+            self.blocks.insert(pos, ID.into());
+            self.entities.insert(pos, entity);
+        }
+
+        /// One server tick of the conveyor at `pos`, as the engine runs it: a copy of the entity
+        /// ticks and is written back.
+        fn tick(&mut self, pos: Pos) {
+            // The engine lends the entity to its tick: it is not in the world meanwhile.
+            let mut entity = self.entities.remove(&pos).expect("a conveyor");
+            Conveyors.block_entity_tick(self, &mut BlockEntityTickEvent { pos, entity: &mut entity });
+            self.entities.insert(pos, entity);
+        }
+    }
+
+    /// Two chained wheels with a Frogport (address `depot`) registering on the far one every 10 ticks,
+    /// and a package for `depot` looping on the near one: it must cross and be caught.
+    fn glue_run(a_first: bool, a: Pos, link: Pos, rpm: f32, start: f32, clock: i64) {
+        let b = [a[0] + link[0], a[1] + link[1], a[2] + link[2]];
+        let mut world = Glue::default();
+        world.conveyor(a, link);
+        world.conveyor(b, [-link[0], -link[1], -link[2]]);
+        let port = [b[0] + 2, b[1] - 1, b[2]];
+        world.blocks.insert(port, super::super::frogport::ID.into());
+        world.entities.insert(
+            port,
+            crate::compat::ModBlockEntity { id: super::super::frogport::ID.into(), items: vec![None; 18], ..Default::default() },
+        );
+        let target = Target { relative_pos: [-2, 1, 0], chain_pos: 90.0, connection: None, flipped: false };
+        let boxed = Package {
+            position: start,
+            address: "depot".into(),
+            item: stack("create:cardboard_package_12x12"),
+            just_flipped: false,
+        };
+        let motor_at = [a[0], a[1] - 1, a[2]];
+        let node = Node { kind: Kind::Motor(create_kinetics::Dir::Up), generated: rpm, capacity: 16384.0, impact: 0.0 };
+        for t in 0..4000 {
+            CLOCK.with(|c| c.set(clock + t));
+            {
+                let mut networks = crate::kinetic::networks();
+                networks.advance();
+                networks.report(GLUE_DIM, motor_at, node);
+            }
+            if t % 10 == 0 {
+                register_port(&world, b, [2, -1, 0], &target, "depot");
+            }
+            if t == 50 {
+                with_conveyor(&world, a, |rt| rt.conveyor.add_looping(boxed.clone())).expect("the conveyor is in memory");
+            }
+            if a_first {
+                world.tick(a);
+                world.tick(b);
+            } else {
+                world.tick(b);
+                world.tick(a);
+            }
+            if world.sounds.iter().any(|s| s == "create:frogport_catch") {
+                return;
+            }
+        }
+        let seen = with_map(|map| {
+            map.get(&(GLUE_DIM.to_owned(), a)).map(|rt| (rt.conveyor.looping.len(), rt.conveyor.routing.clone(), rt.conveyor.connections.clone()))
+        });
+        panic!("a first {a_first} link {link:?} rpm {rpm} start {start}: not caught; a: {seen:?}");
+    }
+
+    #[test]
+    fn the_glue_carries_a_package_to_the_port_on_the_other_wheel() {
+        let mut x = 9000;
+        for link in [[20, 0, 0], [-14, 3, 9], [0, 0, -12], [7, 5, 7]] {
+            for rpm in [16.0, -16.0, 64.0, 256.0] {
+                for (first, start) in [(true, 0.0), (false, 200.0)] {
+                    x += 100;
+                    glue_run(first, [x, 64, 9000], link, rpm, start, i64::from(x) * 7 + i64::from(first));
+                }
+            }
+        }
     }
 }
