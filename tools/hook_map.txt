@@ -5,7 +5,7 @@
 #   global/part (not wired)  the new API has it with the same name; no conversion written yet (step 1b)
 #   adapted (wired)      nothing of that name in the new API; wired through the new mechanism the right-hand column names
 #   no direct match      nothing of that name in the new API, not wired; the right-hand column is the nearest new mechanism
-# 75 hooks: 70 wired (global, part or adapted), 5 not wired (no module answers four of them; menu_input_closed is the Toolbox's).
+# 75 hooks: 71 wired (global, part or adapted), 4 not wired (no module answers them).
 
 standalone_models                    global (wired)       Hooks::standalone_models
 block_entity                         part (wired)         BlockEntityPart::block_entity
@@ -70,7 +70,7 @@ living_entity_use_item_tick          global (wired)       Hooks::living_entity_u
 living_entity_use_item_finish        global (wired)       Hooks::living_entity_use_item_finish
 entity_tick_listened                 global (wired)       Hooks::entity_tick_listened
 entity_tick_post                     global (wired)       Hooks::entity_tick_post
-menu_input_closed                    no direct match      MenuPart
+menu_input_closed                    adapted (wired)      Hooks::menu_closed (compat/menu_input.rs keeps the view of Host::open_menu_with_input)
 register_commands                    global (wired)       Hooks::register_commands
 perform_command                      adapted (wired)      Hooks::run_mod_command (the raw line is rebuilt from the usage)
 movement_input                       global (wired)       Hooks::movement_input

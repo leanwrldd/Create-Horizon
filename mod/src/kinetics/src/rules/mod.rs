@@ -88,6 +88,7 @@ pub mod large_water_wheel;
 pub mod lectern_controller;
 pub mod linked_controller;
 pub mod logistics_network;
+pub mod menu_input;
 pub mod millstone;
 pub mod mixer;
 pub mod nixie_tube;

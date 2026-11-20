@@ -90,8 +90,6 @@ the same name) or `adapted (wired)` (the new API has another name or another mec
 
 ### Not wired
 
-* `menu_input_closed` (and `Host::open_menu_with_input`): the Toolbox's menu. Missing is a content menu type for it (see
-  "Still neutral" below); `open_mod_menu`, `back_mod_menu_slots` and `menu_closed` would do the rest.
 * `block_changed`, `block_entity_inside`, `item_model_property`, `block_entity_accepts_fluid`: no module answers them.
 
 ## Needs testing in game (step 2 part B)
@@ -213,10 +211,14 @@ Still neutral, and why:
   transfer), content observer, stockpile switch, display link. Still `&dyn` and so blind to vanilla/other-mod tanks: the pump's
   network search (`fluids::classify`), `fluid_pipe` and `fluid_pipe_attachments` connection checks. An empty tank of a vanilla block
   gets its capacity asked with water as the probe fluid.
-* `open_menu_with_input` (the Toolbox): the new API opens a block entity's menu (`PlayerRef::open_menu`) or a content mod menu
-  (`PlayerRef::open_mod_menu`, then `back_mod_menu_slots` with an `ItemPlace::Mod` provider for the slots, `menu_closed` to read
-  them back). It needs a content menu type for the Toolbox (27 container slots) in `tools/content`, which this layer cannot
-  declare: missing is that menu type, not an API call.
+* `open_menu_with_input` and `menu_input_closed` (the Toolbox): wired in `compat/menu_input.rs`, with no content menu type. The new
+  API's chest menu (`ServerHost::open_menu`, vanilla's `generic_9x<rows>` screen) needs none; `open_mod_menu` would, and a screen of
+  the mod's own on the client, and `back_mod_menu_slots` can only back a menu's slots by a held item or an entity's handler, never
+  a mod's own storage. A native menu moves nothing on a click, so the layer answers the clicks (`menu_clicked`) with
+  `rules::menu_input` (PICKUP, QUICK_MOVE, SWAP with a hotbar key, PICKUP_ALL, from Horizon's `menu/click.rs`) and writes the result
+  through `ItemPlace::MenuSlot` and the cursor in one transaction; it keeps the view, and at `menu_closed` calls the old
+  `menu_input_closed` with it and gives what the module leaves in the slots to the player (`PlayerRef::give_stack`). Not done: drag,
+  the drop keys, a click outside the window, a swap with the off hand. Untried in game.
 * `block_states`, `data`, `held`: no module calls the old `Host` version (`cog_placement` reads the new `Host::block_states`
   itself), so nothing depends on them.
 * `client_state` (the GUI size comes from the draw context of the HUD hook) and `client_resources`.
@@ -250,10 +252,9 @@ After step 2 part A (build `native-3f1843e-…`, 4th build of the branch; screen
 | `block_changed` | global (not wired) | Hooks::block_changed | (none) |
 | `block_entity_inside` | no direct match | BlockPart::entity_inside | (none) |
 | `item_model_property` | global (not wired) | Hooks::item_model_property | (none) |
-| `menu_input_closed` | no direct match | MenuPart | toolbox |
 
-### Old `Host` methods still answered with a neutral value (4 of 148)
+### Old `Host` methods still answered with a neutral value (3 of 148)
 
-Each logs `create: compat gap: Host::<name> ...` once. Implemented: `acting_player`, `action_bar`, `add_effect`, `apply_screen_blur`, `attribute`, `block`, `block_collision`, `block_entity_nbt`, `block_entity_sync`, `block_entity_tag`, `block_name_in_tag`, `block_property`, `block_sprites_version`, `block_state_property`, `carried_items`, `carried_stack`, `change_mod_block_entity`, `chunk_is_loaded`, `clear_between`, `client_resources`, `client_state`, `collision_boxes`, `component`, `day_time`, `default_state`, `destroy_block`, `dimension`, `dismount`, `draw_block`, `draw_cube`, `draw_fluid_box`, `draw_item`, `draw_model`, `draw_quad`, `draw_scene`, `draw_terrain_model`, `draw_text`, `entities_in`, `entity`, `entity_bounding_box`, `entity_fire_immune`, `entity_fire_ticks`, `entity_head_yaw`, `entity_is_shift_key_down`, `entity_kind`, `entity_nbt`, `entity_on_ground`, `entity_position`, `entity_push`, `entity_rotation`, `entity_set_fire`, `entity_set_head_yaw`, `entity_set_rotation`, `entity_set_velocity`, `entity_teleport_to`, `entity_uuid`, `entity_velocity`, `equipment`, `extract_item`, `fill`, `fluid_extract`, `fluid_flow`, `fluid_insert`, `fluid_tanks`, `fluid_tanks_mut`, `give_items`, `give_stack`, `gui_tooltip`, `has_alt_down`, `has_control_down`, `has_shift_down`, `held_stack`, `hurt_entity`, `insert_item`, `instance_dir`, `is_key_down`, `item`, `item_entities`, `level`, `level_difficulty`, `level_is_loaded`, `level_random`, `light`, `living`, `living_set_equipment`, `max_stack_size`, `mod_block_entity`, `mod_screen`, `mod_screen_close`, `mod_screen_open`, `neighbor_signal`, `net_send_to_player`, `net_send_to_server`, `pick_block`, `play_sound`, `player`, `player_break_block`, `player_equipment`, `player_food`, `player_stacks`, `playing`, `profile_by_uuid`, `push_player`, `quad`, `raycast`, `recipe_ingredient`, `recipe_result`, `recipes_of_type`, `remove_component`, `remove_entity`, `remove_mob`, `run_command`, `send_particles`, `send_particles_to`, `server_item_in_tag`, `server_players`, `set_attribute_base`, `set_block`, `set_block_entity`, `set_block_property`, `set_block_property_with`, `set_block_tag`, `set_break_progress`, `set_component`, `set_inventory_slot_typed`, `set_item_entity`, `set_player_status`, `sneaking`, `sprite`, `summon`, `summon_with_uuid`, `take_items`, `tell`, `text`, `text_width`, `update_output_neighbors`, `update_signal_neighbors`, `upgrade_block_state`, `use_as_player`, `vehicle_of`, `view_hit`, `window`, `world_border`, `world_height`.
+Each logs `create: compat gap: Host::<name> ...` once. Implemented: `acting_player`, `action_bar`, `add_effect`, `apply_screen_blur`, `attribute`, `block`, `block_collision`, `block_entity_nbt`, `block_entity_sync`, `block_entity_tag`, `block_name_in_tag`, `block_property`, `block_sprites_version`, `block_state_property`, `carried_items`, `carried_stack`, `change_mod_block_entity`, `chunk_is_loaded`, `clear_between`, `client_resources`, `client_state`, `collision_boxes`, `component`, `day_time`, `default_state`, `destroy_block`, `dimension`, `dismount`, `draw_block`, `draw_cube`, `draw_fluid_box`, `draw_item`, `draw_model`, `draw_quad`, `draw_scene`, `draw_terrain_model`, `draw_text`, `entities_in`, `entity`, `entity_bounding_box`, `entity_fire_immune`, `entity_fire_ticks`, `entity_head_yaw`, `entity_is_shift_key_down`, `entity_kind`, `entity_nbt`, `entity_on_ground`, `entity_position`, `entity_push`, `entity_rotation`, `entity_set_fire`, `entity_set_head_yaw`, `entity_set_rotation`, `entity_set_velocity`, `entity_teleport_to`, `entity_uuid`, `entity_velocity`, `equipment`, `extract_item`, `fill`, `fluid_extract`, `fluid_flow`, `fluid_insert`, `fluid_tanks`, `fluid_tanks_mut`, `give_items`, `give_stack`, `gui_tooltip`, `has_alt_down`, `has_control_down`, `has_shift_down`, `held_stack`, `hurt_entity`, `insert_item`, `instance_dir`, `is_key_down`, `item`, `item_entities`, `level`, `level_difficulty`, `level_is_loaded`, `level_random`, `light`, `living`, `living_set_equipment`, `max_stack_size`, `mod_block_entity`, `mod_screen`, `mod_screen_close`, `mod_screen_open`, `neighbor_signal`, `net_send_to_player`, `net_send_to_server`, `open_menu_with_input`, `pick_block`, `play_sound`, `player`, `player_break_block`, `player_equipment`, `player_food`, `player_stacks`, `playing`, `profile_by_uuid`, `push_player`, `quad`, `raycast`, `recipe_ingredient`, `recipe_result`, `recipes_of_type`, `remove_component`, `remove_entity`, `remove_mob`, `run_command`, `send_particles`, `send_particles_to`, `server_item_in_tag`, `server_players`, `set_attribute_base`, `set_block`, `set_block_entity`, `set_block_property`, `set_block_property_with`, `set_block_tag`, `set_break_progress`, `set_component`, `set_inventory_slot_typed`, `set_item_entity`, `set_player_status`, `sneaking`, `sprite`, `summon`, `summon_with_uuid`, `take_items`, `tell`, `text`, `text_width`, `update_output_neighbors`, `update_signal_neighbors`, `upgrade_block_state`, `use_as_player`, `vehicle_of`, `view_hit`, `window`, `world_border`, `world_height`.
 
-`block_states`, `data`, `held`, `open_menu_with_input`
+`block_states`, `data`, `held`

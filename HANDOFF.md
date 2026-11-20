@@ -57,7 +57,7 @@ the Port Board row `collision-disassembly-shift`.
   Item Hatch. The rules are merged; the glue isn't;
 - the Mechanical Roller, seat riders on moving structures, and clicking blocks on a structure;
 - minecart contraptions;
-- the 13 neutral game calls, including the Toolbox menu;
+- the neutral game calls that remain (the Toolbox menu is wired now, untried in game);
 - vanilla recipes through `recipe_for` (fan smoking and blasting, shapeless mixing, the blueprint);
 - neighbour events instead of polling;
 - a route for other testers to get Create's art: a pack built from each tester's own Create jar;

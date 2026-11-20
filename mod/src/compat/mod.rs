@@ -28,6 +28,7 @@ pub mod items;
 pub mod client;
 pub mod containers;
 pub mod world;
+pub mod menu_input;
 pub mod recipe_lookup;
 pub use adapter::Adapter;
 
