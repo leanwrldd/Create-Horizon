@@ -402,7 +402,7 @@ impl Hooks for Bearing {
         let rpm = kinetic::speed(event.entity);
         let state = saved(event.entity);
         let draw = &mut *event.draw;
-        kinetic::draw_shaft_half(host, draw, facing.opposite(), rpm);
+        kinetic::draw_shaft_half(host, draw, facing.opposite(), rpm, event.pos);
 
         let axis = facing.axis().unit();
         let parsed = engine::parsed(event.pos, event.entity);

@@ -334,7 +334,7 @@ impl Hooks for Clockwork {
         };
         let rpm = kinetic::speed(event.entity);
         let draw = &mut *event.draw;
-        kinetic::draw_shaft_half(host, draw, facing.opposite(), rpm);
+        kinetic::draw_shaft_half(host, draw, facing.opposite(), rpm, event.pos);
 
         let running = util::boolean(&event.entity.nbt, RUNNING);
         let clock = clock_of(&event.entity.nbt, facing, rpm);

@@ -851,7 +851,7 @@ fn draw(host: &dyn Host, draw: &mut crate::compat::BlockEntityDraw, state: Block
     let partial = draw.partial;
 
     // `ShaftRenderer`: the whole shaft across the facing.
-    kinetic::draw_shaft(host, draw, shaft_axis(facing), rpm);
+    kinetic::draw_shaft(host, draw, shaft_axis(facing), rpm, pos);
 
     // The lid, wound up or thrown open (`applyLidAngle`).
     let t = |n: i64| lid_at(&data, n, rpm);

@@ -639,7 +639,7 @@ impl Hooks for Elevators {
         let rpm = kinetic::speed(event.entity);
         let state = saved(event.entity);
         let draw = &mut *event.draw;
-        kinetic::draw_shaft(host, draw, rotation_axis(facing), rpm);
+        kinetic::draw_shaft(host, draw, rotation_axis(facing), rpm, event.pos);
         // The block's own turn about Y: south 0, west 90, north 180, east 270 (`horizontalAngle`).
         let angle = match facing {
             Dir::South => 0.0,

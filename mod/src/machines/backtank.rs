@@ -144,7 +144,7 @@ impl Hooks for Backtanks {
         };
         let rpm = kinetic::speed(event.entity);
         let draw = &mut *event.draw;
-        kinetic::draw_shaft_half(host, draw, Dir::Up, rpm);
+        kinetic::draw_shaft_half(host, draw, Dir::Up, rpm, event.pos);
         draw.push();
         draw.rotate_about([0.0, 1.0, 0.0], turn(facing), [0.5; 3]);
         // The cogs turn about the east-west axis through (0.5, 6.5/16, 11/16).

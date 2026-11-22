@@ -125,14 +125,15 @@ pub fn update_tag(entity: &ModBlockEntity) -> Compound {
 
 /// A whole shaft through the block along `axis`, turning at `rpm` (0.3 degrees a tick per RPM,
 /// as Create's `KineticBlockEntityRenderer`). Leaves the draw still.
-pub fn draw_shaft(host: &dyn Host, draw: &mut BlockEntityDraw, axis: Axis, rpm: f32) {
-    draw.spin(axis.unit(), CENTRE, rpm * 0.3, 0.0);
+/// It starts from the position's 22.5 degree offset (`getRotationOffsetForPosition`), as a plain shaft does.
+pub fn draw_shaft(host: &dyn Host, draw: &mut BlockEntityDraw, axis: Axis, rpm: f32, pos: [i32; 3]) {
+    draw.spin(axis.unit(), CENTRE, rpm * 0.3, crate::machines::encased::shaft_phase(axis, pos));
     host.draw_block(draw, "create:shaft", &[("axis", axis.name())]);
     draw.still();
 }
 
-/// Half a shaft sticking out of `face`, turning at `rpm`. Leaves the draw still.
-pub fn draw_shaft_half(host: &dyn Host, draw: &mut BlockEntityDraw, face: Dir, rpm: f32) {
-    crate::draw::draw_shaft_half(host, draw, face, rpm * 0.3);
+/// Half a shaft sticking out of `face`, turning at `rpm`, from the position's offset. Leaves the draw still.
+pub fn draw_shaft_half(host: &dyn Host, draw: &mut BlockEntityDraw, face: Dir, rpm: f32, pos: [i32; 3]) {
+    crate::draw::draw_shaft_half(host, draw, face, rpm * 0.3, pos);
     draw.still();
 }

@@ -522,7 +522,7 @@ impl Hooks for Hose {
         let rpm = kinetic::speed(event.entity);
         let axis = shaft_face(facing).axis();
         let draw = &mut *event.draw;
-        kinetic::draw_shaft(host, draw, axis, rpm);
+        kinetic::draw_shaft(host, draw, axis, rpm, event.pos);
         // The coil is authored along X, like the block: it turns with the block's own rotation.
         draw.push();
         let turn = match facing {

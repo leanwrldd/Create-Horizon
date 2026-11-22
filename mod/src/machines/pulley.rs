@@ -489,7 +489,7 @@ impl Hooks for Pulley {
         };
         let rpm = kinetic::speed(event.entity);
         let draw = &mut *event.draw;
-        kinetic::draw_shaft(host, draw, axis, rpm);
+        kinetic::draw_shaft(host, draw, axis, rpm, event.pos);
         draw.push();
         if axis == Axis::X {
             draw.rotate_about([0.0, 1.0, 0.0], 90.0, [0.5; 3]);

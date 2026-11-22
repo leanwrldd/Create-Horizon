@@ -138,7 +138,7 @@ impl Hooks for Valves {
         let pipe = valve_pipe_axis(facing, along_first);
         let rpm = kinetic::speed(event.entity);
         let draw = &mut *event.draw;
-        kinetic::draw_shaft(host, draw, shaft, rpm);
+        kinetic::draw_shaft(host, draw, shaft, rpm, event.pos);
 
         let pointer = float(&event.entity.nbt, POINTER_KEY).unwrap_or(0.0);
         let rotation = -90.0 * pointer;

@@ -184,7 +184,7 @@ impl Hooks for Fan {
         else {
             return;
         };
-        draw(host, &mut *event.draw, facing, kinetic::speed(event.entity));
+        draw(host, &mut *event.draw, facing, kinetic::speed(event.entity), event.pos);
     }
 
     /// `EncasedFanBlock.getStateForPlacement`, without the chute and the shaft beside it: the
@@ -246,9 +246,10 @@ pub(super) fn draw(
     draw: &mut crate::compat::BlockEntityDraw,
     facing: Dir,
     rpm: f32,
+    pos: [i32; 3],
 ) {
     let back = facing.opposite();
-    kinetic::draw_shaft_half(host, draw, back, rpm);
+    kinetic::draw_shaft_half(host, draw, back, rpm, pos);
     let mut speed = rpm * 5.0;
     if speed > 0.0 {
         speed = speed.clamp(80.0, 64.0 * 20.0);

@@ -458,7 +458,7 @@ impl Hooks for Piston {
         let along_first = host.block_state_property(event.state, "axis_along_first") == Some("true");
         let rpm = kinetic::speed(event.entity);
         let draw = &mut *event.draw;
-        kinetic::draw_shaft(host, draw, piston_rules::rotation_axis(facing, along_first), rpm);
+        kinetic::draw_shaft(host, draw, piston_rules::rotation_axis(facing, along_first), rpm, event.pos);
         let state = saved(event.entity);
         let parsed = engine::parsed(event.pos, event.entity);
         let Some(parsed) = parsed else {

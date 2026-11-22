@@ -480,7 +480,7 @@ impl Hooks for Gantries {
             ) else {
                 return;
             };
-            kinetic::draw_shaft(host, &mut *event.draw, piston_rules::rotation_axis(facing, along_first), rpm);
+            kinetic::draw_shaft(host, &mut *event.draw, piston_rules::rotation_axis(facing, along_first), rpm, event.pos);
             event.draw.keep();
             return;
         }

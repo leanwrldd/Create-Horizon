@@ -802,7 +802,7 @@ impl Hooks for Deployers {
         });
         let offset = facing.normal().map(|n| n as f32 * distance);
 
-        kinetic::draw_shaft(host, draw, rules::rotation_axis(facing, along_first), rpm);
+        kinetic::draw_shaft(host, draw, rules::rotation_axis(facing, along_first), rpm, event.pos);
         draw_part(host, draw, POLE, facing, along_first, true, offset);
         draw_part(host, draw, &format!("create:{}", pose.model()), facing, along_first, false, offset);
         let turning = held.as_ref().is_some_and(|stack| {

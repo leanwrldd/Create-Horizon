@@ -50,18 +50,22 @@ pub(crate) fn face_south(draw: &mut BlockEntityDraw, face: Dir) {
     draw.rotate_about(axis.unit(), angle, CENTRE);
 }
 
-pub(crate) fn draw_shaft_half(host: &dyn Host, draw: &mut BlockEntityDraw, face: Dir, turn: f32) {
-    shaft_half(host, draw, face, turn, None);
+pub(crate) fn draw_shaft_half(host: &dyn Host, draw: &mut BlockEntityDraw, face: Dir, turn: f32, pos: Pos) {
+    shaft_half(host, draw, face, turn, None, pos);
 }
 
+/// `KineticBlockEntityRenderer.getRotationOffsetForPosition` (and `GearboxRenderer`, which takes it per face):
+/// every shaft drawn by a block entity starts from the same 22.5 degree offset as a plain shaft at that position,
+/// or the two don't line up where they meet.
 fn shaft_half(
     host: &dyn Host,
     draw: &mut BlockEntityDraw,
     face: Dir,
     turn: f32,
     angle: Option<f32>,
+    pos: Pos,
 ) {
-    spin(draw, face.axis().unit(), turn, 0.0, angle);
+    spin(draw, face.axis().unit(), turn, tooth_phase(pos, face.axis(), false), angle);
     draw.push();
     face_south(draw, face);
     host.draw_model(draw, SHAFT_HALF, 0xFF_FFFF);
@@ -131,12 +135,13 @@ pub fn block(
                     face,
                     turn * sign,
                     angle.map(|angle| angle * sign),
+                    pos,
                 );
             }
         }
         Kind::Motor(facing) => {
             host.draw_block(draw, "create:creative_motor", &[("facing", facing.name())]);
-            shaft_half(host, draw, facing, turn, angle);
+            shaft_half(host, draw, facing, turn, angle, pos);
         }
         Kind::Crank(facing) => {
             spin(draw, facing.axis().unit(), turn, 0.0, angle);

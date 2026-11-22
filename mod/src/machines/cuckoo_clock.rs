@@ -206,7 +206,7 @@ impl Hooks for Clock {
         };
         let rpm = kinetic::speed(event.entity);
         let draw = &mut *event.draw;
-        kinetic::draw_shaft_half(host, draw, facing.opposite(), rpm);
+        kinetic::draw_shaft_half(host, draw, facing.opposite(), rpm, event.pos);
 
         let natural = host.dimension() == OVERWORLD;
         let (hours, minutes) = if rpm != 0.0 { rules::clock_time(host.day_time(), natural) } else { (0, 0) };

@@ -720,9 +720,9 @@ impl Hooks for Saw {
 
         // `renderShaft`: half a shaft out of the back, or a whole one through an upright saw.
         if horizontal {
-            kinetic::draw_shaft_half(host, draw, facing.opposite(), rpm);
+            kinetic::draw_shaft_half(host, draw, facing.opposite(), rpm, event.pos);
         } else {
-            kinetic::draw_shaft(host, draw, rules::rotation_axis(facing, along_first), rpm);
+            kinetic::draw_shaft(host, draw, rules::rotation_axis(facing, along_first), rpm, event.pos);
         }
 
         let drew_items = facing == Dir::Up && draw_items(host, draw, along_first, rpm, event.entity);
