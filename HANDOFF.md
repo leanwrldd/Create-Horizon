@@ -75,8 +75,10 @@ the Port Board row `collision-disassembly-shift`.
 
 **Left:**
 - play-testing everything above (test plans are in the merge commits' agents' notes and on the board rows);
-- trains (part 1, the track graph rules, is in progress), then stations, navigation, schedules, carriages, glue;
-- Ponder's Create-specific scene animations (in progress);
+- trains: part 1 is merged (rules only, `rules/trains/`, its README says what's next: stations, navigation,
+  schedules, carriages, bogeys, then glue). Catnip's `intersect_ranged` there is reconstructed, unverified;
+- Ponder: bearings, glue, belt items, pulleys, deployers, arms and particles animate (0d8653f); left are
+  `modifyBlockEntity`/NBT calls (~110), `flapFunnel`, block breaking progress, fluid particles, carts, trains;
 - minecart contraptions (blocked: nothing can draw a structure on a vanilla minecart);
 - clicking blocks on a moving structure, Deployer schematic printing on a structure;
 - Factory Gauge arrows and relocation, Table Cloth shop data on the item;
