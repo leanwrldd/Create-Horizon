@@ -8,6 +8,7 @@ pub mod network;
 pub mod placement;
 pub mod propagator;
 pub mod signal;
+pub mod station;
 pub mod track_shape;
 pub mod travelling_point;
 pub mod vec;
