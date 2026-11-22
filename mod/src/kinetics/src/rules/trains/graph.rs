@@ -14,6 +14,7 @@
 use super::bezier::BezierConnection;
 use super::network::TrackGraph;
 use super::signal::SignalBoundary;
+use super::station::GlobalStation;
 use super::vec::{
     Plane, Vec3, add, aabb_intersects, aabb_intersects_segment, block_containing, dot, equal, floor, intersect_ranged,
     lerp, normalize, round, scale, sub,
@@ -209,11 +210,12 @@ impl EdgePointType {
     }
 }
 
-/// What differs between kinds of edge point. Stations and observers are `Plain` until their own
-/// port gives them state.
+/// What differs between kinds of edge point. Observers are `Plain` until their own port gives them
+/// state.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PointData {
     Signal(SignalBoundary),
+    Station(GlobalStation),
     Plain,
 }
 
@@ -239,6 +241,17 @@ impl TrackEdgePoint {
         }
     }
 
+    /// `new GlobalStation()` placed on an edge.
+    pub fn new_station(id: Uuid, edge_location: [TrackNodeLocation; 2], position: f64) -> TrackEdgePoint {
+        TrackEdgePoint {
+            id,
+            ty: EdgePointType::Station,
+            edge_location,
+            position,
+            data: PointData::Station(GlobalStation::new()),
+        }
+    }
+
     pub fn new_plain(ty: EdgePointType, id: Uuid, edge_location: [TrackNodeLocation; 2], position: f64) -> TrackEdgePoint {
         TrackEdgePoint { id, ty, edge_location, position, data: PointData::Plain }
     }
@@ -256,22 +269,46 @@ impl TrackEdgePoint {
     pub fn signal(&self) -> Option<&SignalBoundary> {
         match &self.data {
             PointData::Signal(s) => Some(s),
-            PointData::Plain => None,
+            _ => None,
+        }
+    }
+
+    pub fn station(&self) -> Option<&GlobalStation> {
+        match &self.data {
+            PointData::Station(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn station_mut(&mut self) -> Option<&mut GlobalStation> {
+        match &mut self.data {
+            PointData::Station(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// `GlobalStation.canApproachFrom(side)`: the primary side only, and not while assembling.
+    /// False for anything that is not a station.
+    pub fn can_approach_from(&self, side: &TrackNodeLocation) -> bool {
+        match &self.data {
+            PointData::Station(s) => s.can_approach_from(self.is_primary(side)),
+            _ => false,
         }
     }
 
     pub fn signal_mut(&mut self) -> Option<&mut SignalBoundary> {
         match &mut self.data {
             PointData::Signal(s) => Some(s),
-            PointData::Plain => None,
+            _ => None,
         }
     }
 
     /// `canNavigateVia(side)`: a signal needs a block entity on that side; a station is closed while
-    /// assembling (that state comes with the station port, so here it is always open).
+    /// assembling.
     pub fn can_navigate_via(&self, side: &TrackNodeLocation) -> bool {
         match &self.data {
             PointData::Signal(s) => s.can_navigate_via(self.is_primary(side)),
+            PointData::Station(s) => s.can_navigate_via(),
             PointData::Plain => true,
         }
     }
