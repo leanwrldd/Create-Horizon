@@ -159,9 +159,13 @@ impl Hooks for Rollers {
         let Some(facing) = host.block_state_property(event.state, "facing").and_then(Dir::from_name) else {
             return;
         };
-        draw_wheel(host, &mut *event.draw, facing, 0.0);
+        // `RollerRenderer`: the wheel turns as `HarvesterRenderer.transform` says; a scene sets the speed.
+        let angle = crate::ponder::animated_rate(&event.entity.nbt);
+        draw_wheel(host, &mut *event.draw, facing, angle.unwrap_or(0.0));
         draw_frame(host, &mut *event.draw, facing);
-        event.draw.keep();
+        if angle.is_none() {
+            event.draw.keep();
+        }
     }
 
     /// `RollerBlockEntity.createRenderBoundingBox`: the block grown by one.

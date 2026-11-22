@@ -19,7 +19,13 @@ use crate::compat::{
     TooltipRenderPreEvent,
 };
 
-pub(crate) use render::{ANGLE, ANIMATED, ARM_ANGLES, BASIN_ABOVE, PRESS_MODE, PRESS_PROGRESS, TICK};
+pub(crate) use render::{ANGLE, ANIMATED, ANIMATED_SPEED, ARM_ANGLES, BASIN_ABOVE, PRESS_MODE, PRESS_PROGRESS, TICK};
+/// What a scene's `setAnimatedSpeed` on a Mechanical Harvester or Roller turns its blade or wheel at, in degrees a tick:
+/// `HarvesterRenderer.transform` turns `(renderTime / 20 * speed) % 360` degrees.
+pub(crate) fn animated_rate(nbt: &crate::Compound) -> Option<f32> {
+    crate::float(nbt, ANIMATED_SPEED).map(|speed| speed / 20.0)
+}
+
 use scene::{Hold, Topic};
 use scenes::{SCENES, for_item};
 use screen::{Layout, Viewer};

@@ -8,7 +8,8 @@
 //!   waterlogging are not ported; the placement of a block against a neighbouring actor takes the
 //!   clicked face, not the neighbour's own facing.
 //! - The Wrench only picks them up (`onWrenched` fails in Create, too).
-//! - The stationary Harvester's blade stands still (`getAnimatedSpeed` is a Ponder detail).
+//! - The stationary Harvester's blade stands still (`getAnimatedSpeed` is a Ponder detail: a scene sets it, see
+//!   `ponder::ANIMATED_SPEED`).
 
 use create_kinetics::Dir;
 use crate::compat::{
@@ -54,8 +55,12 @@ impl Hooks for Harvesters {
         let Some(facing) = host.block_state_property(event.state, "facing").and_then(Dir::from_name) else {
             return;
         };
-        super::actor_draw::draw_blade(host, &mut *event.draw, facing, 0.0);
-        event.draw.keep();
+        // `HarvesterRenderer.transform`: `(renderTime / 20 * speed) % 360` degrees, as a rate; a scene sets the speed.
+        let angle = crate::ponder::animated_rate(&event.entity.nbt);
+        super::actor_draw::draw_blade(host, &mut *event.draw, facing, angle.unwrap_or(0.0));
+        if angle.is_none() {
+            event.draw.keep();
+        }
     }
 
     /// `AttachedActorBlock.getStateForPlacement`: against the wall clicked; on a floor or a ceiling,

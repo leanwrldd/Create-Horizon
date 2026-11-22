@@ -296,6 +296,8 @@ class Storyboard:
                 return tuple(args)
             if name in {"ItemParticleOption", "BlockParticleOption"}:
                 return "item"
+            if name == "FluidStack" and (fluid := re.search(r"AllFluids\.([A-Z_]+)", text(node))):
+                return ("fluid", fluid[1].lower())
             if name == "ItemStack" and args and isinstance(args[0], tuple) and args[0][0] == "id":
                 return args[0]
             if name == "AABB":
@@ -340,6 +342,13 @@ class Storyboard:
         # `PackageItem.containing(...)` picks a random style (`PackageStyles.getRandomBox`): the first one stands for it.
         if target_text == "PackageItem" and name == "containing":
             return ("id", "create:cardboard_package_12x12", {})
+
+        # `FluidFX.getFluidParticle(stack)`: Create's `FluidStackParticle`. `VecHelper.offsetRandomly(vec, random, radius)`
+        # is `vec` plus up to `radius` either way on each axis: the player draws it, so only the radius is kept.
+        if target_text == "FluidFX" and name == "getFluidParticle" and values and isinstance(values[0], tuple) and values[0][0] == "fluid":
+            return ("particle", values[0][1])
+        if target_text == "VecHelper" and name == "offsetRandomly" and len(values) == 3 and numbers(values[2:], 1):
+            return ("jitter", values[2])
 
         if target_text == "util" and name in {"select", "grid", "vector"}:
             return ("service", name)
@@ -394,13 +403,16 @@ class Storyboard:
                         self.emit("glue", list(values[0]), list(DIRECTIONS[values[1]]), values[2])
                         return UNKNOWN
                     # `PonderEffectInstructions.simpleParticleEmitter` / `particleEmitterWithinBlockSpace`.
-                    if name in {"simpleParticleEmitter", "particleEmitterWithinBlockSpace"} and values                             and isinstance(values[0], str):
+                    particle = values[0][1] if values and isinstance(values[0], tuple) and values[0][0] == "particle" else None
+                    if name in {"simpleParticleEmitter", "particleEmitterWithinBlockSpace"} and values                             and (isinstance(values[0], str) or particle):
                         motion = values[1] if len(values) > 1 and isinstance(values[1], tuple) and numbers(values[1], 3) else (0, 0, 0)
-                        return ("emitter", values[0], motion, name == "particleEmitterWithinBlockSpace")
+                        jitter = values[1][1] if len(values) > 1 and isinstance(values[1], tuple) and values[1][0] == "jitter" else 0
+                        return ("emitter", values[0] if isinstance(values[0], str) else particle, motion,
+                                name == "particleEmitterWithinBlockSpace", jitter)
                     # `emitParticles(location, emitter, amountPerCycle, cycles)`.
                     if name == "emitParticles" and len(values) == 4 and numbers(values[0], 3)                             and isinstance(values[1], tuple) and values[1][0] == "emitter" and numbers(values[2:], 2):
                         self.emit("particles", values[1][1], list(values[0]), list(values[1][2]), values[1][3],
-                                  values[2], values[3])
+                                  values[2], values[3], *([values[1][4]] if values[1][4] else []))
                         return UNKNOWN
                     if name == "createRedstoneParticles" and len(values) == 3 and numbers(values[0], 3) and numbers(values[1:], 2):
                         self.emit("particles", "redstone", [v + 0.5 for v in values[0]], [0, 0, 0], True, values[2], 1)
@@ -675,6 +687,12 @@ class Storyboard:
         if name == "modifyEntities" and len(args) == 2 and text(args[0]) == "ItemEntity.class" and text(args[1]) == "Entity::discard":
             self.emit("item_end", 0)
             return UNKNOWN
+        # `setFilterData(selection, class, stack)`: `FilteringBehaviour.setFilter`, saved as the block entity's `Filter`.
+        if name == "setFilterData" and len(values) == 3 and isinstance(values[2], tuple) and values[2][0] == "id":
+            positions = [selected] if numbers(selected, 3) else selected
+            if isinstance(positions, list) and positions:
+                self.emit("nbt", positions, {"Filter": ["item", values[2][1]]})
+                return UNKNOWN
         # `flapFunnel(pos, outward)`: `FunnelBlockEntity.flap(!outward)`.
         if name == "flapFunnel" and len(values) == 2 and numbers(selected, 3) and isinstance(section, bool):
             self.emit("flap", list(selected), section)

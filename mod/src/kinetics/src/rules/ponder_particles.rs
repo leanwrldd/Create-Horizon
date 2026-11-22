@@ -51,6 +51,9 @@ pub enum Kind {
     Redstone,
     /// A crumb of a broken block (`TerrainParticle`, from `ParticleEngine.destroy`).
     Terrain,
+    /// Create's `FluidStackParticle` (`FluidFX.getFluidParticle`) of honey and of chocolate: it moves as it is told.
+    Honey,
+    Chocolate,
 }
 
 impl Kind {
@@ -63,6 +66,8 @@ impl Kind {
             "spit" => Self::Spit,
             "redstone" => Self::Redstone,
             "terrain" => Self::Terrain,
+            "honey" => Self::Honey,
+            "chocolate" => Self::Chocolate,
             _ => return None,
         })
     }
@@ -77,13 +82,17 @@ impl Kind {
             Self::Redstone => 0xFFB8_0000,
             // The block's own colour is not known here: a crumb tinted by 0.6 as `TerrainParticle` does.
             Self::Terrain => 0xFF86_7A63,
+            // `FluidStackParticle`: 0.8 times the fluid's tint (`SolidRenderedPlaceableFluidType.create(0xEAAE2F` and
+            // `0x622020`).
+            Self::Honey => 0xFFBB_8B26,
+            Self::Chocolate => 0xFF50_1919,
         }
     }
 
     /// Pixels a particle is across at the scene's usual scale: vanilla's `quadSize` times the block size.
     pub const fn size(self) -> f32 {
         match self {
-            Self::Slime | Self::Item | Self::Terrain => 2.0,
+            Self::Slime | Self::Item | Self::Terrain | Self::Honey | Self::Chocolate => 2.0,
             Self::Spit | Self::Redstone => 2.0,
             Self::LargeSmoke => 5.0,
         }
@@ -95,7 +104,7 @@ impl Kind {
     /// (large smoke) rises at gravity -0.1 with friction 0.96, `DustParticleBase` has no gravity and friction 0.96.
     const fn physics(self) -> (f64, f64) {
         match self {
-            Self::Slime | Self::Item | Self::Terrain => (0.04, 0.98),
+            Self::Slime | Self::Item | Self::Terrain | Self::Honey | Self::Chocolate => (0.04, 0.98),
             Self::Spit => (0.04 * 0.5, 0.9),
             Self::LargeSmoke => (-0.04 * 0.1, 0.96),
             Self::Redstone => (0.0, 0.96),
@@ -192,6 +201,11 @@ pub fn emission_runs(runs_per_tick: f32, rng: &mut Rng) -> u32 {
     whole as u32 + u32::from(rng.float() < f64::from(runs_per_tick - whole))
 }
 
+/// `VecHelper.offsetRandomly(motion, random, radius)`: the motion with up to `radius` either way on each axis.
+pub fn jittered(motion: [f32; 3], radius: f32, rng: &mut Rng) -> [f32; 3] {
+    motion.map(|v| v + (rng.float() as f32 - 0.5) * 2.0 * radius)
+}
+
 /// `particleEmitterWithinBlockSpace`: a point anywhere in the block about `centre`.
 pub fn within_block(centre: [f64; 3], rng: &mut Rng) -> [f64; 3] {
     centre.map(|v| v + rng.float() - 0.5)
@@ -213,6 +227,8 @@ pub fn particle(kind: Kind, spawn: Spawn, rng: &mut Rng) -> Particle {
         Kind::Slime | Kind::Item | Kind::LargeSmoke => std::array::from_fn(|i| own[i] * 0.1 + spawn.motion[i]),
         Kind::Redstone => own.map(|v| v * 0.1),
         Kind::Terrain => own,
+        // `FluidStackParticle` sets `xd = vx` after the constructor scattered it.
+        Kind::Honey | Kind::Chocolate => spawn.motion,
         Kind::Spit => std::array::from_fn(|i| spawn.motion[i] + (rng.float() * 2.0 - 1.0) * 0.05),
     };
     Particle { kind, pos: spawn.pos, velocity, lifetime }
@@ -245,6 +261,18 @@ impl Particle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jitter_stays_within_its_radius_and_a_fluid_drop_takes_the_motion_as_given() {
+        let mut rng = Rng::seeded(&[6]);
+        for _ in 0..100 {
+            let motion = jittered([0.0; 3], 0.1, &mut rng);
+            assert!(motion.iter().all(|v| v.abs() <= 0.1));
+            let p = particle(Kind::Honey, Spawn { pos: [0.0; 3], motion: motion.map(f64::from) }, &mut rng);
+            assert_eq!(p.velocity, motion.map(f64::from));
+        }
+        assert_eq!(jittered([1.0, 2.0, 3.0], 0.0, &mut rng), [1.0, 2.0, 3.0]);
+    }
 
     #[test]
     fn a_broken_block_throws_64_crumbs_out_of_its_cells() {

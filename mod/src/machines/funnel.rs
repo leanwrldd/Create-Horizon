@@ -56,8 +56,8 @@ const BELT_FLAP: &str = "create:block/belt_funnel/flap";
 /// `TransferCooldown`, as `FunnelBlockEntity.write` keeps it.
 const COOLDOWN: &str = "TransferCooldown";
 /// Which way the flap last moved (1 out, -1 in) and when, for clients.
-const FLAP_KEY: &str = "Flap";
-const FLAP_TICK: &str = "FlapTick";
+pub(crate) const FLAP_KEY: &str = "Flap";
+pub(crate) const FLAP_TICK: &str = "FlapTick";
 /// Ticks between tries at an inventory.
 const ATTEMPT_RATE: i64 = 2;
 /// Ticks between a funnel's looks at the blocks around it.
@@ -663,7 +663,11 @@ fn draw(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
         Kind::Plain { extracting: false }
     };
     let nbt = &event.entity.nbt;
-    let since = (event.draw.game_time - util::long(nbt, FLAP_TICK)) as f32 + event.draw.partial;
+    // A Ponder scene counts its own ticks (`ponder::TICK`); the game's clock keeps counting outside one.
+    let since = match crate::float(nbt, crate::ponder::TICK) {
+        Some(tick) => tick - util::long(nbt, FLAP_TICK) as f32,
+        None => (event.draw.game_time - util::long(nbt, FLAP_TICK)) as f32 + event.draw.partial,
+    };
     let swinging = util::has(nbt, FLAP_KEY) && since < FLAP_TICKS;
     let flapness = if swinging {
         rules::flap_value(int(nbt, FLAP_KEY) < 0, since)
