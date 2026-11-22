@@ -74,6 +74,8 @@ struct Runtime {
     next_id: LinkId,
     /// Links `initialize` has run for (`loadedGlobally` and its like, which aren't saved).
     seen: BTreeSet<LinkId>,
+    /// The frequency each link was last registered on, to notice an edited `Freq`.
+    registered: BTreeMap<LinkId, Freq>,
     /// `LogisticallyLinkedBlockItem.assignFrequency`, kept by player until they place a block.
     tuned: BTreeMap<u128, Freq>,
     /// A block just placed, until its block entity ticks: the frequency and owner it starts with.
@@ -176,7 +178,12 @@ pub fn tick_link(host: &mut dyn Host, pos: Pos, nbt: &Compound, global: bool, po
     if rt.seen.insert(id) {
         link.initialize(&mut rt.logistics, &global_pos, now);
         link.keep_alive(&mut rt.logistics, now);
+    } else if let Some(old) = rt.registered.get(&id).copied().filter(|old| *old != freq) {
+        // The saved `Freq` was edited after the link registered (a copied or `/data modify`d frequency): it moves networks now
+        // instead of at its next keep-alive.
+        link.retune(&mut rt.logistics, old, &global_pos, now);
     }
+    rt.registered.insert(id, freq);
     let logistics = &mut rt.logistics;
     if link.redstone_power_changed(logistics, power, now) {
         changes.push((POWER, Tag::Int(i32::from(power))));
@@ -201,6 +208,7 @@ pub fn link_removed(host: &mut dyn Host, pos: Pos, nbt: &Compound, global: bool)
     };
     rt.positions.remove(&id);
     rt.seen.remove(&id);
+    rt.registered.remove(&id);
     let Some(freq) = freq_of(nbt) else {
         return;
     };
@@ -461,6 +469,12 @@ pub fn check_arrivals(host: &mut dyn Host, packager: Pos, now: i64) {
     for gauge in gauges {
         super::factory_gauge::restock_arrivals(host, gauge, &arrivals);
     }
+}
+
+/// How many blocks (links, tickers, requesters, gauges) are registered on the network now, whether or not they have a Packager.
+pub fn present_count(host: &dyn Host, freq: Freq) -> usize {
+    let now = util::game_time(host);
+    entries_of(&mut runtime(), freq, now).len()
 }
 
 /// How many links hold the network up now (`InventorySummary.contributingLinks`), for a status line.

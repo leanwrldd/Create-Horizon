@@ -413,6 +413,31 @@ impl Link {
             self.added_globally = true;
             logistics.networks.link_added(self.freq, pos.clone(), self.placed_by);
         }
+        // A link that joins a network changes what it holds: a summary read just before (an `open` at a ticker that no link was on
+        // yet) must not keep saying "0 links" for its 20 ticks. Create lets it expire; here the first registration drops it.
+        logistics.invalidate_summaries(self.freq);
+    }
+
+    /// The link's saved frequency is no longer the one it was registered on (a `/data modify` or a copied `Freq`; Create has no way to
+    /// change it but placing a new block): it leaves `old`'s network and joins its own, as `destroy` followed by `initialize` would.
+    pub fn retune<K: PartialEq + Clone>(&mut self, logistics: &mut Logistics<K>, old: Freq, pos: &GlobalPos, now: i64) {
+        if old == self.freq {
+            return;
+        }
+        logistics.links.remove(old, self.id, now);
+        if self.global {
+            if self.loaded_globally {
+                logistics.networks.link_invalidated(old, pos);
+                logistics.networks.link_loaded(self.freq, pos.clone());
+            }
+            if self.added_globally {
+                logistics.networks.link_removed(old, pos);
+                logistics.networks.link_added(self.freq, pos.clone(), self.placed_by);
+            }
+        }
+        self.keep_alive(logistics, now);
+        logistics.invalidate_summaries(old);
+        logistics.invalidate_summaries(self.freq);
     }
 
     /// `keepAlive`.
@@ -598,6 +623,12 @@ impl<K: PartialEq + Clone> Logistics<K> {
         let cache = if accurate { &mut self.accurate } else { &mut self.summaries };
         cache.put(freq, summary.clone(), now);
         summary
+    }
+
+    /// Both caches of a network are dropped (a link joined or left it).
+    pub fn invalidate_summaries(&mut self, freq: Freq) {
+        self.summaries.invalidate(&freq);
+        self.accurate.invalidate(&freq);
     }
 
     /// `SUMMARIES.invalidate(network)`: a gauge whose links all loaded wants a fresh summary.
@@ -863,6 +894,55 @@ mod tests {
 
     fn pos(freq: Freq, x: i32) -> (Freq, GlobalPos) {
         (freq, GlobalPos { dimension: "minecraft:overworld".to_owned(), pos: [x, 64, 0] })
+    }
+
+    fn here(x: i32) -> GlobalPos {
+        GlobalPos { dimension: "minecraft:overworld".to_owned(), pos: [x, 64, 0] }
+    }
+
+    /// The summary of `freq` with link 1 on a packager holding iron and any other link (a ticker) on none.
+    fn read(logistics: &mut Logistics<&'static str>, freq: Freq, now: i64) -> Summary<&'static str> {
+        logistics.summary_of_network(freq, false, now, |ids| {
+            ids.iter().map(|id| link(*id, 0, (*id == 1).then(|| packager(10, Some(100), &[("iron", 12)])))).collect()
+        })
+    }
+
+    #[test]
+    fn a_link_and_a_ticker_that_share_a_frequency_see_each_other_at_once() {
+        // The registration path of a placed (or setblock-placed) Stock Link and Stock Ticker: the first tick of each.
+        let mut logistics: Logistics<&'static str> = Logistics::default();
+        let (mut link1, mut ticker) = (Link::new(1, 7, true), Link::new(2, 7, false));
+        link1.initialize(&mut logistics, &here(0), 100);
+        link1.keep_alive(&mut logistics, 100);
+        ticker.initialize(&mut logistics, &here(3), 100);
+        ticker.keep_alive(&mut logistics, 100);
+        let summary = read(&mut logistics, 7, 101);
+        assert_eq!(summary.contributing_links, 1);
+        assert_eq!(summary.count_of(&"iron"), 12);
+    }
+
+    #[test]
+    fn a_summary_read_before_the_link_registered_is_not_kept() {
+        let mut logistics: Logistics<&'static str> = Logistics::default();
+        assert_eq!(read(&mut logistics, 7, 100).contributing_links, 0);
+        let mut link1 = Link::new(1, 7, true);
+        link1.initialize(&mut logistics, &here(0), 101);
+        assert_eq!(read(&mut logistics, 7, 102).contributing_links, 1);
+    }
+
+    #[test]
+    fn a_link_whose_frequency_was_edited_moves_to_the_new_network() {
+        let mut logistics: Logistics<&'static str> = Logistics::default();
+        let mut link1 = Link::new(1, 7, true);
+        link1.initialize(&mut logistics, &here(0), 100);
+        assert_eq!(read(&mut logistics, 7, 101).contributing_links, 1);
+        // The tester copies the ticker's frequency (9) onto the link.
+        link1.freq = 9;
+        link1.retune(&mut logistics, 7, &here(0), 102);
+        assert_eq!(read(&mut logistics, 9, 102).contributing_links, 1);
+        assert_eq!(read(&mut logistics, 7, 102).contributing_links, 0);
+        assert!(logistics.networks.networks.contains_key(&9));
+        assert!(!logistics.networks.networks.contains_key(&7));
     }
 
     #[test]

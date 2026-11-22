@@ -223,6 +223,17 @@ fn open(host: &mut dyn Host, uuid: u128, pos: Pos) {
     drop(open);
     let links = network::linked_count(host, freq);
     tell(host, uuid, format!("Stock Ticker: {links} Stock Link(s) on this network. /stock list, add, remove, address, send, program"));
+    if links == 0 {
+        let present = network::present_count(&*host, freq);
+        tell(
+            host,
+            uuid,
+            format!(
+                "No Stock Link holds this network up ({present} block(s) registered on it). A Stock Link must sit on a Packager with the chest on its back side \
+                 (opposite the way it faces), with the same frequency as this ticker: use a Stock Link item on a linked block, then place the next one."
+            ),
+        );
+    }
 }
 
 fn show_order(host: &mut dyn Host, uuid: u128, session: &Session) {
@@ -238,8 +249,26 @@ fn show_order(host: &mut dyn Host, uuid: u128, session: &Session) {
 
 // --- the commands -----------------------------------------------------------------------------------------
 
+/// The Stock Ticker beside the player, for a command with none open (`commands::nearest_ticker`).
+fn nearby_ticker(host: &mut dyn Host, player: [f64; 3]) -> Option<Pos> {
+    let range = commands::AUTO_OPEN_RANGE;
+    let centre = [player[0].floor() as i32, player[1].floor() as i32, player[2].floor() as i32];
+    let mut found = Vec::new();
+    for dx in -range..=range {
+        for dy in -range..=range {
+            for dz in -range..=range {
+                let at = [centre[0] + dx, centre[1] + dy, centre[2] + dz];
+                if host.block(at) == network::STOCK_TICKER {
+                    found.push(at);
+                }
+            }
+        }
+    }
+    commands::nearest_ticker(player, &found)
+}
+
 /// `/stock ...`: what the player asked of the ticker they have open.
-fn run(host: &mut dyn Host, uuid: u128, line: &str) {
+fn run(host: &mut dyn Host, uuid: u128, event_position: [f64; 3], line: &str) {
     let command = match commands::parse_stock(line) {
         Ok(command) => command,
         Err(message) => {
@@ -255,8 +284,20 @@ fn run(host: &mut dyn Host, uuid: u128, line: &str) {
         }
         return;
     }
+    if !sessions().contains_key(&uuid)
+        && let Some(near) = nearby_ticker(host, event_position)
+    {
+        open(host, uuid, near);
+    }
     let Some((ticker, address)) = sessions().get(&uuid).map(|s| (s.ticker, s.address.clone())) else {
-        tell(host, uuid, "Right-click a Stock Ticker first (or /stock open <x> <y> <z>)");
+        tell(
+            host,
+            uuid,
+            format!(
+                "No Stock Ticker within {} blocks: stand beside one, right-click it, or /stock open <x> <y> <z>",
+                commands::AUTO_OPEN_RANGE
+            ),
+        );
         return;
     };
     if host.block(ticker) != network::STOCK_TICKER {
@@ -526,7 +567,7 @@ impl Hooks for Tickers {
         let Some(rest) = (if line == "stock" { Some("") } else { line.strip_prefix("stock ") }) else {
             return Flow::Continue;
         };
-        run(host, event.player.uuid, rest);
+        run(host, event.player.uuid, event.player.position, rest);
         Flow::Cancel
     }
 }

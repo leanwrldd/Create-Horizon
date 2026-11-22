@@ -31,6 +31,25 @@ pub enum Stock {
     Open([i32; 3]),
 }
 
+/// How far from the player a `/stock` command looks for a Stock Ticker when none is open (Create opens the screen by a click on the
+/// ticker; the commands stand in for it, so the one the player stands beside will do).
+pub const AUTO_OPEN_RANGE: i32 = 8;
+
+/// The Stock Ticker `/stock` opens when the player has none open: the nearest of `tickers` within [`AUTO_OPEN_RANGE`] blocks of `player`
+/// (ties go to the lowest position).
+pub fn nearest_ticker(player: [f64; 3], tickers: &[[i32; 3]]) -> Option<[i32; 3]> {
+    let range = f64::from(AUTO_OPEN_RANGE + 1);
+    tickers
+        .iter()
+        .map(|t| {
+            let d: f64 = (0..3).map(|i| (f64::from(t[i]) + 0.5 - player[i]).powi(2)).sum();
+            (d, *t)
+        })
+        .filter(|(d, _)| *d <= range * range)
+        .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+        .map(|(_, t)| t)
+}
+
 /// How many of an item.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Count {
@@ -215,6 +234,14 @@ pub fn configure<K: PartialEq + Clone>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_nearest_ticker_in_range_opens() {
+        let player = [10.5, 64.0, 10.5];
+        assert_eq!(nearest_ticker(player, &[[14, 64, 10], [11, 64, 10]]), Some([11, 64, 10]));
+        assert_eq!(nearest_ticker(player, &[[40, 64, 10]]), None);
+        assert_eq!(nearest_ticker(player, &[]), None);
+    }
 
     #[test]
     fn items_get_a_namespace() {
