@@ -16,7 +16,10 @@ native = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "mod"
 
 def names(folder: Path):
     folder.mkdir(parents=True, exist_ok=True)
-    return sorted(p.stem for p in folder.glob("*.rs") if p.stem != "mod")
+    files = [p.stem for p in folder.glob("*.rs") if p.stem != "mod"]
+    # a module that grew into a folder: <name>/mod.rs
+    folders = [p.parent.name for p in folder.glob("*/mod.rs")]
+    return sorted(set(files + folders))
 
 
 def write(path: Path, lines):

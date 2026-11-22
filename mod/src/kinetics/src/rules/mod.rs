@@ -149,6 +149,7 @@ pub mod symmetry_wand;
 pub mod symmetry_wand_state;
 pub mod table_cloth;
 pub mod toolbox;
+pub mod trains;
 pub mod tree_fertilizer;
 pub mod tunnel;
 pub mod tunnel_brass;
