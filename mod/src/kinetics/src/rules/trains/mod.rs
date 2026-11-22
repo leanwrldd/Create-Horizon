@@ -6,6 +6,7 @@ pub mod bezier;
 pub mod graph;
 pub mod navigation;
 pub mod network;
+pub mod observer;
 pub mod placement;
 pub mod propagator;
 pub mod schedule;
