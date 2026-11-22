@@ -539,25 +539,34 @@ fn affect_entities(
 
 /// `getRecipeFor(type, new SingleRecipeInput(stack), level).filter(CAN_BE_AUTOMATED)`: the engine's
 /// recipe matcher, `LevelRef::recipe_for`, for a vanilla cooking type (data packs included).
-fn cooking(host: &dyn Host, recipe_type: &str, stack: &ItemStack) -> Option<Found> {
-    recipe_lookup::recipe_for(host, recipe_type, &Input::Single(stack))
-        .filter(|found| vanilla_recipes::can_be_automated(&found.id))
+fn cooking(host: &dyn Host, dimension: &str, recipe_type: &str, stack: &ItemStack) -> Option<Option<Found>> {
+    let found = recipe_lookup::lookup(host, dimension, recipe_type, &Input::Single(stack)).ok()?;
+    Some(found.filter(|found| vanilla_recipes::can_be_automated(&found.id)))
 }
 
-/// `type.canProcess(stack, level)`.
-fn type_can_process(host: &dyn Host, kind: Kind, stack: &ItemStack) -> bool {
+/// `BlastingType`'s `getRecipeFor(SMELTING).or(BLASTING)`, either lookup possibly unanswered.
+fn smelting_or_blasting(host: &dyn Host, dimension: &str, stack: &ItemStack) -> Option<Option<Found>> {
+    match cooking(host, dimension, SMELTING, stack)? {
+        Some(found) => Some(Some(found)),
+        None => cooking(host, dimension, BLASTING, stack),
+    }
+}
+
+/// `type.canProcess(stack, level)`; `None` where the engine could not answer (asked again next tick).
+fn type_can_process(host: &dyn Host, dimension: &str, kind: Kind, stack: &ItemStack) -> Option<bool> {
     match kind {
-        Kind::Smoking => cooking(host, SMOKING, stack).is_some(),
+        Kind::Smoking => Some(cooking(host, dimension, SMOKING, stack)?.is_some()),
         Kind::Blasting => {
-            let (smelting, blasting) =
-                (cooking(host, SMELTING, stack).is_some(), cooking(host, BLASTING, stack).is_some());
+            let smelting = cooking(host, dimension, SMELTING, stack).map(|found| found.is_some());
+            let blasting = cooking(host, dimension, BLASTING, stack).map(|found| found.is_some());
             // `stack.has(DataComponents.FIRE_RESISTANT)`, asked only when no recipe takes it.
             let resistant = || host.server_item_in_tag(stack, fan::FIRE_RESISTANT_TAG).unwrap_or(false);
-            fan::blasting_can_process(smelting, blasting, !(smelting || blasting) && resistant())
+            fan::blasting_can_process_if_known(smelting, blasting, resistant)
         }
-        Kind::Splashing | Kind::Haunting => kind
-            .recipe_type()
-            .is_some_and(|recipe_type| crate::recipes::for_stack(host, recipe_type, stack).is_some()),
+        Kind::Splashing | Kind::Haunting => Some(
+            kind.recipe_type()
+                .is_some_and(|recipe_type| crate::recipes::for_stack(host, recipe_type, stack).is_some()),
+        ),
     }
 }
 
@@ -583,19 +592,21 @@ fn type_process(
     match kind {
         // `SmokingType.process`.
         Kind::Smoking => {
-            let recipe = cooking(host, SMOKING, stack)?;
+            let recipe = cooking(host, dimension, SMOKING, stack)??;
             Some(cooked(host, stack, &recipe))
         }
         // `BlastingType.process`: smelting, else blasting, unless smoking makes the same item.
         Kind::Blasting => {
-            let smoking = cooking(host, SMOKING, stack);
-            let smelting = cooking(host, SMELTING, stack).or_else(|| cooking(host, BLASTING, stack));
+            // `None` for a lookup the engine could not answer: the item is never destroyed on that.
+            let smoking = cooking(host, dimension, SMOKING, stack);
+            let smelting = smelting_or_blasting(host, dimension, stack);
             // `ItemStack.isSameItem` of the two results.
             let same = || {
-                matches!((&smoking, &smelting), (Some(a), Some(b)) if a.output.item == b.output.item)
+                matches!((&smoking, &smelting), (Some(Some(a)), Some(Some(b))) if a.output.item == b.output.item)
             };
-            match fan::blast(smelting.is_some(), smoking.is_some(), same) {
-                fan::Blast::Smelt => smelting.map(|recipe| cooked(host, stack, &recipe)),
+            let known = |answer: &Option<Option<Found>>| answer.as_ref().map(Option::is_some);
+            match fan::blast_if_known(known(&smelting), known(&smoking), same)? {
+                fan::Blast::Smelt => smelting.flatten().map(|recipe| cooked(host, stack, &recipe)),
                 fan::Blast::Destroy => Some(Vec::new()),
             }
         }
@@ -631,14 +642,18 @@ fn process_item(host: &mut dyn Host, dimension: &str, kind: Kind, body: &Body, v
         return;
     };
     let stack = item.stack;
-    if known == Known::Ask && !type_can_process(host, kind, &stack) {
-        // Create asks again every tick; remembering the answer for this type (`Time` -1, as a
-        // belt remembers it) saves the recipe lookups.
-        let mut remembered = progress.take().unwrap_or_default();
-        remembered.kind = Some(kind.id().to_owned());
-        remembered.time = -1;
-        let _ = PROCESSING.set(host.new_server(), holder, remembered);
-        return;
+    if known == Known::Ask {
+        // The engine could not answer: leave the item alone, ask again next tick, remember nothing.
+        let Some(can) = type_can_process(host, dimension, kind, &stack) else { return };
+        if !can {
+            // Create asks again every tick; remembering the answer for this type (`Time` -1, as a
+            // belt remembers it) saves the recipe lookups.
+            let mut remembered = progress.take().unwrap_or_default();
+            remembered.kind = Some(kind.id().to_owned());
+            remembered.time = -1;
+            let _ = PROCESSING.set(host.new_server(), holder, remembered);
+            return;
+        }
     }
     let mut state = progress.unwrap_or_default();
     let left = fan::decrement(&mut state, kind, stack.count);
@@ -647,6 +662,11 @@ fn process_item(host: &mut dyn Host, dimension: &str, kind: Kind, body: &Body, v
         return;
     }
     let Some(mut stacks) = type_process(host, dimension, kind, &stack) else {
+        // Nothing decided (the engine could not answer): keep the last tick of processing time so
+        // the next tick asks again, and not the -1 that would make the item "not processable".
+        let mut state = PROCESSING.get_existing(host.new_server(), holder).ok().flatten().unwrap_or_default();
+        state.time = 1;
+        let _ = PROCESSING.set(host.new_server(), holder, state);
         return;
     };
     if stacks.is_empty() {

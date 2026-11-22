@@ -271,6 +271,32 @@ pub fn blast(smelting_or_blasting: bool, smoking: bool, same_result: impl FnOnce
     if smelting_or_blasting && (!smoking || !same_result()) { Blast::Smelt } else { Blast::Destroy }
 }
 
+/// `blast` where the recipe lookups may not have been answered (`None`: the engine could not say,
+/// which is not "no recipe"): an item is never destroyed on a guess, so with either answer
+/// missing nothing is decided and the item is left for the next tick.
+pub fn blast_if_known(
+    smelting_or_blasting: Option<bool>,
+    smoking: Option<bool>,
+    same_result: impl FnOnce() -> bool,
+) -> Option<Blast> {
+    Some(blast(smelting_or_blasting?, smoking?, same_result))
+}
+
+/// `BlastingType.canProcess` where the recipe lookups may not have been answered: `None` while
+/// either is unknown and nothing already says yes, so the caller asks again instead of
+/// remembering "this fan does nothing to it". `fire_resistant` is asked only when it is needed.
+pub fn blasting_can_process_if_known(
+    smelting: Option<bool>,
+    blasting: Option<bool>,
+    fire_resistant: impl FnOnce() -> bool,
+) -> Option<bool> {
+    match (smelting, blasting) {
+        (Some(true), _) | (_, Some(true)) => Some(true),
+        (Some(false), Some(false)) => Some(blasting_can_process(false, false, fire_resistant())),
+        _ => None,
+    }
+}
+
 /// `ItemHelper.multipliedOutput(in, out)`: the stacks `in_count` items of a recipe making
 /// `out_count` of an item that stacks to `max` come to, each full except the last.
 pub fn multiplied(in_count: u32, out_count: u32, max: u32) -> Vec<u32> {
@@ -785,6 +811,26 @@ mod tests {
         assert_eq!(blast(true, true, || false), Blast::Smelt);
         assert_eq!(blast(false, true, || true), Blast::Destroy);
         assert_eq!(blast(false, false, || true), Blast::Destroy);
+    }
+
+    #[test]
+    fn lava_never_destroys_on_an_unanswered_lookup() {
+        // Both answered: the same decision as `blast`.
+        assert_eq!(blast_if_known(Some(true), Some(false), || panic!("not asked")), Some(Blast::Smelt));
+        assert_eq!(blast_if_known(Some(false), Some(false), || true), Some(Blast::Destroy));
+        // Raw beef stays destroyed (smoking makes the same item), by Create's rule.
+        assert_eq!(blast_if_known(Some(true), Some(true), || true), Some(Blast::Destroy));
+        // Either lookup unanswered (the engine could not say): nothing is decided, so no Destroy.
+        assert_eq!(blast_if_known(None, Some(false), || true), None);
+        assert_eq!(blast_if_known(Some(true), None, || true), None);
+        assert_eq!(blast_if_known(None, None, || true), None);
+        // `canProcess`: a recipe that answered yes decides; an unanswered one with no yes waits.
+        assert_eq!(blasting_can_process_if_known(Some(true), None, || panic!("not asked")), Some(true));
+        assert_eq!(blasting_can_process_if_known(None, Some(true), || panic!("not asked")), Some(true));
+        assert_eq!(blasting_can_process_if_known(None, Some(false), || false), None);
+        assert_eq!(blasting_can_process_if_known(Some(false), None, || false), None);
+        assert_eq!(blasting_can_process_if_known(Some(false), Some(false), || true), Some(false));
+        assert_eq!(blasting_can_process_if_known(Some(false), Some(false), || false), Some(true));
     }
 
     #[test]
