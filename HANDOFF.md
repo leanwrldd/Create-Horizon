@@ -50,6 +50,12 @@ published SDK.
 **Waiting to be played:** riders moving with a structure when it snaps to the grid (`28f890a`). The test list is on
 the Port Board row `collision-disassembly-shift`.
 
+**Fixed after the 2026-11-22 smoke test (`target/smoke/smoke-1122.md`), not yet re-tested in game:** the Press not
+pressing Depot stacks (`aed018f`: my `6827498` write order undid slot writes), invisible moving structures (`020cea5`:
+the draw cache was keyed on the compat revision, always 0), shafts rolled against motors and gearboxes (`83f73f6`), the
+Toolbox view bouncing items (`8659866`), the stock network seeing 0 links (`ae10b15`), the lava fan destroying items on a
+failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.log`.
+
 **Known bugs:** see the Port Board.
 - A Depot under a running Press twice lost its whole stack, with no log line. Not found by reading the code;
   `change_mod_block_entity` now writes slots before data and stops on a refused slot write (6827498), which may or
