@@ -415,7 +415,9 @@ impl Hooks for Bearing {
         } else {
             0.0
         };
-        let still_angle = if parsed.is_some() { state.angle } else { 0.0 };
+        // A Ponder scene's `rotateBearing` turns the top by itself (`rules::ponder_anim`).
+        let scripted = crate::float(&event.entity.nbt, crate::ponder::ANIMATED);
+        let still_angle = if parsed.is_some() { state.angle } else { scripted.unwrap_or(0.0) };
         if turning {
             draw.spin(axis, CENTRE, rate as f32, phase);
         } else if still_angle != 0.0 {
@@ -449,8 +451,10 @@ impl Hooks for Bearing {
             draw.still();
         }
         // Geometry that turns by itself through `spin` is kept: a new speed arrives as a new
-        // update tag.
-        draw.keep();
+        // update tag. (A scene's scripted angle changes every frame.)
+        if scripted.is_none() {
+            draw.keep();
+        }
     }
 
     /// Where the structure turns: a cube about the anchor as wide as its farthest block.

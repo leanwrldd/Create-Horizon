@@ -501,12 +501,17 @@ impl Hooks for Pulley {
         let now = draw.game_time as f64 + f64::from(draw.partial);
         // A held rope (an actor or an interface stalls the structure) follows no speed.
         let moved = psi_motion::moving_rpm(event.entity, rpm);
-        let offset = if state.running {
+        // A Ponder scene's `movePulley` sets the offset; a virtual pulley counts as running
+        // (`PulleyRenderer.isPulleyRunning`: `be.isVirtual()`).
+        let scripted = util::float(&event.entity.nbt, crate::ponder::ANIMATED);
+        let offset = if let Some(offset) = scripted {
+            offset
+        } else if state.running {
             pulley_rules::offset_at(state.offset, state.time, moved, now, range)
         } else {
             0.0
         };
-        let plan = pulley_rules::plan(offset, state.running);
+        let plan = pulley_rules::plan(offset, state.running || scripted.is_some());
         if let Some((y, half)) = plan.magnet {
             draw.push();
             draw.translate([0.0, -y, 0.0]);
@@ -530,7 +535,7 @@ impl Hooks for Pulley {
             draw.pop();
         }
         let Some(parsed) = engine::parsed(event.pos, event.entity) else {
-            if !state.running {
+            if !state.running && scripted.is_none() {
                 draw.keep();
             }
             return;

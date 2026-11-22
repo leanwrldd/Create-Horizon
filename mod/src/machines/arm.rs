@@ -113,7 +113,7 @@ pub(super) struct Saved {
     pub motion: Motion,
 }
 
-fn floats_of(nbt: &Compound, key: &str) -> Option<[f32; 4]> {
+pub(super) fn floats_of(nbt: &Compound, key: &str) -> Option<[f32; 4]> {
     let Some(Tag::List(list)) = util::get(nbt, key) else {
         return None;
     };
