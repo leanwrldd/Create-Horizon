@@ -657,3 +657,261 @@ pub fn draw(host: &dyn Host, draw: &mut BlockEntityDraw, pos: Pos, facing: Dir, 
         draw.keep();
     }
 }
+
+// --- the glue, run against a world double ---------------------------------------------------------
+
+#[cfg(test)]
+mod glue_tests {
+    use super::*;
+    use crate::compat::adapter::{Write, entity_writes};
+    use crate::compat::ModBlockEntity;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    const DEPOT: Pos = [100, 64, 100];
+    const PRESS: Pos = [100, 66, 100];
+    const RPM: f32 = 16.0;
+
+    /// A world of two block entities with the engine's rules that matter here: an entity lends
+    /// itself out for its own tick (it is not in the world meanwhile), and
+    /// `Adapter::change_mod_block_entity` writes the slots before the data and stops, writing no
+    /// data, when a slot write is refused (`block_entity_set_item_slot` takes no automation
+    /// policy, so `container_accepts` is not asked; a stack past the limit or a slot past the
+    /// count is refused).
+    struct World {
+        blocks: HashMap<Pos, String>,
+        entities: HashMap<Pos, ModBlockEntity>,
+        recipes: Vec<crate::compat::CustomRecipe>,
+        refused: usize,
+        /// The slots each `Items` list stands for.
+        saved: std::cell::RefCell<Vec<Vec<Option<ItemStack>>>>,
+        /// What `change_mod_block_entity` writes for a change.
+        plan: fn(&ModBlockEntity, &ModBlockEntity) -> Vec<Write>,
+    }
+
+    /// `change_mod_block_entity` as 6827498 wrote it: the changed slots, then the data as read.
+    fn legacy_writes(before: &ModBlockEntity, after: &ModBlockEntity) -> Vec<Write> {
+        let mut writes: Vec<Write> = (0..after.items.len())
+            .filter(|i| before.items.get(*i) != Some(&after.items[*i]))
+            .map(|i| Write::Slot(i as u32, after.items[i].clone()))
+            .collect();
+        if after.nbt != before.nbt {
+            writes.push(Write::Data(after.nbt.clone()));
+        }
+        if after.data != before.data {
+            writes.push(Write::DataSlots(after.data.clone()));
+        }
+        writes
+    }
+
+    impl Host for World {
+        fn dimension(&self) -> &'static str {
+            "test:press_glue"
+        }
+        fn block(&self, pos: Pos) -> String {
+            self.blocks.get(&pos).cloned().unwrap_or_default()
+        }
+        fn block_collision(&self, _: Pos) -> Vec<[f64; 6]> {
+            Vec::new()
+        }
+        /// `Adapter::mod_block_entity`: the data is `save::block_entity_data`, which carries the
+        /// slots in an `Items` list (here an index to the slots as they were then).
+        fn mod_block_entity(&self, pos: Pos) -> Option<ModBlockEntity> {
+            let mut entity = self.entities.get(&pos)?.clone();
+            if entity.items.iter().any(Option::is_some) {
+                let mut saved = self.saved.borrow_mut();
+                saved.push(entity.items.clone());
+                entity.nbt.insert("Items".into(), Tag::Int(saved.len() as i32 - 1));
+            }
+            Some(entity)
+        }
+        /// The adapter's writes (`self.plan`), each with the engine's semantics, all or nothing.
+        fn change_mod_block_entity(&mut self, pos: Pos, change: &mut dyn FnMut(&mut ModBlockEntity)) -> bool {
+            let Some(mut entity) = self.mod_block_entity(pos) else { return false };
+            let before = entity.clone();
+            change(&mut entity);
+            if entity == before {
+                return true;
+            }
+            let slots = if self.blocks.get(&pos).is_some_and(|b| b == depot::ID) { 9 } else { 0 };
+            let mut engine = self.entities[&pos].clone();
+            for write in (self.plan)(&before, &entity) {
+                match write {
+                    // `replace_data` -> `decode_mod_block_entity`: the slots come from the data's
+                    // `Items` (none: empty), the menu data slots are gone.
+                    Write::Data(mut nbt) => {
+                        engine.items = match nbt.remove(&"Items".into()) {
+                            Some(Tag::Int(at)) => self.saved.borrow()[at as usize].clone(),
+                            _ => Vec::new(),
+                        };
+                        engine.nbt = nbt;
+                        engine.data = Vec::new();
+                    }
+                    // `block_entity_set_item_slot`: no automation policy, so `container_accepts` is
+                    // not asked; a slot past the count or a stack past the limit is refused.
+                    Write::Slot(index, stack) => {
+                        let index = index as usize;
+                        if index >= slots || stack.as_ref().is_some_and(|s| s.count == 0 || s.count > 64) {
+                            self.refused += 1;
+                            return false;
+                        }
+                        if engine.items.len() <= index {
+                            engine.items.resize(slots, None);
+                        }
+                        engine.items[index] = stack;
+                    }
+                    Write::DataSlots(data) => engine.data = data,
+                }
+            }
+            self.entities.insert(pos, engine);
+            true
+        }
+        fn block_entity_sync(&mut self, _: Pos) {}
+        fn max_stack_size(&self, _: &str) -> Option<u32> {
+            Some(64)
+        }
+        fn play_sound(&mut self, _: &str, _: [f64; 3], _: usize, _: f32, _: f32) -> bool {
+            true
+        }
+        fn recipes_of_type(&self, kind: &str) -> &[crate::compat::CustomRecipe] {
+            if kind == RECIPE_TYPE { &self.recipes } else { &[] }
+        }
+        fn recipe_ingredient(&self, json: &Value) -> Option<crate::compat::Ingredient> {
+            let item = json.as_str()?.to_owned();
+            Some(crate::compat::Ingredient(mod_api::Ingredient {
+                items: [item].into_iter().collect(),
+                order: Vec::new(),
+                custom: None,
+                children: None,
+                rule: None,
+                display: None,
+            }))
+        }
+        fn recipe_result(&self, json: &Value) -> Option<ItemStack> {
+            let count = json.get("count").and_then(Value::as_u64).unwrap_or(1) as u32;
+            Some(ItemStack::new(json.get("id")?.as_str()?, count))
+        }
+    }
+
+    impl World {
+        fn new(slots: usize) -> Self {
+            let mut world = World { blocks: HashMap::new(), entities: HashMap::new(),
+                recipes: Vec::new(),
+                refused: 0,
+                saved: Default::default(),
+                plan: entity_writes,
+            };
+            world.recipes.push(crate::compat::CustomRecipe {
+                id: "create:pressing/iron_ingot".into(),
+                json: Arc::new(json!({
+                    "type": RECIPE_TYPE,
+                    "ingredients": [{"item": "minecraft:iron_ingot"}],
+                    "results": [{"id": "create:iron_sheet"}],
+                })),
+            });
+            world.blocks.insert(DEPOT, depot::ID.into());
+            world.entities.insert(
+                DEPOT,
+                ModBlockEntity { id: depot::ID.into(), items: vec![None; slots], ..Default::default() },
+            );
+            world.blocks.insert(PRESS, ID.into());
+            let mut nbt = Compound::new();
+            new_entity(&mut nbt);
+            world.entities.insert(PRESS, ModBlockEntity { id: ID.into(), nbt, ..Default::default() });
+            world
+        }
+
+        /// A hopper or chute: the engine sets slot 0, no `HeldItem`.
+        fn hopper(&mut self, stack: ItemStack) {
+            let entity = self.entities.get_mut(&DEPOT).unwrap();
+            entity.items.resize(9, None);
+            entity.items[0] = Some(stack);
+        }
+
+        /// What a right click on the top face puts down.
+        fn hand(&mut self, stack: ItemStack) {
+            depot::put_down_for_test(self, DEPOT, stack);
+        }
+
+        /// One server tick of the press, as `block_entity_tick` runs it: lent out, then back.
+        fn tick_press(&mut self) {
+            let mut entity = self.entities.remove(&PRESS).expect("the press");
+            let changed = float(&entity.nbt, crate::SPEED) != Some(RPM);
+            if changed {
+                crate::set_float(&mut entity.nbt, crate::SPEED, RPM);
+            }
+            tick(self, PRESS, &mut entity, RPM, changed);
+            self.entities.insert(PRESS, entity);
+        }
+
+        fn tick_depot(&mut self) {
+            let mut entity = self.entities.remove(&DEPOT).expect("the depot");
+            depot::tick(self, DEPOT, &mut entity);
+            self.entities.insert(DEPOT, entity);
+        }
+
+        fn count(&self, item: &str) -> u32 {
+            self.entities[&DEPOT].items.iter().flatten().filter(|s| &*s.item == item).map(|s| s.count).sum()
+        }
+
+        /// Runs until `done` or `ticks` are spent; true when `done` held.
+        fn run(&mut self, depot_first: bool, ticks: usize, done: impl Fn(&World) -> bool) -> bool {
+            for _ in 0..ticks {
+                if depot_first {
+                    self.tick_depot();
+                    self.tick_press();
+                } else {
+                    self.tick_press();
+                    self.tick_depot();
+                }
+                if done(self) {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+
+    fn describe(world: &World) -> String {
+        let depot = &world.entities[&DEPOT];
+        format!("depot items {:?} nbt {:?}; press nbt {:?}; refused {}", depot.items, depot.nbt, world.entities[&PRESS].nbt, world.refused)
+    }
+
+    #[test]
+    fn a_hand_fed_stack_of_three_is_pressed_to_three_sheets() {
+        for depot_first in [true, false] {
+            for slots in [0, 9] {
+                let mut world = World::new(slots);
+                world.hand(ItemStack::new("minecraft:iron_ingot", 3));
+                let ok = world.run(depot_first, 3000, |w| w.count("create:iron_sheet") == 3 && w.count("minecraft:iron_ingot") == 0);
+                assert!(ok, "depot first {depot_first}, {slots} slots: {}", describe(&world));
+                assert_eq!(world.refused, 0);
+            }
+        }
+    }
+
+    /// The cause of the smoke test's depot that never pressed: with the data written after the
+    /// slots, the data's stale `Items` list took the slots back (a hand's stack vanished from the
+    /// slots, a pressed stack came back as ingots).
+    #[test]
+    fn writing_the_data_after_the_slots_loses_them() {
+        let mut world = World::new(9);
+        world.plan = legacy_writes;
+        world.hand(ItemStack::new("minecraft:iron_ingot", 3));
+        assert_eq!(world.count("minecraft:iron_ingot"), 0, "{}", describe(&world));
+        let mut world = World::new(9);
+        world.hand(ItemStack::new("minecraft:iron_ingot", 3));
+        assert_eq!(world.count("minecraft:iron_ingot"), 3, "{}", describe(&world));
+    }
+
+    #[test]
+    fn a_hopper_fed_stack_of_64_is_pressed_on_to_the_end() {
+        for depot_first in [true, false] {
+            let mut world = World::new(9);
+            world.hopper(ItemStack::new("minecraft:iron_ingot", 64));
+            let ok = world.run(depot_first, 64 * 130, |w| w.count("create:iron_sheet") == 64 && w.count("minecraft:iron_ingot") == 0);
+            assert!(ok, "depot first {depot_first}: {}", describe(&world));
+            assert_eq!(world.refused, 0);
+        }
+    }
+}

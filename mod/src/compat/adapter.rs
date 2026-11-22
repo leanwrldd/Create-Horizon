@@ -19,6 +19,43 @@ pub enum Adapter<'a> {
     None,
 }
 
+/// One write of `change_mod_block_entity` to the engine's block entity.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Write {
+    /// `replace_data`: reloads the entity from the data, and the data's `Items` list is the one
+    /// `mod_block_entity` read (`save::block_entity_data` puts the slots in it), so the slots go back
+    /// to what they were then, and the menu data slots reset (`decode_mod_block_entity`).
+    Data(Compound),
+    Slot(u32, Option<ItemStack>),
+    DataSlots(Vec<i32>),
+}
+
+/// What `change_mod_block_entity` writes to turn `before` into `after`, in order. Saved data
+/// goes first, since it reloads the slots from its own stale `Items` list: every slot is then
+/// written again, and the menu data slots too, so what the module changed is what is left.
+pub(crate) fn entity_writes(before: &ModBlockEntity, after: &ModBlockEntity) -> Vec<Write> {
+    let mut writes = Vec::new();
+    let reloaded = after.nbt != before.nbt;
+    if reloaded {
+        writes.push(Write::Data(after.nbt.clone()));
+    }
+    for (index, stack) in after.items.iter().enumerate() {
+        if reloaded || before.items.get(index) != Some(stack) {
+            writes.push(Write::Slot(index as u32, stack.clone()));
+        }
+    }
+    // A slot the module dropped off the end.
+    for index in after.items.len()..before.items.len() {
+        if reloaded || before.items[index].is_some() {
+            writes.push(Write::Slot(index as u32, None));
+        }
+    }
+    if after.data != before.data || (reloaded && !after.data.is_empty()) {
+        writes.push(Write::DataSlots(after.data.clone()));
+    }
+    writes
+}
+
 /// The standalone models the modules asked for, and the handles they resolved to once the client baked them.
 pub(crate) static MODEL_NAMES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static MODELS: LazyLock<Mutex<HashMap<String, ModelRef>>> = LazyLock::new(Mutex::default);
@@ -184,38 +221,32 @@ impl Host for Adapter<'_> {
         let Adapter::Server(host) = self else { return false };
         let Some(level) = host.level(host.dimension()) else { return false };
         let Some(handle) = host.block_entity(level, pos) else { return false };
-        let mut ok = true;
-        // The slots go first: a refused slot write leaves the data as it was too, so the saved state (a
-        // depot's `HeldItem`) never describes items the slots don't hold.
-        if entity.items != before.items {
-            // Each changed slot is written in one transaction, as the new API journals them.
-            let slots: Vec<(u32, Option<mod_api::ItemStack>)> = entity
-                .items
-                .iter()
-                .enumerate()
-                .filter(|(index, stack)| before.items.get(*index) != Some(*stack))
-                .map(|(index, stack)| (index as u32, stack.as_ref().and_then(|stack| events::stack_new(&**host, stack))))
-                .collect();
-            ok &= host
-                .transaction(|host, tx| -> Result<(), ()> {
-                    for (slot, stack) in slots {
-                        handle.set_item_slot(host, tx, slot, stack).map_err(|_| ())?;
+        // One transaction: a refused write undoes the rest, so the saved state (a depot's `HeldItem`)
+        // never describes items the slots don't hold.
+        let writes: Vec<(Write, Option<mod_api::ItemStack>)> = entity_writes(&before, &entity)
+            .into_iter()
+            .map(|write| {
+                let stack = match &write {
+                    Write::Slot(_, Some(stack)) => events::stack_new(&**host, stack),
+                    _ => None,
+                };
+                (write, stack)
+            })
+            .collect();
+        let ok = host
+            .transaction(|host, tx| -> Result<(), ()> {
+                for (write, stack) in writes {
+                    match write {
+                        Write::Data(nbt) => handle.replace_data(host, nbt).map(drop).map_err(|_| ())?,
+                        Write::Slot(slot, _) => handle.set_item_slot(host, tx, slot, stack).map(drop).map_err(|_| ())?,
+                        Write::DataSlots(data) => handle.set_data_slots(host, data).map(drop).map_err(|_| ())?,
                     }
-                    Ok(())
-                })
-                .is_ok();
-        }
-        if !ok {
-            return false;
-        }
-        if entity.items != before.items {
+                }
+                Ok(())
+            })
+            .is_ok();
+        if ok && entity.items != before.items {
             events::cache_slots(pos, &entity.items);
-        }
-        if entity.nbt != before.nbt {
-            ok &= handle.replace_data(&mut **host, entity.nbt.clone()).is_ok();
-        }
-        if entity.data != before.data {
-            ok &= handle.set_data_slots(&mut **host, entity.data.clone()).is_ok();
         }
         ok
     }

@@ -727,18 +727,7 @@ pub fn right_click(host: &mut dyn Host, pos: [i32; 3], face: [i32; 3]) -> Flow {
         && &*stack.item != MECHANICAL_ARM
         && empty_main_hand(host, &player, &stack)
     {
-        // `player.getDirection()`, starting a quarter of the way in.
-        let transport = Transport::new((random() % 360) as i32, looking(player.yaw, 0.0), 0.25);
-        let mut stack = Some(stack);
-        host.change_mod_block_entity(pos, &mut |entity| {
-            if entity.items.is_empty() {
-                entity.items.push(None);
-            }
-            entity.items[0] = stack.take();
-            entity
-                .nbt
-                .insert(HELD.into(), Tag::Compound(transport.write()));
-        });
+        put_down(host, pos, stack, player.yaw);
         // AllSoundEvents.DEPOT_SLIDE: sand breaking at volume 0.125 and pitch 1.5.
         host.play_sound(
             "minecraft:block.sand.break",
@@ -750,6 +739,28 @@ pub fn right_click(host: &mut dyn Host, pos: [i32; 3], face: [i32; 3]) -> Flow {
     }
     host.block_entity_sync(pos);
     Flow::Cancel
+}
+
+/// The tail of `SharedDepotBlockMethods.onUse`: `stack` slides onto the depot from the side the
+/// player faces (`player.getDirection()`), starting a quarter of the way in.
+fn put_down(host: &mut dyn Host, pos: [i32; 3], stack: ItemStack, yaw: f32) {
+    let transport = Transport::new((random() % 360) as i32, looking(yaw, 0.0), 0.25);
+    let mut stack = Some(stack);
+    host.change_mod_block_entity(pos, &mut |entity| {
+        if entity.items.is_empty() {
+            entity.items.push(None);
+        }
+        entity.items[0] = stack.take();
+        entity
+            .nbt
+            .insert(HELD.into(), Tag::Compound(transport.write()));
+    });
+}
+
+/// A right click's put-down, for the glue tests.
+#[cfg(test)]
+pub(crate) fn put_down_for_test(host: &mut dyn Host, pos: [i32; 3], stack: ItemStack) {
+    put_down(host, pos, stack, 90.0);
 }
 
 /// `player.setItemInHand(hand, ItemStack.EMPTY)`; false when the hand could not be emptied,
