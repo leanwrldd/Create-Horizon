@@ -26,7 +26,10 @@ else
     dir="$(dirname "$dir")"
     [ -d "$dir/horizon-latest" ] && horizon="$dir/horizon-latest"
   done
-  [ -n "$horizon" ] || { echo "no horizon-latest checkout found; pass it as the second argument" >&2; exit 1; }
+  # then $HORIZON_LATEST, then where it lived before the repository moved (~/Claude/Projects)
+  [ -n "$horizon" ] || { [ -n "${HORIZON_LATEST:-}" ] && [ -d "$HORIZON_LATEST" ] && horizon="$HORIZON_LATEST"; }
+  [ -n "$horizon" ] || { [ -d "$HOME/Claude/Projects/horizon-latest" ] && horizon="$HOME/Claude/Projects/horizon-latest"; }
+  [ -n "$horizon" ] || { echo "no horizon-latest checkout found; pass it as the second argument or set HORIZON_LATEST" >&2; exit 1; }
 fi
 if command -v cygpath >/dev/null 2>&1; then horizon="$(cygpath -m "$horizon")"; fi
 work="$root/target/check-$owner"
