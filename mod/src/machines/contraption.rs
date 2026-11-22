@@ -776,39 +776,43 @@ pub struct Parsed {
     pub extent: [i32; 6],
 }
 
-static PARSED: LazyLock<Mutex<HashMap<Pos, (String, Option<Arc<Parsed>>)>>> =
+static PARSED: LazyLock<Mutex<HashMap<Pos, (Option<Compound>, Option<Arc<Parsed>>)>>> =
     LazyLock::new(Mutex::default);
 
-/// The structure in a controller's NBT, parsed once per version of the block entity.
+/// The structure in a controller's NBT, parsed again whenever the saved structure differs from the one parsed.
 pub fn parsed(pos: Pos, entity: &ModBlockEntity) -> Option<Arc<Parsed>> {
     parsed_with(pos, entity, CONTRAPTION)
 }
 
 /// [`parsed`] for a second structure of one controller (see [`live_with`]).
+///
+/// The cache is told apart by the structure's own NBT, not by `ModBlockEntity::revision()`: the compat copy's
+/// revision is always 0, so a revision key kept the first answer for a position for good (a structure that
+/// failed to read once, or an earlier one, hid every later structure of that controller).
 pub fn parsed_with(pos: Pos, entity: &ModBlockEntity, key_in_nbt: &str) -> Option<Arc<Parsed>> {
     if !util::boolean(&entity.nbt, RUNNING) {
         return None;
     }
-    let version = format!("{:?}", entity.revision());
+    let saved = match util::get(&entity.nbt, key_in_nbt) {
+        Some(Tag::Compound(saved)) => Some(saved),
+        _ => None,
+    };
     let mut cache = lock(&PARSED);
     if let Some((seen, parsed)) = cache.get(&pos) {
-        if *seen == version {
+        if seen.as_ref() == saved {
             return parsed.clone();
         }
     }
-    let parsed = match util::get(&entity.nbt, key_in_nbt) {
-        Some(Tag::Compound(saved)) => Moving::from_nbt(saved).map(|moving| {
-            Arc::new(Parsed {
-                extent: moving.extent(),
-                moving,
-            })
-        }),
-        _ => None,
-    };
+    let parsed = saved.and_then(Moving::from_nbt).map(|moving| {
+        Arc::new(Parsed {
+            extent: moving.extent(),
+            moving,
+        })
+    });
     if cache.len() > 512 {
         cache.clear();
     }
-    cache.insert(pos, (version, parsed.clone()));
+    cache.insert(pos, (saved.cloned(), parsed.clone()));
     parsed
 }
 
@@ -1067,5 +1071,49 @@ mod tests {
         assert_eq!(quiet_ticks(dimension, pos, 16.0), 0);
         assert_eq!(quiet_ticks(dimension, pos, 0.0), 1);
         forget_live(dimension, pos);
+    }
+
+    fn running_controller(id: &str, moving: &Moving) -> ModBlockEntity {
+        let mut nbt = Compound::new();
+        nbt.insert(RUNNING.into(), Tag::Byte(1));
+        nbt.insert(CONTRAPTION.into(), Tag::Compound(moving.to_nbt(false)));
+        ModBlockEntity { id: id.to_owned(), nbt, items: Vec::new(), data: Vec::new() }
+    }
+
+    /// The client draws only what the controller's update tag carried: the structure's `Anchor` and
+    /// `Blocks` (palette and block list) must reach it whichever module answers the hook first.
+    #[test]
+    fn every_controllers_update_tag_carries_the_structure() {
+        for id in ["create:mechanical_piston", "create:sticky_mechanical_piston", "create:mechanical_bearing", "create:rope_pulley"] {
+            let entity = running_controller(id, &sample());
+            let mut event = crate::compat::BlockEntityUpdateTagEvent { pos: [0, 64, 0], entity: &entity };
+            let tag = crate::create().block_entity_update_tag(&mut event).unwrap_or_else(|| panic!("{id}: no update tag"));
+            assert!(util::boolean(&tag, RUNNING), "{id}: Running");
+            let Some(Tag::Compound(structure)) = util::get(&tag, CONTRAPTION) else {
+                panic!("{id}: no Contraption in the update tag")
+            };
+            let drawn = Moving::from_nbt(structure).unwrap_or_else(|| panic!("{id}: the client can't read the structure"));
+            assert_eq!(drawn.blocks.len(), 4, "{id}");
+            assert_eq!(drawn.anchor, [10, 64, -5], "{id}");
+        }
+    }
+
+    /// The client's copy of a block entity has no revision (`ModBlockEntity::revision` is 0), so the
+    /// parsed structure is kept by what it says: a later structure at the same position is drawn.
+    #[test]
+    fn a_controller_draws_its_new_structure_not_the_first_it_saw() {
+        let pos = [900, 64, 900];
+        let mut entity = running_controller("create:mechanical_piston", &Moving { anchor: [1, 2, 3], ..Moving::default() });
+        // A structure with nothing in it is a structure all the same, and is later replaced.
+        assert_eq!(parsed(pos, &entity).expect("reads").moving.blocks.len(), 0);
+        let one = running_controller("create:mechanical_piston", &sample());
+        assert_eq!(parsed(pos, &one).expect("the new structure").moving.blocks.len(), 4);
+        // One that could not be read does not hide the next that can.
+        entity.nbt.insert(CONTRAPTION.into(), Tag::Compound(Compound::new()));
+        assert!(parsed(pos, &entity).is_none());
+        assert_eq!(parsed(pos, &one).expect("readable again").moving.blocks.len(), 4);
+        // Not running: nothing is drawn.
+        entity.nbt.insert(RUNNING.into(), Tag::Byte(0));
+        assert!(parsed(pos, &entity).is_none());
     }
 }
