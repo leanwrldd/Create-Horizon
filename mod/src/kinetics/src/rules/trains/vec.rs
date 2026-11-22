@@ -177,6 +177,24 @@ pub fn aabb_intersects(a: &Aabb, b: &Aabb) -> bool {
     a[0][0] < b[1][0] && a[1][0] > b[0][0] && a[0][1] < b[1][1] && a[1][1] > b[0][1] && a[0][2] < b[1][2] && a[1][2] > b[0][2]
 }
 
+/// Catnip `VecHelper.intersectSphere(origin, lineDirection, sphereCenter, radius)`: where the line
+/// leaves the sphere (the far intersection), or `None` when it misses or has no direction.
+/// Reconstructed from memory of Catnip (not in `create-java-src`): check it when Catnip is at hand.
+pub fn intersect_sphere(origin: Vec3, line_direction: Vec3, sphere_center: Vec3, radius: f64) -> Option<Vec3> {
+    if length(line_direction) == 0.0 {
+        return None;
+    }
+    let dir = if length(line_direction) != 1.0 { normalize(line_direction) } else { line_direction };
+    let diff = sub(origin, sphere_center);
+    let line_dot_diff = dot(dir, diff);
+    let delta = line_dot_diff * line_dot_diff - (dot(diff, diff) - radius * radius);
+    if delta < 0.0 {
+        return None;
+    }
+    let t = -line_dot_diff + delta.sqrt();
+    Some(add(origin, scale(dir, t)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
