@@ -149,6 +149,10 @@ def tags(root, registry):
 UNKNOWN = object()
 
 
+class Links(list):
+    """An `ArrayList` a storyboard fills with the links `showIndependentSection` returns."""
+
+
 class Storyboard:
     def __init__(self, registry, method, helpers, dimensions):
         self.registry = registry
@@ -163,6 +167,7 @@ class Storyboard:
         self.depth = 0
         self.dimensions = dimensions
         self.next_link = 1
+        self.breaking = {}
         self.bounds = [0, 0, max(dimensions[0], dimensions[2])]
         self.scale = 1
         self.offset = 0
@@ -253,6 +258,8 @@ class Storyboard:
             condition = self.value(field(node, "condition"))
             if condition is not UNKNOWN:
                 return self.value(field(node, "consequence" if condition else "alternative"))
+        if kind == "cast_expression":
+            return self.value(field(node, "value"))
         if kind == "update_expression":
             name = text(node.named_children[0])
             if name in self.env and isinstance(self.env[name], (int, float)):
@@ -283,6 +290,8 @@ class Storyboard:
             name = text(field(node, "type"))
             if name == "CreateSceneBuilder":
                 return ("scene",)
+            if name.startswith("ArrayList"):
+                return Links()
             if name in {"Vec3", "Vec3i", "BlockPos"} and numbers(args, 3):
                 return tuple(args)
             if name in {"ItemParticleOption", "BlockParticleOption"}:
@@ -327,6 +336,10 @@ class Storyboard:
             elif name not in {"world", "overlay", "special", "effects", "title", "markAsFinished", "setNextUpEnabled", "getCurrentTime"}:
                 self.unhandled[f"scene.{name}"] += 1
             return UNKNOWN
+
+        # `PackageItem.containing(...)` picks a random style (`PackageStyles.getRandomBox`): the first one stands for it.
+        if target_text == "PackageItem" and name == "containing":
+            return ("id", "create:cardboard_package_12x12", {})
 
         if target_text == "util" and name in {"select", "grid", "vector"}:
             return ("service", name)
@@ -438,13 +451,23 @@ class Storyboard:
                     options["color"] = values[0]
                 return value
             if value[0] == "id":
-                if name in {"getDefaultState", "defaultBlockState", "get", "asStack", "asItem"}:
+                if name in {"getDefaultState", "defaultBlockState", "get", "asStack", "asItem", "copy", "copyWithCount"}:
                     return value
                 if name == "setValue" and len(values) == 2 and all(isinstance(v, (str, bool, int)) for v in values):
                     return ("id", value[1], value[2] | {str(values[0]): str(values[1]).lower()})
                 if name == "cycle" and len(values) == 1 and isinstance(values[0], str):
                     return ("id", value[1], value[2] | {values[0]: None})
             return vector(name, [value, *values])
+        if isinstance(value, list) and not isinstance(value, Links) and name == "copy" and not values:
+            return list(value)
+        if isinstance(value, Links):
+            if name == "add" and len(values) == 1:
+                value.append(values[0])
+            elif name == "get" and len(values) == 1 and isinstance(values[0], int) and 0 <= values[0] < len(value):
+                return value[values[0]]
+            elif name == "size":
+                return len(value)
+            return UNKNOWN
         if isinstance(value, list) and values and isinstance(values[0], list):
             if name == "add":
                 return value + values[0]
@@ -453,6 +476,68 @@ class Storyboard:
             if name == "intersect":
                 return [p for p in value if p in values[0]]
         return UNKNOWN
+
+    def lambda_body(self, node):
+        """The lambda's first parameter name and its body."""
+        parameters = field(node, "parameters")
+        if parameters is None:
+            return None, None
+        if parameters.type != "identifier":
+            parameters = parameters.named_children[0] if parameters.named_children else None
+            if parameters is not None and parameters.type == "formal_parameter":
+                parameters = field(parameters, "name")
+        return (text(parameters) if parameters is not None else None), field(node, "body")
+
+    def nbt_entries(self, node):
+        """`{key: [type, value]}` for the `put*` calls in an `nbt -> ...` lambda, or None when one is not understood."""
+        param, body = self.lambda_body(node)
+        if param is None or body is None:
+            return None
+        entries = {}
+        for call in method_calls_all(body):
+            name, target, args = invocation(call)
+            owner = text(target)
+            if owner == param and name in NBT_TYPES and len(args) == 2:
+                value = self.value(args[1])
+                kind = NBT_TYPES[name]
+                key = java_string(args[0])
+                if kind == "b" and isinstance(value, bool):
+                    entries[key] = ["b", value]
+                elif kind in ("i", "f") and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    entries[key] = [kind, int(value) if kind == "i" else float(value)]
+                elif kind == "s" and isinstance(value, str):
+                    entries[key] = ["s", value]
+                else:
+                    return None
+            elif owner == "NBTHelper" and name == "writeEnum" and len(args) == 3 and text(args[0]) == param:
+                entries[java_string(args[1])] = ["s", text(args[2]).split(".")[-1]]
+            elif owner == param and name == "put" and len(args) == 2 and args[1].type == "method_invocation" \
+                    and text(field(args[1], "name")) == "saveOptional":
+                holder = field(args[1], "object")
+                stack = self.value(holder)
+                if isinstance(stack, tuple) and stack[0] == "id":
+                    entries[java_string(args[0])] = ["item", stack[1]]
+                elif text(holder) == "ItemStack.EMPTY":
+                    entries[java_string(args[0])] = ["item", ""]
+                else:
+                    return None
+        if entries or not [c for c in walk(body) if c.type == "method_invocation"]:
+            return entries
+        return None
+
+    def entity_entries(self, node):
+        """Data for the `be -> ...` statements whose effect a renderer shows."""
+        param, body = self.lambda_body(node)
+        if body is not None and body.type == "block" and len(body.named_children) == 1:
+            body = body.named_children[0]
+            body = body.named_children[0] if body.type == "expression_statement" else body
+        if param is not None and body is not None and body.type == "method_invocation":
+            name, target, args = invocation(body)
+            if text(target) == param and name == "setAnimatedSpeed" and len(args) == 1:
+                value = self.value(args[0])
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    return {"CreatePonderAnimatedSpeed": ["f", float(value)]}
+        return None
 
     def select(self, name, values):
         x, y, z = self.dimensions
@@ -562,6 +647,8 @@ class Storyboard:
             link = self.next_link
             self.next_link += 1
             self.emit("belt_put", link, list(selected), values[2][1])
+            # `createItemOnBelt` and `createItemOnBeltLike` end with `flapFunnel(beltLocation.above(), true)`.
+            self.emit("flap", [selected[0], selected[1] + 1, selected[2]], True)
             return ("link", link)
         if name == "removeItemsFromBelt" and len(values) == 1 and numbers(selected, 3):
             self.emit("belt_remove", list(selected))
@@ -572,17 +659,56 @@ class Storyboard:
         if name == "changeBeltItemTo" and len(values) == 2 and isinstance(selected, tuple) and selected[0] == "link"                 and isinstance(section, tuple) and section[0] == "id":
             self.emit("belt_change", selected[1], section[1])
             return UNKNOWN
+        # `createItemEntity(location, motion, stack)` returns the entity's `ElementLink`; `modifyEntity(link,
+        # Entity::discard)` and `modifyEntities(ItemEntity.class, Entity::discard)` remove it (`item_end`).
         if name == "createItemEntity" and len(values) == 3:
-            stack = values[2]
-            if isinstance(selected, tuple) and numbers(selected, 3) and isinstance(stack, tuple) and stack[0] == "id":
-                point, motion, duration = selected, section, 40
-                if name != "createItemEntity":
-                    point = (selected[0] + 0.5, selected[1] + 0.92, selected[2] + 0.5)
-                    direction = DIRECTIONS.get(section, (0, 0, 0)) if isinstance(section, str) else (0, 0, 0)
-                    motion = tuple(-v * 0.032 for v in direction) if direction[1] == 0 else (0, 0, 0)
-                    duration = 80 if name == "createItemOnBeltLike" else 50
-                if isinstance(motion, tuple) and numbers(motion, 3):
-                    self.emit("item", stack[1], point, motion, duration)
+            stack, motion = values[2], section
+            if numbers(selected, 3) and isinstance(stack, tuple) and stack[0] == "id" and isinstance(motion, tuple) and numbers(motion, 3):
+                link = self.next_link
+                self.next_link += 1
+                self.emit("item", stack[1], selected, motion, 40, link)
+                return ("link", link)
+        if name == "modifyEntity" and len(args) == 2 and text(args[1]) == "Entity::discard":
+            if isinstance(selected, tuple) and selected[0] == "link":
+                self.emit("item_end", selected[1])
+                return UNKNOWN
+        if name == "modifyEntities" and len(args) == 2 and text(args[0]) == "ItemEntity.class" and text(args[1]) == "Entity::discard":
+            self.emit("item_end", 0)
+            return UNKNOWN
+        # `flapFunnel(pos, outward)`: `FunnelBlockEntity.flap(!outward)`.
+        if name == "flapFunnel" and len(values) == 2 and numbers(selected, 3) and isinstance(section, bool):
+            self.emit("flap", list(selected), section)
+            return UNKNOWN
+        # The Ponder library's `incrementBlockBreakingProgress(pos)`: the stage shown is the number of calls less one,
+        # and the tenth call breaks the block (`addBlockDestroyEffects`, `destroyBlock`) and starts over.
+        if name == "incrementBlockBreakingProgress" and numbers(selected, 3):
+            key = tuple(selected)
+            calls = self.breaking.get(key, 0) + 1
+            if calls == 10:
+                self.breaking.pop(key, None)
+                self.emit("destroy", list(key))
+                self.emit("block", [key], "minecraft:air", {})
+                self.emit("crack", list(key), -1)
+            else:
+                self.breaking[key] = calls
+                self.emit("crack", list(key), calls - 1)
+            return UNKNOWN
+        # `modifyBlockEntityNBT(selection, class, nbt -> ...)`: the `put*` calls of the lambda, applied to the block
+        # entity's data (the renderers read the same keys Create saves).
+        if name == "modifyBlockEntityNBT" and len(args) >= 3 and args[2].type == "lambda_expression":
+            positions = [selected] if isinstance(selected, tuple) and numbers(selected, 3) else selected
+            entries = self.nbt_entries(args[2]) if isinstance(positions, list) else None
+            if entries is not None:
+                if entries:
+                    self.emit("nbt", positions, entries)
+                return UNKNOWN
+        # `modifyBlockEntity(pos, class, be -> ...)`: the statements known to change what a renderer draws.
+        if name == "modifyBlockEntity" and len(args) == 3 and args[2].type == "lambda_expression":
+            positions = [selected] if isinstance(selected, tuple) and numbers(selected, 3) else selected
+            if isinstance(positions, list) and positions:
+                entries = self.entity_entries(args[2])
+                if entries:
+                    self.emit("nbt", positions, entries)
                     return UNKNOWN
         if name == "toggleRedstonePower" and isinstance(selected, list):
             self.emit("toggle", selected)
@@ -606,6 +732,14 @@ class Storyboard:
         return UNKNOWN
 
 
+NBT_TYPES = {"putInt": "i", "putFloat": "f", "putDouble": "f", "putLong": "i", "putByte": "i", "putShort": "i",
+             "putBoolean": "b", "putString": "s"}
+
+
+def method_calls_all(node):
+    return (child for child in walk(node) if child.type == "method_invocation")
+
+
 ANIMATED = {"rotateBearing": "bearing", "movePulley": "pulley", "moveDeployer": "deployer"}
 
 DIRECTIONS = {"up": (0, 1, 0), "down": (0, -1, 0), "north": (0, 0, -1),
@@ -613,7 +747,7 @@ DIRECTIONS = {"up": (0, 1, 0), "down": (0, -1, 0), "north": (0, 0, -1),
 
 
 def numbers(values, length):
-    return len(values) == length and all(isinstance(value, (int, float)) for value in values)
+    return isinstance(values, (list, tuple)) and len(values) == length and all(isinstance(value, (int, float)) for value in values)
 
 
 def vector(name, values):
@@ -635,10 +769,15 @@ def vector(name, values):
         if direction is not None and (alias in DIRECTIONS or name == "relative"):
             length = next((value for value in rest if isinstance(value, (int, float))), 1)
             return tuple(a + b * length for a, b in zip(origin, direction))
-        if name in {"add", "offset"}:
+        if name in {"add", "offset", "subtract", "substract"}:
             offset = rest[0] if len(rest) == 1 and isinstance(rest[0], tuple) else rest
             if numbers(offset, 3):
-                return tuple(a + b for a, b in zip(origin, offset))
+                sign = 1 if name in {"add", "offset"} else -1
+                return tuple(a + sign * b for a, b in zip(origin, offset))
+        if name == "distanceTo" and len(rest) == 1 and isinstance(rest[0], tuple) and numbers(rest[0], 3):
+            return sum((a - b) ** 2 for a, b in zip(origin, rest[0])) ** 0.5
+        if name == "scale" and numbers(rest, 1):
+            return tuple(a * rest[0] for a in origin)
     return UNKNOWN
 
 
