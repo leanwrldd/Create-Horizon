@@ -1,6 +1,7 @@
 # Handoff: Create for Horizon (Rust rewrite)
 
-Written 2026-11-19, at `main` 28f890a. Read this first, then `README.md`, `MODULES.md` and `MIGRATION.md`. Then load
+Written 2026-11-19 at `main` 28f890a; brought up to date 2026-11-22 at `main` 75e6f22 after an overnight run of agent
+waves (summary under "Overnight 2026-11-20/21" below). Read this first, then `README.md`, `MODULES.md` and `MIGRATION.md`. Then load
 the `minecraft-horizon-modding` skill (`~/.claude/skills/minecraft-horizon-modding/SKILL.md`), which holds the API
 notes, the play-testing recipes and every gotcha found so far.
 
@@ -12,18 +13,19 @@ port. Every value, recipe and rule is ported from Create's own source, never fro
 
 ## Where it stands
 
-**Breadth:** 214 of 246 Create blocks and items (87%), counted by `python tools/progress.py`.
+**Breadth:** 225 of 246 Create blocks and items (91%), counted by `python tools/progress.py`. What's missing is
+trains, minecart contraptions (blocked on Horizon) and a few list fields.
 
 | Area | Done | | Area | Done |
 |---|---:|---|---|---:|
-| Kinetics | 52 / 57 | | Contraptions | 38 / 42 |
+| Kinetics | 52 / 57 | | Contraptions | 39 / 42 |
 | Materials | 19 / 20 | | Schematics | 5 / 5 |
-| Logistics | 31 / 52 | | Curiosities | 12 / 13 |
+| Logistics | 41 / 52 | | Curiosities | 12 / 13 |
 | Fluids | 18 / 18 | | Palettes | 39 / 39 |
 
 **Code:**
-- **Rules:** `mod/src/kinetics` is about 76,000 lines of pure Rust with 1,560 unit tests.
-- **Glue:** `mod/src/` is about 75,000 lines, with 138 machine modules in `mod/src/machines`. It runs on Horizon's new
+- **Rules:** `mod/src/kinetics` is about 79,000 lines of pure Rust with 1,647 unit tests.
+- **Glue:** `mod/src/` is about 81,000 lines, with 147 machine modules in `mod/src/machines`. It runs on Horizon's new
   mod API. Older glue goes through the compatibility layer in `mod/src/compat`; new code is written on the new API
   directly.
 
@@ -31,7 +33,8 @@ port. Every value, recipe and rule is ported from Create's own source, never fro
 published SDK.
 - **Parts:** 607 block Parts, 181 block entity Parts and 655 ItemParts.
 - **Hooks:** 70 of the 75 old hooks are wired through `mod/src/compat`.
-- **Old game calls:** 13 of 147 still return a neutral value (`MIGRATION.md` lists them).
+- **Old game calls:** 3 of 148 still return a neutral value (`block_states`, `data`, `held`), and no module calls
+  them. `fluid_tanks` on a shared host can't see vanilla or other-mod tanks (`MIGRATION.md`).
 
 **Played in game on the nightly (`create-new`):**
 - **Processing:** the Press making iron sheets on a Depot, the Millstone making flour, and the Mixer making
@@ -48,20 +51,36 @@ published SDK.
 the Port Board row `collision-disassembly-shift`.
 
 **Known bugs:** see the Port Board.
-- A Depot under a running Press twice lost its whole stack, with no log line.
-- The Clipboard keeps no pages, because it writes through the neutral `carried_stack`.
-- Packages loop on the first Chain Conveyor wheel.
+- A Depot under a running Press twice lost its whole stack, with no log line. Not found by reading the code;
+  `change_mod_block_entity` now writes slots before data and stops on a refused slot write (6827498), which may or
+  may not be it. Needs a repro in game: watch `data get block` on the depot every few seconds.
+- Packages looping on the first Chain Conveyor wheel: not reproduced by a glue-level two-wheel test. Most likely
+  the Frogport on wheel B never attached (placed by `setblock`): wrench-click it, then check A's routing table.
+
+**Overnight 2026-11-20/21** (all type-checked and unit-tested; **none of it built or played yet**):
+- **Compat:** `carried_stack`/`carried_items` (Clipboard pages, package addresses, wand), SNBT block entity reads and
+  writes, fluid insert/extract, `use_as_player` (Deployer), screen blur, `fluid_tanks` for mod tanks, the Toolbox
+  menu (a generic 9x4 chest view, clicks handled in `rules/menu_input.rs`).
+- **Vanilla recipes through `recipe_for`:** fan smoking and blasting, the crafter, shapeless mixing, press compacting,
+  saw stonecutting, the blueprint, attribute filters. The baked tables are gone.
+- **Package logistics part 2, all of it:** Stock Link, Stock Ticker (`/stock`), Redstone Requester (`/requester`),
+  Item Hatch, Factory Gauge (`/gauge`), 19 Table Cloths and the Shopping List (`/cloth price`); packager arrivals
+  fulfil promises.
+- **Contraptions:** the Mechanical Roller (value-box filter and mode, three paving modes), seat riders carried and put
+  back on set-down, the piston restarts its actors on reversal, bells, campfire smoke, dispensers and droppers as
+  actors (their vanilla sound ids were written from memory: check them).
+- **Neighbour events:** about 20 blocks read redstone on `neighbor_changed` (`mod/src/signals.rs`,
+  `rules/signals.rs`) with a 20-tick heartbeat; diodes, observers and the display link still poll, on purpose.
+- **Chain Conveyor:** Frogports jump to the opposite chain when a wheel reverses.
 
 **Left:**
-- package logistics part 2: Stock Link, Stock Ticker, Redstone Requester, Factory Gauge, Table Cloths, Shopping List,
-  Item Hatch. The rules are merged; the glue isn't;
-- the Mechanical Roller, seat riders on moving structures, and clicking blocks on a structure;
-- minecart contraptions;
-- the neutral game calls that remain (the Toolbox menu is wired now, untried in game);
-- vanilla recipes through `recipe_for` (fan smoking and blasting, shapeless mixing, the blueprint);
-- neighbour events instead of polling;
-- a route for other testers to get Create's art: a pack built from each tester's own Create jar;
-- trains, saved for last on purpose.
+- play-testing everything above (test plans are in the merge commits' agents' notes and on the board rows);
+- trains (part 1, the track graph rules, is in progress), then stations, navigation, schedules, carriages, glue;
+- Ponder's Create-specific scene animations (in progress);
+- minecart contraptions (blocked: nothing can draw a structure on a vanilla minecart);
+- clicking blocks on a moving structure, Deployer schematic printing on a structure;
+- Factory Gauge arrows and relocation, Table Cloth shop data on the item;
+- a route for other testers to get Create's art: a pack built from each tester's own Create jar.
 
 ## Building and testing
 
@@ -86,7 +105,7 @@ the Port Board row `collision-disassembly-shift`.
 
 | What | Path |
 |---|---|
-| This project | `C:\Users\latif\Claude\Projects\Create-Horizon` (`origin`: `github.com/leanwrldd/Create-Horizon`, branch `main`) |
+| This project | `C:\Projects\Create-Horizon` (moved here 2026-11-22; `origin`: `github.com/leanwrldd/Create-Horizon`, branch `main`) |
 | Create's Java source (sparse, `mc1.21.1/dev`) | `C:\Users\latif\Claude\Projects\create-java-src` |
 | Create's jar (models, textures, lang; never committed) | `%APPDATA%\horizon\horizon-mods\create-resources\create-1.21.1-6.0.10.jar` |
 | Horizon source we build against (`0b14f8a`, read-only) | `C:\Users\latif\Claude\Projects\horizon-latest` |
@@ -126,8 +145,9 @@ single files instead, and keep the script in step.
 
 ## Next steps
 
-1. Play-test the rider shift (`collision-disassembly-shift`), plus the gantry and moving stairs.
-2. Track down the Depot that empties under the Press, and fix the Clipboard (item writes from `inventory_tick`).
-3. Package logistics part 2 glue.
-4. Re-test the rows marked "code" on the Port Board, about 25 of them.
-5. The tester art route, if the user wants testers.
+1. A native build of `main`, then a broad smoke test: launch, `latest.log` free of panics, frame time.
+2. Play-test the overnight work: the Clipboard, the Toolbox menu, fluids (pump, basin, tank), the fan and mixer with
+   vanilla recipes, a Stock Ticker order end to end, seat riders, the Roller, redstone on gearshifts and funnels.
+3. Play-test the rider shift (`collision-disassembly-shift`), plus the gantry and moving stairs.
+4. The Depot under the Press and the Chain Conveyor, with the repro notes above.
+5. Trains, part by part.
