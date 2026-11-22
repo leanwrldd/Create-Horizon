@@ -64,12 +64,17 @@ def structure(raw):
 def arm_points(raw):
     """Each Mechanical Arm's interaction points (`InteractionPoints`: saved relative to the arm) as
     `[arm pos, [[type, mode, absolute pos], ...]]`, for `world.instructArm`."""
+    def offset(pos):
+        # Create 6.0.10's Ponder files save `Pos` as `NbtUtils.writeBlockPos`'s {X, Y, Z} compound; newer
+        # saves may use an int array.
+        return [pos["X"], pos["Y"], pos["Z"]] if isinstance(pos, dict) else list(pos)
+
     arms = []
     for entry in read_nbt(raw)["blocks"]:
         points = entry.get("nbt", {}).get("InteractionPoints")
         if points:
             at = entry["pos"]
-            arms.append([at, [[p["Type"], p.get("Mode", "DEPOSIT"), [at[i] + p["Pos"][i] for i in range(3)]]
+            arms.append([at, [[p["Type"], p.get("Mode", "DEPOSIT"), [a + o for a, o in zip(at, offset(p["Pos"]))]]
                               for p in points]])
     return arms
 
