@@ -3,6 +3,7 @@
 //! which Java file and what comes next.
 
 pub mod bezier;
+pub mod bogey;
 pub mod graph;
 pub mod navigation;
 pub mod network;
