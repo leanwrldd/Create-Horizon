@@ -794,7 +794,12 @@ impl Hooks for Deployers {
         let ticks = (draw.game_time - since) as f32 + draw.partial;
         let timer = saved.stroke.timer as f32 - rules::timer_speed(rpm) as f32 * ticks;
         let pose = Pose::of(saved.mode, held.is_some());
-        let distance = rules::hand_offset(saved.stroke.state, timer, saved.stroke.fist_bump, saved.stroke.reach, pose);
+        // A Ponder scene's `moveDeployer` sets the hand's offset itself (`setAnimatedOffset`, read back by
+        // `getHandOffset` of a virtual block entity).
+        let scripted = util::float(&entity.nbt, crate::ponder::ANIMATED);
+        let distance = scripted.unwrap_or_else(|| {
+            rules::hand_offset(saved.stroke.state, timer, saved.stroke.fist_bump, saved.stroke.reach, pose)
+        });
         let offset = facing.normal().map(|n| n as f32 * distance);
 
         kinetic::draw_shaft(host, draw, rules::rotation_axis(facing, along_first), rpm);
@@ -804,7 +809,7 @@ impl Hooks for Deployers {
             draw_held(host, draw, stack, facing, rpm, saved.mode == Mode::Punch, offset)
         });
         // At rest it reads nothing of the time (except a floating item).
-        if saved.stroke.state == State::Waiting && !turning {
+        if saved.stroke.state == State::Waiting && !turning && scripted.is_none() {
             draw.keep();
         }
     }

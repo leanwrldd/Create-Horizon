@@ -51,7 +51,11 @@ pub(super) fn draw(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
     // `ArmRenderer.renderSafe`: where the arm is, and in what colour.
     let dancing = saved.arm.phase == Phase::Dancing && speed != 0.0;
     let progress = rules::progress_at(saved.start, saved.since, speed, draw.game_time, draw.partial);
-    let (angles, colour) = if dancing {
+    // A Ponder scene's `instructArm` hands over the angles itself (`rules::ponder_arm`).
+    let scripted = super::arm::floats_of(nbt, crate::ponder::ARM_ANGLES);
+    let (angles, colour) = if let Some(angles) = scripted {
+        (angles, WHITE)
+    } else if dancing {
         let time = (draw.game_time % 3600) as f32 + draw.partial;
         let salt = (event.pos[0] * 31 + event.pos[1] * 17 + event.pos[2] * 7) % 64;
         rules::rave(time, salt, draw.game_time)
@@ -103,7 +107,7 @@ pub(super) fn draw(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
     draw.pop();
 
     // Kept while nothing moves: at rest, or stopped. (A dancing arm reads the time.)
-    if !dancing && (progress >= 1.0 || rules::rate(speed) == 0.0) {
+    if scripted.is_none() && !dancing && (progress >= 1.0 || rules::rate(speed) == 0.0) {
         draw.keep();
     }
 }

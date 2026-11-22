@@ -14,6 +14,10 @@ pub(crate) const ANGLE: &str = "CreatePonderAngle";
 pub(crate) const PRESS_PROGRESS: &str = "CreatePonderPressProgress";
 pub(crate) const PRESS_MODE: &str = "CreatePonderPressMode";
 pub(crate) const TICK: &str = "CreatePonderTick";
+/// A number a scene instruction moved: a bearing's angle, a pulley's rope offset, a deployer's hand offset.
+pub(crate) const ANIMATED: &str = "CreatePonderAnimated";
+/// The four angles of a Mechanical Arm a scene instructed (`rules::ponder_arm`).
+pub(crate) const ARM_ANGLES: &str = "CreatePonderArmAngles";
 pub(crate) const BASIN_ABOVE: &str = "CreatePonderBasinAbove";
 pub(super) const DRAW_STATE: &str = "CreatePonderDrawState";
 const ITEM: &str = "CreatePonderItem";
@@ -48,6 +52,19 @@ pub(super) fn store_models<'a>(
         })
         .collect();
     entity.nbt.insert(MODELS.into(), Tag::List(models));
+}
+
+/// The arm's angles, and the item in its claw (`HeldItem`, as the arm saves it).
+pub(super) fn store_arm(entity: &mut ModBlockEntity, angles: [f32; 4], held: Option<&str>) {
+    entity.nbt.insert(
+        ARM_ANGLES.into(),
+        Tag::List(angles.iter().map(|angle| Tag::Float(angle.to_bits())).collect()),
+    );
+    if let Some(item) = held {
+        entity
+            .nbt
+            .insert("HeldItem".into(), crate::util::stack_tag(&ItemStack::new(item, 1)));
+    }
 }
 
 pub(super) fn store_item(entity: &mut ModBlockEntity, id: &str, offset: [f32; 3]) {

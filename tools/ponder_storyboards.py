@@ -162,6 +162,7 @@ class Storyboard:
         self.helpers = helpers
         self.depth = 0
         self.dimensions = dimensions
+        self.next_link = 1
         self.bounds = [0, 0, max(dimensions[0], dimensions[2])]
         self.scale = 1
         self.offset = 0
@@ -284,6 +285,8 @@ class Storyboard:
                 return ("scene",)
             if name in {"Vec3", "Vec3i", "BlockPos"} and numbers(args, 3):
                 return tuple(args)
+            if name in {"ItemParticleOption", "BlockParticleOption"}:
+                return "item"
             if name == "ItemStack" and args and isinstance(args[0], tuple) and args[0][0] == "id":
                 return args[0]
             if name == "AABB":
@@ -373,6 +376,22 @@ class Storyboard:
                     else:
                         self.unhandled[f"overlay.{name}"] += 1
                 case "effects":
+                    # `CreateSceneBuilder.EffectInstructions.superGlue` -> `SuperGlueItem.spawnParticles`.
+                    if name == "superGlue" and len(values) == 3 and numbers(values[0], 3) and isinstance(values[1], str)                             and values[1] in DIRECTIONS and isinstance(values[2], bool):
+                        self.emit("glue", list(values[0]), list(DIRECTIONS[values[1]]), values[2])
+                        return UNKNOWN
+                    # `PonderEffectInstructions.simpleParticleEmitter` / `particleEmitterWithinBlockSpace`.
+                    if name in {"simpleParticleEmitter", "particleEmitterWithinBlockSpace"} and values                             and isinstance(values[0], str):
+                        motion = values[1] if len(values) > 1 and isinstance(values[1], tuple) and numbers(values[1], 3) else (0, 0, 0)
+                        return ("emitter", values[0], motion, name == "particleEmitterWithinBlockSpace")
+                    # `emitParticles(location, emitter, amountPerCycle, cycles)`.
+                    if name == "emitParticles" and len(values) == 4 and numbers(values[0], 3)                             and isinstance(values[1], tuple) and values[1][0] == "emitter" and numbers(values[2:], 2):
+                        self.emit("particles", values[1][1], list(values[0]), list(values[1][2]), values[1][3],
+                                  values[2], values[3])
+                        return UNKNOWN
+                    if name == "createRedstoneParticles" and len(values) == 3 and numbers(values[0], 3) and numbers(values[1:], 2):
+                        self.emit("particles", "redstone", [v + 0.5 for v in values[0]], [0, 0, 0], True, values[2], 1)
+                        return UNKNOWN
                     if name in {"indicateSuccess", "indicateRedstone", "rotationDirectionIndicator", "rotationSpeedIndicator"} and values:
                         if isinstance(values[0], tuple) and numbers(values[0], 3):
                             point = tuple(v + 0.5 for v in values[0])
@@ -537,7 +556,23 @@ class Storyboard:
                 if numbers([base, scaled], 2):
                     self.emit("affine_speed", selected, scaled - base, base)
                     return UNKNOWN
-        if name in {"createItemOnBelt", "createItemOnBeltLike", "createItemEntity"} and len(values) == 3:
+        # `createItemOnBelt(pos, side, stack)` returns the item's `ElementLink`; `createItemOnBeltLike` is void. The
+        # belt (or depot) carries the item from there (`rules::ponder_belt`).
+        if name in {"createItemOnBelt", "createItemOnBeltLike"} and len(values) == 3 and numbers(selected, 3)                 and isinstance(values[2], tuple) and values[2][0] == "id":
+            link = self.next_link
+            self.next_link += 1
+            self.emit("belt_put", link, list(selected), values[2][1])
+            return ("link", link)
+        if name == "removeItemsFromBelt" and len(values) == 1 and numbers(selected, 3):
+            self.emit("belt_remove", list(selected))
+            return UNKNOWN
+        if name == "stallBeltItem" and len(values) == 2 and isinstance(selected, tuple) and selected[0] == "link"                 and isinstance(section, bool):
+            self.emit("belt_stall", selected[1], section)
+            return UNKNOWN
+        if name == "changeBeltItemTo" and len(values) == 2 and isinstance(selected, tuple) and selected[0] == "link"                 and isinstance(section, tuple) and section[0] == "id":
+            self.emit("belt_change", selected[1], section[1])
+            return UNKNOWN
+        if name == "createItemEntity" and len(values) == 3:
             stack = values[2]
             if isinstance(selected, tuple) and numbers(selected, 3) and isinstance(stack, tuple) and stack[0] == "id":
                 point, motion, duration = selected, section, 40
@@ -558,9 +593,20 @@ class Storyboard:
             if started and numbers(selected, 3):
                 self.emit("press", [selected], started[1].lower())
                 return UNKNOWN
+        # `instructArm(armLocation, phase, heldItem, targetedPoint)`: `ArmBlockEntity.Phase`, `ItemStack.EMPTY` for none.
+        if name == "instructArm" and len(values) == 4 and isinstance(selected, tuple) and numbers(selected, 3)                 and isinstance(section, str) and isinstance(values[3], int):
+            held = values[2][1] if isinstance(values[2], tuple) and values[2][0] == "id" else None
+            self.emit("arm", list(selected), section.upper(), held, values[3])
+            return UNKNOWN
+        # `CreateSceneBuilder.WorldInstructions`: `AnimateBlockEntityInstruction.bearing / pulley / deployer`.
+        if name in ANIMATED and isinstance(selected, tuple) and numbers(selected, 3) and numbers(values[1:], 2):
+            self.emit("animate", ANIMATED[name], list(selected), values[1], max(0, int(values[2])))
+            return UNKNOWN
         self.unhandled[f"world.{name}"] += 1
         return UNKNOWN
 
+
+ANIMATED = {"rotateBearing": "bearing", "movePulley": "pulley", "moveDeployer": "deployer"}
 
 DIRECTIONS = {"up": (0, 1, 0), "down": (0, -1, 0), "north": (0, 0, -1),
               "south": (0, 0, 1), "east": (1, 0, 0), "west": (-1, 0, 0)}

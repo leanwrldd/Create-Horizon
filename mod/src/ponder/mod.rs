@@ -19,7 +19,7 @@ use crate::compat::{
     TooltipRenderPreEvent,
 };
 
-pub(crate) use render::{ANGLE, BASIN_ABOVE, PRESS_MODE, PRESS_PROGRESS, TICK};
+pub(crate) use render::{ANGLE, ANIMATED, ARM_ANGLES, BASIN_ABOVE, PRESS_MODE, PRESS_PROGRESS, TICK};
 use scene::{Hold, Topic};
 use scenes::{SCENES, for_item};
 use screen::{Layout, Viewer};

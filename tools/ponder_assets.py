@@ -9,7 +9,7 @@ from functools import lru_cache
 from zipfile import ZipFile
 
 
-def structure(raw):
+def read_nbt(raw):
     data = gzip.decompress(raw)
     offset = 0
 
@@ -49,12 +49,29 @@ def structure(raw):
 
     root = read("B")
     string()
-    nbt = tag(root)
+    return tag(root)
+
+
+def structure(raw):
+    nbt = read_nbt(raw)
     palette = [(entry["Name"], entry.get("Properties", {})) for entry in nbt["palette"]]
     blocks = [(entry["pos"], entry["state"]) for entry in nbt["blocks"] if palette[entry["state"]][0] != "minecraft:air"]
     speeds = [(entry["pos"], speed) for entry in nbt["blocks"]
               if (speed := entry.get("nbt", {}).get("Speed", 0)) != 0]
     return nbt["size"], palette, blocks, speeds
+
+
+def arm_points(raw):
+    """Each Mechanical Arm's interaction points (`InteractionPoints`: saved relative to the arm) as
+    `[arm pos, [[type, mode, absolute pos], ...]]`, for `world.instructArm`."""
+    arms = []
+    for entry in read_nbt(raw)["blocks"]:
+        points = entry.get("nbt", {}).get("InteractionPoints")
+        if points:
+            at = entry["pos"]
+            arms.append([at, [[p["Type"], p.get("Mode", "DEPOSIT"), [at[i] + p["Pos"][i] for i in range(3)]]
+                              for p in points]])
+    return arms
 
 
 def model_resolver(jar):
@@ -227,7 +244,8 @@ def import_ponder(jar, content):
             if text_key not in schedule:
                 events.append([end, "caption", lang[text_key], 100])
                 end += 100
-        timeline = dict(size=size, palette=palette, blocks=blocks, speeds=speeds, events=events, models=fallback, duration=max(80, end),
+        arms = arm_points(jar.read(f"assets/create/ponder/{path}.nbt"))
+        timeline = dict(size=size, palette=palette, blocks=blocks, speeds=speeds, events=events, models=fallback, arms=arms, duration=max(80, end),
                         bounds=scene.pop("bounds"), scale=scene.pop("scale"), offset=scene.pop("offset"))
         (output / scene["file"]).write_text(json.dumps(timeline, separators=(",", ":")), encoding="utf-8")
     (output / "catalog.json").write_text(json.dumps(catalogue, separators=(",", ":")), encoding="utf-8")
