@@ -6,9 +6,11 @@
 //! comes. So this layer
 //!
 //! * opens the chest menu and remembers the view it shows (`OPEN`, by window id);
-//! * answers the clicks of such a window itself (`clicked`): the click rules are `rules::menu_input`, and what they
-//!   change is written back through `ItemPlace::MenuSlot` (the view and the player's inventory) and the menu's cursor,
-//!   in one transaction, so a refused write leaves everything as it was;
+//! * answers the clicks of such a window itself (`clicked`): the click rules are `rules::menu_input`; the player's slots
+//!   and the cursor are written through `ItemPlace` in one transaction (a refused write leaves them as they were), and
+//!   the view is stored and sent whole with `menu_set_items`, which also sends the inventory and the cursor: the engine
+//!   answers every click of a native menu at once with the menu as it was, syncs a mod's slot writes only with the next
+//!   tick, and never syncs the cursor, so a client that predicted the click is corrected only by that call;
 //! * on `menu_closed`, gives the module its old `menu_input_closed` with the remembered view, and hands what the
 //!   module leaves in the slots to the player (`PlayerRef::give_stack`: what doesn't fit is thrown, as `/give` does).
 //!
@@ -116,10 +118,15 @@ pub fn clicked(host: &mut dyn ServerHost, event: &mut mod_api::MenuClickedEvent)
         return true;
     }
 
-    // Everything that changed comes out first, then goes in as it now is: a transaction that fails puts it all back.
-    let written = host.transaction(|host, tx| -> Result<(), ()> {
+    // The player's slots and the cursor change in one transaction (everything that changed comes out first, then goes
+    // in as it now is: one that fails puts it all back). The view's own slots are not written through `ItemPlace`
+    // (the engine syncs those with the next tick only, and never the cursor): the whole view goes back with
+    // `menu_set_items`, which stores it, and sends it with the inventory and the cursor at once, as `sendAllDataToRemote`.
+    // The engine has already answered the click with the menu as it was, so a client that predicted it needs this.
+    let written = host.transaction(|host, tx| -> Result<(), String> {
         let mut places: Vec<(ItemPlace, Option<mod_api::ItemStack>, Option<Stack>)> = changed
             .iter()
+            .filter(|&&index| index >= size)
             .map(|&index| (ItemPlace::MenuSlot { menu, slot: index }, real[index].clone(), state.slots[index].clone()))
             .collect();
         if cursor_changed {
@@ -129,24 +136,33 @@ pub fn clicked(host: &mut dyn ServerHost, event: &mut mod_api::MenuClickedEvent)
             if let Some(old) = old {
                 let taken = place.extract(host, tx, &ItemResource::of(old), old.count());
                 if taken != old.count() {
-                    return Err(());
+                    return Err(format!("took {taken} of {} from {place:?}", old.count()));
                 }
             }
         }
         for (place, _, new) in &places {
             if let Some(new) = new {
-                let stack = palette.to_real(new).ok_or(())?;
-                if place.insert(host, tx, &ItemResource::of(&stack), stack.count()) != stack.count() {
-                    return Err(());
+                let stack = palette.to_real(new).ok_or_else(|| "a stack with no real item".to_owned())?;
+                let put = place.insert(host, tx, &ItemResource::of(&stack), stack.count());
+                if put != stack.count() {
+                    return Err(format!("put {put} of {} into {place:?}", stack.count()));
                 }
             }
         }
         Ok(())
     });
-    if written.is_ok()
-        && let Some(open) = open_views().get_mut(&event.window)
-    {
-        open.view = state.view().iter().map(|slot| slot.as_ref().and_then(|stack| palette.to_real(stack))).collect();
+    let view: Vec<Option<mod_api::ItemStack>> = match &written {
+        Ok(()) => state.view().iter().map(|slot| slot.as_ref().and_then(|stack| palette.to_real(stack))).collect(),
+        Err(refused) => {
+            eprintln!("create: Toolbox view click refused: {refused:?}");
+            real[..size].to_vec()
+        }
+    };
+    if let Err(refusal) = host.menu_set_items(event.uuid, event.window, view.clone()) {
+        eprintln!("create: Toolbox view not sent: {refusal:?}");
+    }
+    if written.is_ok() && let Some(open) = open_views().get_mut(&event.window) {
+        open.view = view;
     }
     true
 }
