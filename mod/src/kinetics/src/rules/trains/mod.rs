@@ -4,6 +4,7 @@
 
 pub mod bezier;
 pub mod graph;
+pub mod navigation;
 pub mod network;
 pub mod placement;
 pub mod propagator;
