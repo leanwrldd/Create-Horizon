@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compat::{
-    BlockStateId, Host, HudBatch, ModBlockEntity, NativeSceneBlock, NativeSceneView,
+    BlockStateId, Host, HudBatch, ItemStack, ModBlockEntity, NativeSceneBlock, NativeSceneView, Tag,
     serde_json::{self, Value},
 };
 
@@ -15,8 +15,11 @@ use create_kinetics::rules::arm_points::{Mode as ArmMode, Point as ArmPoint, Poi
 use create_kinetics::rules::ponder_anim::{self as anim, Instruction};
 use create_kinetics::rules::ponder_arm::{Arm, Instruction as ArmInstruction};
 use create_kinetics::rules::ponder_particles::{
-    Kind as ParticleKind, Particle, Rng, Spawn, emission_runs, glue_burst, particle, within_block,
+    Kind as ParticleKind, Particle, Rng, Spawn, destroy_burst, emission_runs, glue_burst, jittered, particle,
+    within_block,
 };
+
+use crate::machines::funnel as create_funnel;
 
 use super::scene::Pos;
 use super::screen::Showing;
@@ -263,7 +266,18 @@ enum Event {
     Control([f32; 3], f32),
     Line([f32; 3], [f32; 3], u32, f32),
     Outline([f32; 3], [f32; 3], u32, f32),
-    Item(String, [f32; 3], [f32; 3], f32),
+    /// `createItemEntity`: the item, where, its motion, how long it lives and its link (0 for none).
+    Item(String, [f32; 3], [f32; 3], f32, u32),
+    /// `modifyEntity(link, Entity::discard)` (the link), or `modifyEntities(ItemEntity.class, Entity::discard)` (0).
+    ItemEnd(u32),
+    /// `modifyBlockEntityNBT` and its relatives: what to set in the block entity's data.
+    Nbt(Vec<Pos>, Vec<(String, Tag)>),
+    /// `flapFunnel(pos, outward)`.
+    Flap(Pos, bool),
+    /// The breaking texture's stage over a block (`incrementBlockBreakingProgress`), or none (-1).
+    Crack(Pos, i32),
+    /// A block broke: its crumbs fly (`PonderLevel.addBlockDestroyEffects`).
+    Destroy(Pos),
     Toggle(Vec<Pos>),
     /// `PressingBehaviour.start(mode)`: a stroke of the press head, `Mode` as its id.
     Press(Vec<Pos>, i32),
@@ -283,7 +297,8 @@ enum Event {
     /// `effects.superGlue(pos, side, fullBlock)`: a burst of glue on a block's face (`SuperGlueItem.spawnParticles`).
     Glue(Pos, [i32; 3], bool),
     /// `effects.emitParticles`: `kind` at a point, its motion, within the block's space or not, per tick, for ticks.
-    Particles(ParticleKind, [f32; 3], [f32; 3], bool, f32, u32),
+    /// The last is the radius of the random offset each particle's motion takes (`VecHelper.offsetRandomly`).
+    Particles(ParticleKind, [f32; 3], [f32; 3], bool, f32, u32, f32),
     Marker,
 }
 
@@ -471,6 +486,12 @@ struct VisibleBlock {
     arm: Option<([f32; 4], Option<String>)>,
     /// A press mid-stroke: the progress of its cycle in ticks and `Mode`'s id.
     press: Option<(f32, i32)>,
+    /// What scene instructions set in the block entity's data, in order.
+    nbt: Vec<(String, Tag)>,
+    /// A funnel's last flap: the tick and whether it went outward.
+    flap: Option<(f32, bool)>,
+    /// The stage of the breaking texture over the block.
+    crack: Option<i32>,
 }
 
 impl Frame<'_> {
@@ -509,6 +530,23 @@ impl Scene {
         markers.sort_by(f32::total_cmp);
         markers.dedup();
         events.sort_by(|(a, _), (b, _)| a.total_cmp(b));
+        // An item entity lives until a scene discards it (its link, or every item with 0).
+        let discards: Vec<(f32, u32)> = events
+            .iter()
+            .filter_map(|(at, event)| match event {
+                Event::ItemEnd(link) => Some((*at, *link)),
+                _ => None,
+            })
+            .collect();
+        for (at, event) in &mut events {
+            if let Event::Item(_, _, _, duration, link) = event
+                && let Some(&(end, _)) = discards
+                    .iter()
+                    .find(|&&(end, discarded)| end > *at && (discarded == 0 || discarded == *link))
+            {
+                *duration = duration.min(end - *at);
+            }
+        }
         let mut reading: Vec<(f32, f32)> = Vec::new();
         for (at, event) in &events {
             if let Event::Caption(_, duration, _) = event {
@@ -643,9 +681,12 @@ impl Scene {
         let mut sections = BTreeMap::<u32, Section>::new();
         let mut animations = BTreeMap::<Pos, Vec<Instruction>>::new();
         let mut arms = BTreeMap::<Pos, (Vec<ArmInstruction>, Option<&str>)>::new();
+        let mut data = BTreeMap::<Pos, Vec<(String, Tag)>>::new();
+        let mut flaps = BTreeMap::<Pos, (f32, bool)>::new();
+        let mut cracks = BTreeMap::<Pos, i32>::new();
         let mut has_reveals = false;
         let mut frame = Frame::default();
-        for (at, event) in &self.events {
+        for (index, (at, event)) in self.events.iter().enumerate() {
             has_reveals |= matches!(event, Event::Show(..));
             if *at > tick {
                 continue;
@@ -718,7 +759,7 @@ impl Scene {
                         frame.point = Some(*point);
                     }
                 }
-                Event::Item(item, point, velocity, duration) => {
+                Event::Item(item, point, velocity, duration, _) => {
                     let live = tick - at;
                     if live <= *duration {
                         frame.items.push((
@@ -746,6 +787,42 @@ impl Scene {
                                     frame.lines.push((from, to, *color));
                                 }
                             }
+                        }
+                    }
+                }
+                Event::ItemEnd(_) => {}
+                Event::Nbt(positions, entries) => {
+                    for &pos in positions {
+                        let stored = data.entry(pos).or_default();
+                        for (key, tag) in entries {
+                            stored.retain(|(known, _)| known != key);
+                            stored.push((key.clone(), tag.clone()));
+                        }
+                    }
+                }
+                Event::Flap(pos, outward) => {
+                    flaps.insert(*pos, (*at, *outward));
+                }
+                Event::Crack(pos, stage) => {
+                    if *stage < 0 {
+                        cracks.remove(pos);
+                    } else {
+                        cracks.insert(*pos, *stage);
+                    }
+                }
+                Event::Destroy(pos) => {
+                    let age = tick - at;
+                    if age < GLUE_LIFE {
+                        for (n, spawn) in destroy_burst(*pos).into_iter().enumerate() {
+                            let mut rng = Rng::seeded(&[
+                                *at as u64,
+                                n as u64,
+                                pos[0] as u64,
+                                pos[1] as u64,
+                                pos[2] as u64,
+                            ]);
+                            let particle = particle(ParticleKind::Terrain, spawn, &mut rng);
+                            frame.add_particle(&particle, age);
                         }
                     }
                 }
@@ -791,7 +868,7 @@ impl Scene {
                         }
                     }
                 }
-                Event::Particles(kind, origin, motion, within, per_tick, ticks) => {
+                Event::Particles(kind, origin, motion, within, per_tick, ticks, jitter) => {
                     for emitted in 0..*ticks {
                         let age = tick - (at + emitted as f32);
                         if age < 0.0 {
@@ -800,17 +877,20 @@ impl Scene {
                         if age >= EMITTED_LIFE {
                             continue;
                         }
+                        // The event's place among the others tells apart emitters that start together.
                         let mut rng = Rng::seeded(&[
                             *at as u64,
                             u64::from(emitted),
                             origin[0].to_bits().into(),
                             origin[2].to_bits().into(),
+                            index as u64,
                         ]);
                         for _ in 0..emission_runs(*per_tick, &mut rng) {
                             let mut start = origin.map(f64::from);
                             if *within {
                                 start = within_block(start, &mut rng);
                             }
+                            let motion = if *jitter > 0.0 { jittered(*motion, *jitter, &mut rng) } else { *motion };
                             let spawn = Spawn { pos: start, motion: motion.map(f64::from) };
                             let particle = particle(*kind, spawn, &mut rng);
                             frame.add_particle(&particle, age);
@@ -890,6 +970,9 @@ impl Scene {
                         };
                         (reach.angles(steps, tick), held.map(str::to_owned))
                     }),
+                    nbt: data.get(&pos).cloned().unwrap_or_default(),
+                    flap: flaps.get(&pos).copied(),
+                    crack: cracks.get(&pos).copied(),
                     press: presses.get(&pos).map(|&(at, mode)| {
                         // The press turns at the scene's speed when the stroke runs.
                         let rpm = rotation.rpm;
@@ -922,7 +1005,8 @@ impl Scene {
                 }?;
                 let custom_model = !block.models.is_empty() && self.proxy.is_some();
                 let pose = visible.pose.filter(|_| self.proxy.is_some());
-                let entity = (block.id.starts_with("create:") || pose.is_some()).then(|| {
+                let cracked = visible.crack.is_some();
+                let entity = (block.id.starts_with("create:") || pose.is_some() || cracked).then(|| {
                     let mut entity = ModBlockEntity::default();
                     entity.id.clone_from(&block.id);
                     crate::set_float(&mut entity.nbt, super::TICK, tick);
@@ -947,6 +1031,20 @@ impl Scene {
                     if let Some((translation, rotation)) = pose {
                         super::render::store_pose(&mut entity, translation, rotation);
                     }
+                    for (key, tag) in &visible.nbt {
+                        entity.nbt.insert(key.as_str().into(), tag.clone());
+                    }
+                    if let Some((at, outward)) = visible.flap {
+                        // `FunnelBlockEntity.flap(inward)`: `FlapTick` is the scene tick the flap began.
+                        entity.nbt.insert(
+                            create_funnel::FLAP_KEY.into(),
+                            Tag::Byte(if outward { 1 } else { -1 }),
+                        );
+                        entity.nbt.insert(create_funnel::FLAP_TICK.into(), Tag::Long(at as i64));
+                    }
+                    if let Some(stage) = visible.crack {
+                        entity.nbt.insert(super::render::CRACK.into(), Tag::Int(stage));
+                    }
                     if custom_model {
                         super::render::store_models(
                             &mut entity,
@@ -960,7 +1058,7 @@ impl Scene {
                             super::render::DRAW_STATE.into(),
                             crate::compat::Tag::Int(actual.0 as i32),
                         );
-                    } else if pose.is_some() {
+                    } else if pose.is_some() || (cracked && !block.id.starts_with("create:")) {
                         super::render::store_geometry(
                             &mut entity,
                             &block.geometry,
@@ -969,7 +1067,7 @@ impl Scene {
                     }
                     entity
                 });
-                let state = if block.redraw || custom_model || pose.is_some() {
+                let state = if block.redraw || custom_model || pose.is_some() || (cracked && !block.id.starts_with("create:")) {
                     self.proxy.unwrap_or(actual)
                 } else {
                     actual
@@ -1241,7 +1339,18 @@ fn decode(row: &[Value], palette: &mut Vec<State>) -> Option<(f32, Event)> {
             read(row, 4).unwrap_or_default(),
         ),
         "control" => Event::Control(read(row, 2)?, read(row, 3)?),
-        "item" => Event::Item(read(row, 2)?, read(row, 3)?, read(row, 4)?, read(row, 5)?),
+        "item" => Event::Item(
+            read(row, 2)?,
+            read(row, 3)?,
+            read(row, 4)?,
+            read(row, 5)?,
+            read(row, 6).unwrap_or(0),
+        ),
+        "item_end" => Event::ItemEnd(read(row, 2)?),
+        "nbt" => Event::Nbt(read(row, 2)?, nbt_entries(row.get(3)?)?),
+        "flap" => Event::Flap(read(row, 2)?, read(row, 3)?),
+        "crack" => Event::Crack(read(row, 2)?, read(row, 3)?),
+        "destroy" => Event::Destroy(read(row, 2)?),
         "line" => Event::Line(
             read(row, 2)?,
             read(row, 3)?,
@@ -1284,11 +1393,37 @@ fn decode(row: &[Value], palette: &mut Vec<State>) -> Option<(f32, Event)> {
             read(row, 5)?,
             read(row, 6)?,
             read(row, 7)?,
+            read(row, 8).unwrap_or(0.0),
         ),
         "marker" => Event::Marker,
         _ => return None,
     };
     Some((tick, event))
+}
+
+/// `{key: [type, value]}` as block entity data: `i` an int, `f` a float, `b` a boolean, `s` a string (an enum is its
+/// name, as `NBTHelper.writeEnum` saves it) and `item` a stack (empty for none).
+fn nbt_entries(value: &Value) -> Option<Vec<(String, Tag)>> {
+    value
+        .as_object()?
+        .iter()
+        .map(|(key, entry)| {
+            let kind = entry.get(0)?.as_str()?;
+            let value = entry.get(1)?;
+            let tag = match kind {
+                "i" => Tag::Int(i32::try_from(value.as_i64()?).ok()?),
+                "f" => Tag::Float((value.as_f64()? as f32).to_bits()),
+                "b" => Tag::Byte(i8::from(value.as_bool()?)),
+                "s" => Tag::String(value.as_str()?.into()),
+                "item" => match value.as_str()? {
+                    "" => Tag::Compound(crate::Compound::new()),
+                    id => crate::util::stack_tag(&ItemStack::new(id, 1)),
+                },
+                _ => return None,
+            };
+            Some((key.clone(), tag))
+        })
+        .collect()
 }
 
 fn resolve(

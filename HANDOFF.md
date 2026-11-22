@@ -83,8 +83,14 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
 - play-testing everything above (test plans are in the merge commits' agents' notes and on the board rows);
 - trains: part 1 is merged (rules only, `rules/trains/`, its README says what's next: stations, navigation,
   schedules, carriages, bogeys, then glue). Catnip's `intersect_ranged` there is reconstructed, unverified;
-- Ponder: bearings, glue, belt items, pulleys, deployers, arms and particles animate (0d8653f); left are
-  `modifyBlockEntity`/NBT calls (~110), `flapFunnel`, block breaking progress, fluid particles, carts, trains;
+- Ponder: bearings, glue, belt items, pulleys, deployers, arms and particles animate (0d8653f). Then: `modifyBlockEntityNBT`
+  (the `put*`/`writeEnum`/`saveOptional` calls become an `nbt` op the player merges into the drawn block entity, so
+  every renderer that reads the key Create saves shows it), `setFilterData`, Harvester/Roller `setAnimatedSpeed`,
+  `flapFunnel` (and the flap `createItemOnBelt` ends with), `incrementBlockBreakingProgress` (crack texture over the
+  block, ten calls break it, with crumbs), fluid particles (honey, chocolate), item entity discards, and the particle
+  constants now follow Horizon's ports of the vanilla classes. Left: `modifyBlockEntity` for fluids, items in
+  inventories, recipes and display text (`ponder_storyboards.py` prints what it skips), `modifyBlock` that reads the
+  old state, parrots, carts, `showFilterSlotInput`, `toggleControls`, `hideElement`, `propagatePipeChange`, trains;
 - minecart contraptions (blocked: nothing can draw a structure on a vanilla minecart);
 - clicking blocks on a moving structure, Deployer schematic printing on a structure;
 - Factory Gauge arrows and relocation, Table Cloth shop data on the item;

@@ -7,7 +7,9 @@
 //! axis, each flying outward at 1/16 of a block a tick), and every call that feeds an emitter. What is not: the
 //! particle's own motion. Vanilla's `Particle` and `BreakingItemParticle` / `SmokeParticle` / `SpitParticle` classes are
 //! not in Create's source; their constants here (initial speed scatter, gravity, friction, lifetime) are the
-//! well-known vanilla ones, written from memory. The player sees small flat squares, not the vanilla sprites.
+//! ones Horizon ports (`horizon-client-render/src/particles.rs`: `Particle.moving`, `BreakingItemParticle`,
+//! `BaseAshSmokeParticle`, `SpitParticle`, `DustParticleBase`). The player sees small flat squares, not the vanilla
+//! sprites.
 
 /// A cheap seeded generator (SplitMix64), so a scene draws the same particles every time it is scrubbed to a tick.
 #[derive(Clone, Copy, Debug)]
@@ -47,6 +49,11 @@ pub enum Kind {
     LargeSmoke,
     Spit,
     Redstone,
+    /// A crumb of a broken block (`TerrainParticle`, from `ParticleEngine.destroy`).
+    Terrain,
+    /// Create's `FluidStackParticle` (`FluidFX.getFluidParticle`) of honey and of chocolate: it moves as it is told.
+    Honey,
+    Chocolate,
 }
 
 impl Kind {
@@ -58,6 +65,9 @@ impl Kind {
             "large_smoke" | "smoke" => Self::LargeSmoke,
             "spit" => Self::Spit,
             "redstone" => Self::Redstone,
+            "terrain" => Self::Terrain,
+            "honey" => Self::Honey,
+            "chocolate" => Self::Chocolate,
             _ => return None,
         })
     }
@@ -69,35 +79,47 @@ impl Kind {
             Self::Item => 0xFFC9_B38A,
             Self::LargeSmoke => 0xFF8A_8A8A,
             Self::Spit => 0xFFE9_F1EC,
-            Self::Redstone => 0xFFE8_2D2D,
+            Self::Redstone => 0xFFB8_0000,
+            // The block's own colour is not known here: a crumb tinted by 0.6 as `TerrainParticle` does.
+            Self::Terrain => 0xFF86_7A63,
+            // `FluidStackParticle`: 0.8 times the fluid's tint (`SolidRenderedPlaceableFluidType.create(0xEAAE2F` and
+            // `0x622020`).
+            Self::Honey => 0xFFBB_8B26,
+            Self::Chocolate => 0xFF50_1919,
         }
     }
 
     /// Pixels a particle is across at the scene's usual scale: vanilla's `quadSize` times the block size.
     pub const fn size(self) -> f32 {
         match self {
-            Self::Slime | Self::Item => 2.0,
+            Self::Slime | Self::Item | Self::Terrain | Self::Honey | Self::Chocolate => 2.0,
             Self::Spit | Self::Redstone => 2.0,
             Self::LargeSmoke => 5.0,
         }
     }
 
-    /// Per tick: downward acceleration (`gravity` x 0.04), and the factor the speed keeps (`friction`).
+    /// Per tick: downward acceleration (`gravity` x 0.04, `Particle.tick`), and the factor the speed keeps (`friction`).
+    /// Horizon's port of the vanilla particle classes (`horizon-client-render` `particles.rs`): `TerrainParticle` and
+    /// `BreakingItemParticle` fall at gravity 1.0, `SpitParticle` at 0.5 with friction 0.9, `BaseAshSmokeParticle`
+    /// (large smoke) rises at gravity -0.1 with friction 0.96, `DustParticleBase` has no gravity and friction 0.96.
     const fn physics(self) -> (f64, f64) {
         match self {
-            Self::Slime | Self::Item => (0.04, 0.98),
-            Self::Spit => (0.04 * 0.5, 0.98),
-            Self::LargeSmoke => (-0.004, 0.96),
+            Self::Slime | Self::Item | Self::Terrain | Self::Honey | Self::Chocolate => (0.04, 0.98),
+            Self::Spit => (0.04 * 0.5, 0.9),
+            Self::LargeSmoke => (-0.04 * 0.1, 0.96),
             Self::Redstone => (0.0, 0.96),
         }
     }
 
-    /// `Particle.lifetime` for a draw `r` in [0, 1): `(int)(4 / (r * 0.9 + 0.1))` for the item and block particles,
-    /// `(int)(8 / (r * 0.8 + 0.2))` times the scale (2.5) for the large smoke.
+    /// `Particle.lifetime` for a draw `r` in [0, 1): `(int)(4 / (r * 0.9 + 0.1))` for the break particles,
+    /// `(int)(8 / (r * 0.8 + 0.2) * 2.5)` for the large smoke (`BaseAshSmokeParticle`, scale 2.5, at least 1),
+    /// `(int)(16 / (r * 0.8 + 0.2)) + 2` for spit (`PoofParticle`'s provider), `(int)(8 / (r * 0.8 + 0.2))` times the
+    /// scale (1) for redstone dust.
     fn lifetime(self, r: f64) -> f32 {
         match self {
-            Self::LargeSmoke => (((8.0 / (r * 0.8 + 0.2)) as i32) as f64 * 2.5).max(1.0).floor() as f32,
-            Self::Redstone => 20.0,
+            Self::LargeSmoke => ((8.0 / (r * 0.8 + 0.2) * 2.5) as i32).max(1) as f32,
+            Self::Redstone => (8.0 / (r * 0.8 + 0.2)) as i32 as f32,
+            Self::Spit => ((16.0 / (r * 0.8 + 0.2)) as i32 + 2) as f32,
             _ => ((4.0 / (r * 0.9 + 0.1)) as i32) as f32,
         }
     }
@@ -157,6 +179,21 @@ pub fn glue_burst(pos: [i32; 3], normal: [i32; 3], full_block: bool, rng: &mut R
         .collect()
 }
 
+/// `ClientLevel.addDestroyBlockEffect` for a full block (Horizon's `destroy_positions`): a crumb in each cell of a 4 x 4 x 4
+/// grid, thrown away from the block's centre by its offset from it.
+pub fn destroy_burst(pos: [i32; 3]) -> Vec<Spawn> {
+    let cell = |i: usize| (f64::from(i as u32) + 0.5) / 4.0;
+    (0..64)
+        .map(|n| {
+            let relative = [cell(n / 16), cell(n / 4 % 4), cell(n % 4)];
+            Spawn {
+                pos: std::array::from_fn(|i| f64::from(pos[i]) + relative[i]),
+                motion: relative.map(|v| v - 0.5),
+            }
+        })
+        .collect()
+}
+
 /// `EmitParticlesInstruction`: how many particles this tick, for `runs_per_tick` a tick (the whole part, and one more
 /// with the chance of the fraction).
 pub fn emission_runs(runs_per_tick: f32, rng: &mut Rng) -> u32 {
@@ -164,26 +201,37 @@ pub fn emission_runs(runs_per_tick: f32, rng: &mut Rng) -> u32 {
     whole as u32 + u32::from(rng.float() < f64::from(runs_per_tick - whole))
 }
 
+/// `VecHelper.offsetRandomly(motion, random, radius)`: the motion with up to `radius` either way on each axis.
+pub fn jittered(motion: [f32; 3], radius: f32, rng: &mut Rng) -> [f32; 3] {
+    motion.map(|v| v + (rng.float() as f32 - 0.5) * 2.0 * radius)
+}
+
 /// `particleEmitterWithinBlockSpace`: a point anywhere in the block about `centre`.
 pub fn within_block(centre: [f64; 3], rng: &mut Rng) -> [f64; 3] {
     centre.map(|v| v + rng.float() - 0.5)
 }
 
-/// Vanilla's `Particle` constructor with a given motion, as `BreakingItemParticle` and `SmokeParticle` use it: the
-/// motion is scattered, scaled and added to the given one.
+/// Vanilla's particle constructors, as Horizon ports them: `Particle(level, x, y, z, xa, ya, za)` scatters the motion
+/// (`xa + (random * 2 - 1) * 0.4` per axis), scales it to `(random + random + 1) * 0.15 * 0.4` and lifts it by 0.1.
+/// What each class does with that differs: break particles keep a tenth of it and add the motion given; the large
+/// smoke likewise (`BaseAshSmokeParticle`'s 0.1 factor); the dust takes the motion into the scatter and keeps a
+/// tenth; spit ignores it and moves by the motion plus `(random * 2 - 1) * 0.05`.
 pub fn particle(kind: Kind, spawn: Spawn, rng: &mut Rng) -> Particle {
-    let scatter = [0, 1, 2].map(|_| (rng.float() * 2.0 - 1.0) * 0.4);
+    let lifetime = kind.lifetime(rng.float());
+    let into_scatter = if matches!(kind, Kind::Redstone | Kind::Terrain) { spawn.motion } else { [0.0; 3] };
+    let scatter: [f64; 3] = std::array::from_fn(|i| into_scatter[i] + (rng.float() * 2.0 - 1.0) * 0.4);
     let speed = (rng.float() + rng.float() + 1.0) * 0.15;
-    let length = scatter.iter().map(|v| v * v).sum::<f64>().sqrt().max(1e-9);
-    let own = scatter.map(|v| v / length * speed * 0.4);
-    // The break and smoke particles keep a tenth (smoke, a hundredth) of that and add the motion given.
-    let keep = if kind == Kind::LargeSmoke { 0.01 } else { 0.1 };
-    Particle {
-        kind,
-        pos: spawn.pos,
-        velocity: std::array::from_fn(|i| own[i] * keep + spawn.motion[i]),
-        lifetime: kind.lifetime(rng.float()),
-    }
+    let length = scatter.iter().map(|v| v * v).sum::<f64>().max(1e-18).sqrt();
+    let own: [f64; 3] = std::array::from_fn(|i| scatter[i] / length * speed * 0.4 + if i == 1 { 0.1 } else { 0.0 });
+    let velocity = match kind {
+        Kind::Slime | Kind::Item | Kind::LargeSmoke => std::array::from_fn(|i| own[i] * 0.1 + spawn.motion[i]),
+        Kind::Redstone => own.map(|v| v * 0.1),
+        Kind::Terrain => own,
+        // `FluidStackParticle` sets `xd = vx` after the constructor scattered it.
+        Kind::Honey | Kind::Chocolate => spawn.motion,
+        Kind::Spit => std::array::from_fn(|i| spawn.motion[i] + (rng.float() * 2.0 - 1.0) * 0.05),
+    };
+    Particle { kind, pos: spawn.pos, velocity, lifetime }
 }
 
 impl Particle {
@@ -213,6 +261,60 @@ impl Particle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn jitter_stays_within_its_radius_and_a_fluid_drop_takes_the_motion_as_given() {
+        let mut rng = Rng::seeded(&[6]);
+        for _ in 0..100 {
+            let motion = jittered([0.0; 3], 0.1, &mut rng);
+            assert!(motion.iter().all(|v| v.abs() <= 0.1));
+            let p = particle(Kind::Honey, Spawn { pos: [0.0; 3], motion: motion.map(f64::from) }, &mut rng);
+            assert_eq!(p.velocity, motion.map(f64::from));
+        }
+        assert_eq!(jittered([1.0, 2.0, 3.0], 0.0, &mut rng), [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn a_broken_block_throws_64_crumbs_out_of_its_cells() {
+        let burst = destroy_burst([2, 1, 3]);
+        assert_eq!(burst.len(), 64);
+        assert!(burst.iter().all(|s| (2.0..3.0).contains(&s.pos[0]) && (1.0..2.0).contains(&s.pos[1])));
+        // The corner cells go the furthest, each away from the middle.
+        assert_eq!(burst[0].motion, [-0.375; 3]);
+        assert_eq!(burst[63].motion, [0.375; 3]);
+    }
+
+    #[test]
+    fn a_crumb_lives_as_a_break_particle_and_falls_with_gravity_one() {
+        let mut rng = Rng::seeded(&[8]);
+        let p = particle(Kind::Terrain, Spawn { pos: [0.0; 3], motion: [0.0; 3] }, &mut rng);
+        assert!((4.0..=40.0).contains(&p.lifetime));
+        assert_eq!(Kind::Terrain.physics(), (0.04, 0.98));
+    }
+
+    #[test]
+    fn the_constants_are_the_ported_vanilla_ones() {
+        assert_eq!(Kind::Item.physics(), (0.04, 0.98));
+        assert_eq!(Kind::Spit.physics(), (0.02, 0.9));
+        assert_eq!(Kind::LargeSmoke.physics(), (-0.004, 0.96));
+        assert_eq!(Kind::Redstone.physics(), (0.0, 0.96));
+        // `(int)(8 / (r * 0.8 + 0.2) * 2.5)`: 100 at r = 0, 20 at r = 1; spit `(int)(16 / ..) + 2`: 82 and 18.
+        assert_eq!(Kind::LargeSmoke.lifetime(0.0), 100.0);
+        assert_eq!(Kind::LargeSmoke.lifetime(1.0), 20.0);
+        assert_eq!(Kind::Spit.lifetime(0.0), 82.0);
+        assert_eq!(Kind::Spit.lifetime(1.0), 18.0);
+        assert_eq!(Kind::Item.lifetime(0.0), 40.0);
+        assert_eq!(Kind::Redstone.lifetime(1.0), 8.0);
+    }
+
+    #[test]
+    fn a_break_particle_keeps_a_tenth_of_its_scatter_and_the_motion_given() {
+        let mut rng = Rng::seeded(&[2]);
+        let p = particle(Kind::Item, Spawn { pos: [0.0; 3], motion: [0.5, 0.0, 0.0] }, &mut rng);
+        // The scatter is at most (1 + 1 + 1) * 0.15 * 0.4 = 0.18 long, lifted 0.1: a tenth of it moves the motion little.
+        assert!((p.velocity[0] - 0.5).abs() <= 0.018 + 1e-9);
+        assert!(p.velocity[1].abs() <= 0.1 * 0.28 + 1e-9);
+    }
 
     #[test]
     fn a_full_face_bursts_into_40_particles_and_a_partial_one_into_15() {

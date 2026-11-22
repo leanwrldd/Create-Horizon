@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::compat::{
-    BlockEntitySubmitEvent, BlockStateId, DisplayContext, Host, HudBatch, ItemStack,
+    BlockEntitySubmitEvent, BlockStateId, CubeFace, DisplayContext, Host, HudBatch, ItemStack,
     ModBlockEntity, NativeSceneBlock, NativeSceneView, Tag,
 };
 
@@ -16,6 +16,10 @@ pub(crate) const PRESS_MODE: &str = "CreatePonderPressMode";
 pub(crate) const TICK: &str = "CreatePonderTick";
 /// A number a scene instruction moved: a bearing's angle, a pulley's rope offset, a deployer's hand offset.
 pub(crate) const ANIMATED: &str = "CreatePonderAnimated";
+/// What a scene's `setAnimatedSpeed` set on a Mechanical Harvester or Roller (`HarvesterBlockEntity.manuallyAnimatedSpeed`).
+pub(crate) const ANIMATED_SPEED: &str = "CreatePonderAnimatedSpeed";
+/// The stage (0 to 9) of the breaking texture drawn over a block (`incrementBlockBreakingProgress`).
+pub(crate) const CRACK: &str = "CreatePonderCrack";
 /// The four angles of a Mechanical Arm a scene instructed (`rules::ponder_arm`).
 pub(crate) const ARM_ANGLES: &str = "CreatePonderArmAngles";
 pub(crate) const BASIN_ABOVE: &str = "CreatePonderBasinAbove";
@@ -332,6 +336,20 @@ pub fn submit(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
             0,
         );
         draw.pop();
+    }
+    // `WorldSectionElementImpl`: the breaking texture of the stage (`DESTROY_TYPES`) over the block.
+    if let Some(Tag::Int(stage)) = nbt.get(&CRACK.into())
+        && (0..10).contains(stage)
+    {
+        let sprite = format!("minecraft:block/destroy_stage_{stage}");
+        let face = || Some(CubeFace::new(&sprite));
+        host.draw_cube(
+            event.draw,
+            [-0.01; 3],
+            [16.01; 3],
+            [face(), face(), face(), face(), face(), face()],
+            0xFF_FFFF,
+        );
     }
     if posed {
         event.draw.pop();
