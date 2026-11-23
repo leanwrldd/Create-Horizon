@@ -8,6 +8,7 @@ pub mod bezier;
 pub mod bogey;
 pub mod carriage;
 pub mod graph;
+pub mod graph_helper;
 pub mod navigation;
 pub mod network;
 pub mod observer;
