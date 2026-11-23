@@ -418,9 +418,12 @@ mod tests {
     #[test]
     fn assembling_on_a_track_end_to_end() {
         let mut rw = Railways::new();
-        let g = line(&mut rw.nets, &[0.0, 60.0]);
+        // The station's block is at x = 0; the track runs on behind it (the wheel points start there).
+        // A node at every block, as the wheel points are placed at nodes.
+        let xs: Vec<f64> = (-5..=45).map(f64::from).collect();
+        let g = line(&mut rw.nets, &xs);
         let station = rw.nets.new_uuid();
-        rw.nets.add_point(g, TrackEdgePoint::new_station(station, [loc(0.0, 0.0), loc(60.0, 0.0)], 0.5));
+        rw.nets.add_point(g, TrackEdgePoint::new_station(station, [loc(0.0, 0.0), loc(1.0, 0.0)], 0.5));
         let scan = scan_assembly(30, 20, |i| i < 20, |i, ud| if !ud && (i == 0 || i == 5) { Some((BogeyType::small(), false)) } else { None });
         assert_eq!(scan.bogey_locations, vec![0, 5]);
         let offsets = bogey_point_offsets(&scan.bogey_locations, |i| scan.bogey_types[i].wheel_point_spacing).unwrap();
