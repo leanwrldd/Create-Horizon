@@ -19,6 +19,9 @@ use create_kinetics::rules::contraption::State;
 use mod_api::{BlockShapeKind, Host, LevelRef, Tag};
 
 static TABLE: LazyLock<Mutex<HashMap<String, Arc<[Aabb]>>>> = LazyLock::new(Mutex::default);
+/// The selection outline of each state (`BlockState.getShape`), by the state's text: what a click's
+/// ray meets (`ContraptionHandlerClient.rayTraceContraption`). Server only, never sent.
+static OUTLINES: LazyLock<Mutex<HashMap<String, Arc<[Aabb]>>>> = LazyLock::new(Mutex::default);
 static VERSION: AtomicU64 = AtomicU64::new(1);
 
 fn table() -> MutexGuard<'static, HashMap<String, Arc<[Aabb]>>> {
@@ -86,6 +89,37 @@ pub fn fill<'a>(host: &dyn Host, level: LevelRef, pos: Pos, states: impl Iterato
         VERSION.fetch_add(1, Ordering::Relaxed);
     }
     added
+}
+
+/// The outline boxes of a state, asked of the game once (`BlockShapeKind::Outline`); a state it can't
+/// answer for has its collision boxes, or a full cube when it has none and is not air.
+pub fn outline_of(host: &dyn Host, level: LevelRef, pos: Pos, state: &State) -> Arc<[Aabb]> {
+    let key = text(state);
+    if let Some(known) = OUTLINES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&key) {
+        return known.clone();
+    }
+    let asked = host
+        .block_state_id(&key)
+        .and_then(|id| level.block_shape(host, id, pos, BlockShapeKind::Outline))
+        .map(|list| {
+            list.iter()
+                .map(|b| Aabb::new([b[0], b[1], b[2]], [b[3], b[4], b[5]]))
+                .filter(|b| (0..3).all(|i| b.max[i] > b.min[i]))
+                .collect::<Vec<_>>()
+        });
+    let boxes: Arc<[Aabb]> = match asked {
+        Some(list) => Arc::from(list),
+        None => {
+            let collision = boxes_of(state);
+            if collision.is_empty() && !state.is_air() {
+                Arc::from(vec![Aabb::new([0.0; 3], [1.0; 3])])
+            } else {
+                collision
+            }
+        }
+    };
+    OUTLINES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(key, boxes.clone());
+    boxes
 }
 
 /// A shape as the palette carries it: six doubles a box.

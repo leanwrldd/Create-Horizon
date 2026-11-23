@@ -459,7 +459,7 @@ fn hand_of(data: &Compound) -> Items {
 }
 
 /// Writes the hand back into the data a Deployer's block has (`Items`, and `HeldItem` for clients).
-fn write_hand(data: &mut Compound, items: &Items) {
+pub(super) fn write_hand(data: &mut Compound, items: &Items) {
     let list: Vec<Tag> = items
         .iter()
         .enumerate()
@@ -672,4 +672,22 @@ fn funnel_succ(cx: &mut Cx<'_>, actor: &mut Actor, cell: Pos) {
         // All of it in: the entity goes; some of it: the entity keeps the rest.
         cx.host.set_item_entity(dimension, item.id, rest);
     }
+}
+
+/// `DeployerMovingInteraction`: the player's item goes into the Deployer's hand and the hand's comes
+/// back (`fake.setItemInHand`). The hand's items after (for the block's data), and the item that was in it.
+pub(super) fn swap_held(actor: &mut Actor, held: Option<ItemStack>) -> (Items, Option<ItemStack>) {
+    let hand = hand_mut(actor);
+    let old = std::mem::replace(&mut hand.items[0], held);
+    (hand.items.clone(), old)
+}
+
+/// The Deployer's mode as saved (`USE` unless it says `PUNCH`).
+pub(super) fn deployer_mode(actor: &Actor) -> &'static str {
+    mode_of(actor).name()
+}
+
+/// `NBTHelper.writeEnum(ctx.blockEntityData, "Mode", ..)`.
+pub(super) fn set_deployer_mode(actor: &mut Actor, mode: &str) {
+    actor.data.insert("Mode".into(), Tag::String(mode.into()));
 }

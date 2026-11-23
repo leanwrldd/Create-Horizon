@@ -35,6 +35,7 @@ pub mod collider_obb;
 pub mod content_observer;
 pub mod content_observer_target;
 pub mod contraption;
+pub mod contraption_click;
 pub mod contraption_controls;
 pub mod contraption_facts;
 pub mod copycat;

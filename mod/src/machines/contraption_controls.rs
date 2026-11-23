@@ -78,7 +78,7 @@ fn item_name(stack: &ItemStack) -> Text {
 }
 
 /// `sendStatus`.
-fn status(filter: Option<&ItemStack>, enabled: bool) -> Text {
+pub(super) fn status(filter: Option<&ItemStack>, enabled: bool) -> Text {
     let [(line_key, line), (state_key, state)] = rules::status_keys(filter.is_some(), enabled);
     let state = Text::translate_with_fallback(state_key, state, &[]).with_color(rules::status_colour(enabled));
     match filter {

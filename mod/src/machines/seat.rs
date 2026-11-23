@@ -60,6 +60,8 @@ struct Request {
     dimension: String,
     pos: Pos,
     player: u128,
+    /// A seat of a moving structure (`controller`, `local`) and where its marker goes now.
+    moving: Option<(Pos, Pos, [f64; 3])>,
 }
 
 struct Seat {
@@ -164,7 +166,7 @@ impl Hooks for Seats {
                 if let Ok(mut book) = BOOK.lock()
                     && !book.pending.iter().any(|r| r.player == player.uuid && r.pos == pos)
                 {
-                    book.pending.push(Request { dimension: dimension.to_owned(), pos, player: player.uuid });
+                    book.pending.push(Request { dimension: dimension.to_owned(), pos, player: player.uuid, moving: None });
                 }
                 Flow::Cancel
             }
@@ -239,11 +241,24 @@ impl Hooks for Seats {
 
 /// Makes the seat entity and puts the player on it, replacing one already on that block.
 fn sit(host: &mut dyn Host, dimension: &str, request: &Request, now: i64) {
-    if rules::colour_of_block(&host.block(request.pos)).is_none() {
+    if request.moving.is_none() && rules::colour_of_block(&host.block(request.pos)).is_none() {
         return;
     }
     // `seatEntity.ejectPassengers()` then the new rider: an old marker on this block goes.
-    for id in seats_at(dimension, request.pos).iter().map(|s| s.id) {
+    let old: Vec<u32> = match request.moving {
+        Some((controller, local, _)) => BOOK
+            .lock()
+            .map(|book| {
+                book.seats
+                    .iter()
+                    .filter(|s| s.dimension == dimension && s.carry == Carry::Moving { controller, local })
+                    .map(|s| s.id)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        None => seats_at(dimension, request.pos).iter().map(|s| s.id).collect(),
+    };
+    for id in old {
         host.remove_entity(dimension, id);
         if let Ok(mut book) = BOOK.lock() {
             book.seats.retain(|s| s.id != id);
@@ -257,9 +272,10 @@ fn sit(host: &mut dyn Host, dimension: &str, request: &Request, now: i64) {
         })
         .unwrap_or(1);
     let uuid = rules::marker_uuid(n);
+    let at = request.moving.map_or_else(|| rules::marker_position(request.pos), |(_, _, at)| at);
     let mut nbt = Compound::new();
     nbt.insert("Tags".into(), Tag::List(vec![Tag::String("create:seat".into())]));
-    let Some(id) = host.summon_with_uuid(dimension, MARKER, rules::marker_position(request.pos), nbt, uuid) else {
+    let Some(id) = host.summon_with_uuid(dimension, MARKER, at, nbt, uuid) else {
         return;
     };
     if !host.run_command(&rules::ride_command(dimension, request.player, uuid)) {
@@ -273,8 +289,8 @@ fn sit(host: &mut dyn Host, dimension: &str, request: &Request, now: i64) {
             player: request.player,
             id,
             made: now,
-            carry: Carry::No,
-            last: rules::marker_position(request.pos),
+            carry: request.moving.map_or(Carry::No, |(controller, local, _)| Carry::Moving { controller, local }),
+            last: at,
             missing: 0,
         });
     }
@@ -394,4 +410,42 @@ fn settle_released(host: &mut dyn Host, dimension: &str, now: i64) {
             }
         }
     }
+}
+
+/// `AbstractContraptionEntity.handlePlayerInteraction` for a seat: the player sits on the seat at
+/// `local` of the structure of `controller`, whose cell was `cell` (anchor plus local) when it was
+/// assembled and whose marker goes to `at`. False when the seat has a player on it already, or the
+/// player rides something (`player.isPassenger()`).
+pub(super) fn sit_on_structure(
+    host: &dyn Host,
+    dimension: &str,
+    controller: Pos,
+    local: Pos,
+    cell: Pos,
+    player: u128,
+    at: [f64; 3],
+) -> bool {
+    let players = host.server_players();
+    let Some(me) = players.iter().find(|p| p.uuid == player) else { return false };
+    if u32::try_from(me.entity_id).ok().and_then(|id| host.vehicle_of(id)).is_some() {
+        return false;
+    }
+    let seats: Vec<Seat> = BOOK
+        .lock()
+        .map(|book| {
+            book.seats
+                .iter()
+                .filter(|s| s.dimension == dimension && s.carry == Carry::Moving { controller, local })
+                .map(Seat::copy)
+                .collect()
+        })
+        .unwrap_or_default();
+    if seats.iter().any(|s| rider(host, s) == Rider::Riding) {
+        return false;
+    }
+    if let Ok(mut book) = BOOK.lock() {
+        book.pending.retain(|r| r.player != player);
+        book.pending.push(Request { dimension: dimension.to_owned(), pos: cell, player, moving: Some((controller, local, at)) });
+    }
+    true
 }
