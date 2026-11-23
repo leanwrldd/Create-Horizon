@@ -45,7 +45,7 @@ fn sides_of(host: &dyn Host, pos: Pos) -> Sides {
 }
 
 /// `FluidPipeBlock.canConnectTo`: whether the pipe at `pos` joins what is beside it on `d`.
-pub(crate) fn connects(host: &dyn Host, pos: Pos, d: Dir) -> bool {
+pub(crate) fn connects(host: &mut dyn Host, pos: Pos, d: Dir) -> bool {
     let beside = add(pos, d);
     match host.block(beside).as_str() {
         // `isPipe(neighbour)`: a bracketed pipe is joined along its own straight run only.
@@ -71,7 +71,8 @@ pub(crate) fn connects(host: &dyn Host, pos: Pos, d: Dir) -> bool {
             .is_some_and(|tanks| !tanks.is_empty()),
         "minecraft:air" => false,
         // `hasFluidCapability`: any block holding tanks.
-        _ => host.fluid_tanks(host.dimension(), beside, direction(d.opposite())).is_some(),
+        // The server asks the capability too (`fluid_tanks_mut`), so another mod's tank joins.
+        _ => fluids::has_fluid_capability(host, beside, direction(d.opposite())),
     }
 }
 
@@ -90,9 +91,9 @@ fn refresh_with(host: &mut dyn Host, pos: Pos, bracketed: bool) {
     let prev = sides_of(&*host, pos);
     let preferred = Dir::ALL.into_iter().find(|d| prev[*d as usize]).unwrap_or(Dir::North);
     let next = {
-        let host: &dyn Host = &*host;
         // `updateBlockState` leaves a bracketed pipe as it is.
-        rules::refreshed(bracketed, &prev, preferred, None, |d| connects(host, pos, d))
+        let joins = Dir::ALL.map(|d| connects(&mut *host, pos, d));
+        rules::refreshed(bracketed, &prev, preferred, None, |d| joins[d as usize])
     };
     for d in Dir::ALL {
         if next[d as usize] != prev[d as usize] {

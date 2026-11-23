@@ -61,7 +61,7 @@ pub fn direction(dir: Dir) -> Direction {
 /// `FluidTransportBehaviour.canHaveFlowToward` of the block at `pos`, or a fluid handler, or
 /// nothing: what the pipes and the pump make of their neighbours.
 #[allow(dead_code)] // the pump reads `classify_for`; other modules may ask without a fluid
-pub fn classify(host: &dyn Host, pos: Pos) -> Cell {
+pub fn classify(host: &mut dyn Host, pos: Pos) -> Cell {
     classify_for(host, pos, None)
 }
 
@@ -112,7 +112,7 @@ pub fn transport_faces(host: &dyn Host, pos: Pos) -> Option<Faces> {
 /// [`classify`] for `fluid` passing through: a Smart Fluid Pipe whose filter doesn't take it is
 /// nothing (`SmartPipeBehaviour.canPullFluidFrom`); a closed Fluid Valve is nothing for any fluid
 /// (`ValvePipeBehaviour.canPullFluidFrom`).
-pub fn classify_for(host: &dyn Host, pos: Pos, fluid: Option<&str>) -> Cell {
+pub fn classify_for(host: &mut dyn Host, pos: Pos, fluid: Option<&str>) -> Cell {
     let name = host.block(pos);
     match name.as_str() {
         // `FluidValveBlockEntity.ValvePipeBehaviour`: shut until the pointer has turned `enabled`.
@@ -165,14 +165,26 @@ pub fn classify_for(host: &dyn Host, pos: Pos, fluid: Option<&str>) -> Cell {
         },
         "minecraft:air" => Cell::Nothing,
         _ => {
-            // `hasFluidCapability`: any block holding tanks (ours, other mods', a cauldron).
-            if host.fluid_tanks(host.dimension(), pos, Direction::Up).is_some() {
+            // `hasFluidCapability`: any block entity holding tanks (ours, other mods').
+            if has_fluid_capability(host, pos, Direction::Up) {
                 Cell::Handler
             } else {
                 Cell::Nothing
             }
         }
     }
+}
+
+/// `FluidPropagator.hasFluidCapability(world, pos, face)`: a block entity that gives a fluid handler on `face`.
+/// Ours answer through `Host::fluid_tanks`; a vanilla or another mod's block entity through the `FLUIDS`
+/// capability (`fluid_tanks_mut`, which needs the `&mut` host). Create asks for a block entity first, so a
+/// block without one (the vanilla cauldron) has none, whatever NeoForge's cauldron wrapper offers.
+pub fn has_fluid_capability(host: &mut dyn Host, pos: Pos, face: Direction) -> bool {
+    let dimension = host.dimension();
+    let ours = host.fluid_tanks(dimension, pos, face).is_some();
+    let has_block_entity = ours || host.block_entity_tag(dimension, pos).is_some();
+    let has_handler = ours || (has_block_entity && host.fluid_tanks_mut(dimension, pos, face).is_some());
+    create_kinetics::rules::fluids::has_capability(has_block_entity, has_handler)
 }
 
 /// How much of `fluid` the block at `pos` has room for through `face`: its fillable tanks

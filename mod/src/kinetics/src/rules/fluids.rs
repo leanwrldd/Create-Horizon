@@ -167,9 +167,24 @@ pub fn saved_tank_views(
         .unwrap_or_default()
 }
 
+/// `FluidPropagator.hasFluidCapability`: the block has a block entity (`blockEntity == null` is false) and the
+/// level's fluid-handler capability answers on that face. A block without a block entity, such as the vanilla
+/// cauldron, is not a handler for a pipe or a pump.
+pub fn has_capability(has_block_entity: bool, has_handler: bool) -> bool {
+    has_block_entity && has_handler
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_handler_needs_a_block_entity() {
+        assert!(has_capability(true, true));
+        assert!(!has_capability(true, false));
+        assert!(!has_capability(false, true), "the cauldron has no block entity");
+        assert!(!has_capability(false, false));
+    }
 
     #[test]
     fn a_face_sees_only_its_tanks_with_what_they_saved() {

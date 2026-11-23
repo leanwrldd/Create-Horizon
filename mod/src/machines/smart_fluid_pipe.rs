@@ -121,8 +121,8 @@ impl Hooks for SmartPipes {
         };
         let order = rules::nearest_looking(player.yaw, player.pitch);
         let preferred: Option<Axis> = {
-            let host: &dyn Host = &*host;
-            rules::preferred_axis(|side| fluid_pipe::connects(host, pos, side))
+            let joins = Dir::ALL.map(|side| fluid_pipe::connects(&mut *host, pos, side));
+            rules::preferred_axis(|side| joins[side as usize])
         };
         let (next_face, next_facing) = rules::adjust(face, facing, preferred, &order);
         if next_face != face {

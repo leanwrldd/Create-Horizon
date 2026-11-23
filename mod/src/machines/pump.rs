@@ -78,15 +78,15 @@ fn node(facing: Dir) -> Node {
 
 /// `distributePressureTo` for both sides of the pump, for `fluid` passing (a Smart Fluid Pipe's
 /// filter lets only its own through). Also whether the network holds a filtered pipe.
-fn solve(host: &dyn Host, pos: Pos, facing: Dir, speed: f32, fluid: Option<&str>) -> (Side, Side, bool) {
+fn solve(host: &mut dyn Host, pos: Pos, facing: Dir, speed: f32, fluid: Option<&str>) -> (Side, Side, bool) {
     let mut memo: HashMap<Pos, Cell> = HashMap::new();
     let (pull, push) = {
-        let mut cells = |p: Pos| *memo.entry(p).or_insert_with(|| fluids::classify_for(host, p, fluid));
+        let mut cells = |p: Pos| *memo.entry(p).or_insert_with(|| fluids::classify_for(&mut *host, p, fluid));
         let pull = solve_side(&mut cells, pos, facing.opposite(), true, speed, rules::RANGE);
         let push = solve_side(&mut cells, pos, facing, false, speed, rules::RANGE);
         (pull, push)
     };
-    let filtered = fluid.is_none() && memo.keys().any(|p| fluids::is_filtered(host, *p));
+    let filtered = fluid.is_none() && memo.keys().any(|p| fluids::is_filtered(&*host, *p));
     (pull, push, filtered)
 }
 
@@ -110,7 +110,7 @@ fn transfer(host: &mut dyn Host, pos: Pos, state: &mut State) {
         let (pressure, ends) = if state.filtered {
             let (facing, speed) = (state.facing, state.speed);
             let entry = state.by_fluid.entry(fluid.clone()).or_insert_with(|| {
-                let (pull, push, _) = solve(&*host, pos, facing, speed, Some(&fluid));
+                let (pull, push, _) = solve(&mut *host, pos, facing, speed, Some(&fluid));
                 (pull, push)
             });
             let (pull, push) = entry.clone();
@@ -167,7 +167,7 @@ fn flow(host: &mut dyn Host, pos: Pos, facing: Dir, rpm: f32) {
         .as_ref()
         .is_none_or(|s| s.facing != facing || s.speed != speed || now - s.solved >= SOLVE);
     if stale {
-        let (pull, push, filtered) = solve(&*host, pos, facing, speed, None);
+        let (pull, push, filtered) = solve(&mut *host, pos, facing, speed, None);
         let unchanged = state.as_ref().is_some_and(|s| {
             s.facing == facing
                 && s.speed == speed
