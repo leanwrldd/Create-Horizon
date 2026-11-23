@@ -15,6 +15,8 @@ pub mod observer;
 pub mod placement;
 pub mod propagator;
 pub mod schedule;
+pub mod schedule_edit;
+pub mod schedule_nbt;
 pub mod signal;
 pub mod railways;
 pub mod station;
