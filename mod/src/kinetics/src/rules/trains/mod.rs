@@ -7,6 +7,8 @@ pub mod assembly;
 pub mod bezier;
 pub mod bogey;
 pub mod carriage;
+pub mod carriage_contraption;
+pub mod carriage_pose;
 pub mod edge_blocks;
 pub mod graph;
 pub mod graph_helper;
