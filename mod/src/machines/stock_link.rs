@@ -90,7 +90,7 @@ impl Hooks for StockLinks {
             return;
         }
         let pos = event.pos;
-        network::note_placed(host, pos);
+        network::note_placed(host, pos, event.stack);
         let dimension = host.dimension();
         if host.neighbor_signal(dimension, pos) > 0 {
             host.set_block_property(pos, "powered", "true");
