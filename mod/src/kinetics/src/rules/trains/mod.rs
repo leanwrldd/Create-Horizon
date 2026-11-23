@@ -4,6 +4,7 @@
 
 pub mod bezier;
 pub mod bogey;
+pub mod carriage;
 pub mod graph;
 pub mod navigation;
 pub mod network;

@@ -48,7 +48,9 @@ pub enum RailEvent {
     GroupCreated { id: Uuid, color: super::signal::EdgeGroupColor },
     GroupRemoved { id: Uuid },
     /// `train.isTravellingOn(node)` while its node is removed: `train.detachFromTracks()`.
-    TrainsOnNodeRemoved { graph: Uuid, node: NodeId },
+    /// `edges` are the edges that touched the node (both directions), as they were, for the trains'
+    /// migration data (`TrainMigration` reads the edge a point was on).
+    TrainsOnNodeRemoved { graph: Uuid, node: NodeId, edges: Vec<TrackEdge> },
     /// A node moved to another graph: trains travelling on it take the new graph (`train.graph = target`).
     NodeTransferred { from: Uuid, to: Uuid, node: NodeId },
     /// A whole graph moved into another (`transferAll`).
@@ -64,6 +66,8 @@ struct RemovedNode {
     points: Vec<TrackEdgePoint>,
     /// `(intersection, other node)` of every crossing on the node's edges.
     intersections: Vec<(TrackEdgeIntersection, TrackNode)>,
+    /// Every edge that touched the node, both directions, as they were.
+    edges: Vec<TrackEdge>,
 }
 
 /// `TrackGraph`.
@@ -232,11 +236,15 @@ impl TrackGraph {
         self.nodes_by_id.remove(&removed.net_id);
         self.invalidate_bounds();
 
-        let mut out = RemovedNode { removed: removed.clone(), points: Vec::new(), intersections: Vec::new() };
+        let mut out = RemovedNode { removed: removed.clone(), points: Vec::new(), intersections: Vec::new(), edges: Vec::new() };
         let Some(connections) = self.connections.remove(&removed.net_id) else {
             return Some(out);
         };
         for (other, edge) in &connections {
+            out.edges.push(edge.clone());
+            if let Some(reverse) = self.connections.get(other).and_then(|m| m.get(&removed.net_id)) {
+                out.edges.push(reverse.clone());
+            }
             for r in &edge.edge_data.points {
                 if let Some(p) = self.edge_points.remove(r.ty, r.id) {
                     out.points.push(p);
@@ -413,7 +421,7 @@ impl RailNetworks {
     pub fn remove_node(&mut self, graph: Uuid, location: &TrackNodeLocation, with_level: bool) -> bool {
         let Some(g) = self.graphs.get_mut(&graph) else { return false };
         let Some(r) = g.remove_node_local(location) else { return false };
-        self.events.push(RailEvent::TrainsOnNodeRemoved { graph, node: r.removed.net_id });
+        self.events.push(RailEvent::TrainsOnNodeRemoved { graph, node: r.removed.net_id, edges: r.edges.clone() });
 
         if with_level {
             for p in &r.points {
