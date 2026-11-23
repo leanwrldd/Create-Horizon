@@ -7,6 +7,28 @@ Horizon has no Java runtime, so Create's jar cannot run there; this ports its ru
 It is written on Horizon's **trait API** (named hook points with versioned contracts), not on source mixins, so it
 is not pinned to one Horizon commit.
 
+## Try it (test builds)
+
+Test builds are on the [Releases](https://github.com/leanwrldd/Create-Horizon/releases) page. You need the
+[Horizon Launcher](https://playhorizon.dev), signed in with an account that owns Minecraft: Java Edition. Download
+`install.ps1` from the release and run it:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+It makes an instance of its own (`create-test`) on the Horizon nightly the build is for, installs the mod and has the
+launcher compile it. The mod is Rust source, so it's compiled on your computer: the first build downloads Rust and
+takes about 20 to 30 minutes. It's a native mod, unsandboxed and not reviewed by the Horizon registry; the source is
+this repository.
+
+Or by hand: `horizon-launcher mods add-github https://github.com/leanwrldd/Create-Horizon/releases/tag/<tag>
+--instance <instance> --trust-native-code`, then `horizon-launcher native-build --instance <instance>
+--trust-native-code`.
+
+Keep it away from worlds you care about: a world opened without the mod loses its Create blocks. Report bugs with
+the [bug form](https://github.com/leanwrldd/Create-Horizon/issues/new/choose); each release lists what to test.
+
 ## Progress
 
 ![How much of Create is ported](progress/progress.svg)
@@ -567,54 +589,44 @@ Water Wheel each drove a connected shaft in the in-game MCP test. See [HANDOFF.m
 
 ## Layout
 
+Older paths in the sections above (`native/api/src/...`, `native/kinetics/...`) are now under `mod/src/`
+(`mod/src/machines/`, `mod/src/kinetics/`).
+
 ```
-content/              Horizon declarations, recipes, loot, and item definitions
-native/
-  horizon-mixin.toml  the native bundle
-  kinetics/           create-kinetics: the rotation rules, no game dependency, unit-tested
-  api/                the hooks that put create-kinetics in the game
-    src/ponder/       Ponder's library, storyboard playback, and client hooks
+mod/                  the mod: horizon-mod.toml ([native] pins), Cargo.toml, Cargo.lock (registry lock)
+  src/kinetics/       the rules, no game dependency, unit-tested
+  src/machines/       one module per block or system, on Horizon's mod API
+  src/compat/         the compatibility layer older glue goes through
+  src/ponder/         Ponder's library, storyboard playback, and client hooks
+  src/mixins/         helpers for the [[native.mixin]] game patches
+content/              Horizon declarations, recipes, loot, and item definitions (generated JSON, no art)
 tools/
+  native_build.ps1    stages the package with Create's art and builds it into an instance
+  stage_package.py    assembles mod/ and content/ with the art from a Create JAR under target/package/
+  check_module.sh     runs the rules' tests and type-checks the mod against a Horizon checkout
   gen_content.py      writes Horizon declarations and item definitions
-  build_content.py    imports Create artwork from a local JAR and builds create.hmod
   ponder_storyboards.py  regenerates the Ponder instructions from Create 6.0.10 source
-  ponder_assets.py    packages Create's schematics, captions and Ponder textures from the local JAR
-  check_native.sh     type-checks native/ against a local Horizon checkout
+install.ps1           installs a test build for testers
 ```
 
 ## Build and test
 
-The rules, in seconds:
+You need Python 3.11 or newer, the Horizon Launcher, and Create 6.0.10 for Minecraft 1.21.1 (NeoForge), whose JAR
+the build reads Create's art from (by default from Horizon's `horizon-mods/create-resources/` folder).
 
-```bash
-cargo test --manifest-path native/kinetics/Cargo.toml
-```
+- **Check:** `bash tools/check_module.sh all` runs the rules' tests and type-checks the whole mod against a Horizon
+  checkout at the pinned commit.
+- **Build into an instance:** `powershell -File tools/native_build.ps1 [-Instance <name>]`. It regenerates the module
+  lists, stages the package under `target/package/` and has the launcher compile it. A build takes 15 to 30
+  minutes.
+- **Make a release file:** after staging, run `cargo-horizon-mod horizon-mod build` in `target/package/`. It writes
+  `target/package/target/horizon-mod/create.hmod` (source, data and art); `cargo-horizon-mod horizon-mod check <file>`
+  prints its SHA-256.
 
-The hooks against Horizon's real API (needs a Horizon checkout beside this folder, or its path as an argument;
-the first run compiles Horizon's client library):
-
-```bash
-bash tools/check_native.sh
-```
-
-Build the content mod with Python 3.11 or newer, `cargo-horizon-mod`, and a local copy of
-Create 6.0.10 for Minecraft 1.21.1 (NeoForge). On this machine the JAR is already in
-Horizon’s `create-resources` directory:
-
-```powershell
-python tools/build_content.py "$env:APPDATA/horizon/horizon-mods/create-resources/create-1.21.1-6.0.10.jar"
-Copy-Item content/target/horizon-mod/create.hmod "$env:APPDATA/horizon/instances/create-dev/horizon-mods/"
-```
-
-The builder uses `cargo-horizon-mod` from PATH or the local build under
-`target/horizon-tools/debug/`. Use `--tool` to supply its path explicitly.
-
-Build `native/` for the same instance with
-`horizon-launcher native-build native --instance <instance> --trust-native-code --profile dev`. The first native build downloads
-Rust and takes 20 to 30 minutes. Use a disposable instance: a world opened without the mod loses its blocks.
+Use a disposable instance: a world opened without the mod loses its blocks.
 
 ## Licence and credit
 
 Code here is MIT. Create's gameplay rules are ported from Create's MIT-licensed source, credit to the Creators of
-Create. Create’s original artwork is All Rights Reserved. The build reads models and textures from the local JAR
-and packages them into a local `create.hmod`. Keep that generated package local.
+Create. Create's original artwork (models, textures, sounds) is All Rights Reserved and isn't in this repository.
+Release files include it with the permission of Create's developers; don't redistribute the art separately.

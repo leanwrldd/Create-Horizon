@@ -2,47 +2,64 @@
 //! `AbstractContraptionEntity.handlePlayerInteraction`, `ContraptionInteractionPacket`): a right click whose
 //! ray meets a block of a structure before any real block opens that block's behaviour: levers switch,
 //! wooden doors, trapdoors and fence gates open, seats seat, Deployers swap the held item (or turn their mode
-//! for the Wrench) and Contraption Controls switch actors. The rules are
-//! `create_kinetics::rules::contraption_click`; this reads the structure and writes what they say.
+//! for the Wrench), Contraption Controls switch actors (or, on an elevator's cabin, call the chosen floor).
+//! The rules are `create_kinetics::rules::contraption_click`; this reads the structure and writes what they say.
 //!
 //! # Where the click is heard
 //!
-//! A structure is not a block, so the game aims the click at what is behind it, or at the air. Three hooks
-//! hear that, all handled on the server (the client lets the click through, as every other machine here does):
+//! A structure is not a block, so the game aims the click at what is behind it, or at the air. Hooks hear that:
 //!
 //! - `right_click_block` (both sides): the click aimed at a real block. The structure wins when its block is
-//!   nearer than the point clicked (Create clips the ray to `mc.hitResult`).
+//!   nearer than the point clicked (Create clips the ray to `mc.hitResult`). **The client cancels it itself**
+//!   (Create's `InteractionKeyMappingTriggered` does): it rays against the outlines the controller's update
+//!   tag carries (`Outline` in each palette entry, beside the collision `Shape`), so the game's own prediction
+//!   (a block placed at the face behind) never shows. The use packet still reaches the server, which takes it.
 //! - `right_click_item` (both sides): a held item, aimed at the air (a click on a real block is heard by the hook
-//!   above, and the item hook it falls through to is ignored in the same tick).
+//!   above, and the item hook it falls through to is ignored in the same tick). The client cancels it the same
+//!   way, and, as a cancelled item use sends nothing, sends the click as a message.
 //! - `right_click_empty` (**client only**, empty hand, nothing aimed at): the client sends one message
 //!   (`create:structure_click`), the server rays from where its player stands, looks and reaches.
+//! - `mouse_scrolling` (client): the wheel over an elevator's Controls chooses the floor
+//!   (`ElevatorControlsHandler.onScroll`); the client sends the steps, the server keeps the choice.
 //!
-//! A click that opens something is cancelled with `Success` (Create cancels the use and does not swing).
+//! A click a structure's block takes is cancelled with `Consume` (Create cancels the use and does not swing).
+//! Create's client cancels every click that meets a structure's block, whether the block does anything or not
+//! (a stone block, a chest): so does this.
 //!
 //! # Known differences from Create, for the README
 //!
-//! - The ray starts at the server's idea of the eye (position, eye height, yaw and pitch) and reaches 4.5 blocks
-//!   (5 in creative), not the player's `block_interaction_range` attribute.
-//! - The client does not cancel the click itself (Create's client does, before the packet): the game's own
-//!   prediction (a block placed at the face behind) is corrected by the server's answer.
-//! - Only the main hand acts (the Deployer's swap, the Wrench).
-//! - `Contraption.disabledActors` is kept in memory with the actors (not saved with the structure), so a
-//!   reload starts from the Controls' saved `Disabled` again. The Controls' button does not sink on a structure,
+//! - The server's ray starts at its idea of the eye (position, eye height, yaw and pitch) and reaches the
+//!   player's `block_interaction_range` attribute (4.5 survival, 5 creative when it can't be read), as the
+//!   client's does.
+//! - Only the main hand acts (the Deployer's swap, the Wrench): Create's client acts on the first hand whose key
+//!   event meets the structure, which is the main hand, and cancelling it ends the click, so the off hand never
+//!   gets a turn. Here the off hand's turn after a taken click is cancelled likewise.
+//! - `Contraption.disabledActors` is saved with the structure (`DisabledActors` in the controller's
+//!   `Contraption`, written when the Controls are clicked and read when the actors start again), as strings
+//!   (Create saves item stacks). The Controls' button does not sink on a structure,
 //!   and `ContraptionDisableActorPacket` (the client's copy of the list) is not sent: the client draws what the
 //!   server's actors write.
-//! - The Controls' elevator branch (`ElevatorTargetFloorPacket`), the Train Door, the Conductor's burner, the
-//!   Depot's `MountedDepotInteractionBehaviour`, train controls and `handlePlayerStorageInteraction` (a chest on
-//!   a structure) are not here.
+//! - The elevator's Controls choose the floor on the server (Create keeps `ElevatorFloorSelection` in the
+//!   client's actor context, and draws the floor's name on the Controls): the wheel steps a choice kept for each
+//!   player, the action bar names it, and the click calls it (`ElevatorTargetFloorPacket.handle`'s checks). The
+//!   Controls' screen and indicator are not drawn.
+//! - `handlePlayerStorageInteraction`: a chest, barrel or shulker box on a structure opens a chest view of its own
+//!   slots (`open_storage`; a double chest only the clicked half, an Item Vault nothing). The Train Door, the
+//!   Conductor's burner, the Depot's `MountedDepotInteractionBehaviour` and train controls are not here: a click on
+//!   such a block is taken (cancelled) and does nothing.
 //! - A Deployer's fake player is not made for the swap: the hand is this port's own (`actor_tools`).
+
+use std::collections::BTreeMap;
 
 use create_kinetics::Pos;
 use create_kinetics::rules::collider::StructurePose;
 use create_kinetics::rules::contraption_click::{
-    self as rules, ClickBlock, DeployerClick, Hit, Interaction, Route, Toggle,
+    self as rules, ClickBlock, DeployerClick, FloorClick, Hit, Interaction, Route, Toggle,
 };
 use create_kinetics::rules::nixie_tube::look_vector;
 
-use crate::compat::{Adapter, Compound, Flow, Hooks, Host, ItemStack, NetFromClientEvent, Tag};
+use crate::compat::TextExt;
+use crate::compat::{Adapter, Compound, Hooks, Host, ItemStack, MenuInputClosedEvent, NetFromClientEvent, Tag, Text};
 use crate::machines::contraption::{self as engine, CONTRAPTION, Moving};
 use crate::solid::registry::{self, Entry, Side};
 use crate::solid::shapes;
@@ -50,56 +67,166 @@ use crate::util;
 
 pub const CHANNEL: &str = "create:structure_click";
 const WRENCH: &str = "create:wrench";
+const CONTROLS: &str = "create:contraption_controls";
+const ELEVATOR_PULLEY: &str = "create:elevator_pulley";
 /// `SoundSource.BLOCKS`.
 const BLOCKS: usize = 4;
-/// `Player.blockInteractionRange`, survival and creative.
+/// `Player.blockInteractionRange` when the attribute can't be read: survival and creative.
 const REACH: f64 = 4.5;
 const CREATIVE_REACH: f64 = 5.0;
 const CREATIVE: i32 = 1;
+const REACH_ATTRIBUTE: &str = "minecraft:block_interaction_range";
+
+/// `player.blockInteractionRange()`: the attribute's value (the Extendo Grip raises it), else the default for the mode.
+fn reach_of(host: &dyn mod_api::ServerHost, who: u128, game_mode: i32) -> f64 {
+    host.player(who)
+        .and_then(|player| host.living(player.entity()))
+        .and_then(|living| living.attribute_value(host, REACH_ATTRIBUTE))
+        .filter(|reach| reach.is_finite() && *reach > 0.0)
+        .unwrap_or(if game_mode == CREATIVE { CREATIVE_REACH } else { REACH })
+}
 
 struct Shared;
 
+/// What a message of the client says (the first byte of its data).
+#[derive(Clone, Copy, Debug)]
+enum Message {
+    /// A click in the air with an empty hand (`right_click_empty`), or with an item a structure took.
+    Click,
+    /// The wheel turned over an elevator's Controls by this many steps.
+    Scroll(i8),
+}
+
 impl Hooks for Shared {
-    /// The client's click in the air with an empty hand.
+    /// The client's click in the air with an empty hand, or its wheel over an elevator's Controls.
     fn net_from_client(&self, host: &mut dyn Host, event: &mut NetFromClientEvent<'_>) {
         if event.channel != CHANNEL {
             return;
         }
+        let message = match event.data {
+            [3, steps, ..] => Message::Scroll(*steps as i8),
+            _ => Message::Click,
+        };
         // `ServerHost` is behind the adapter: the message is answered where the hook can reach it.
         if let Some(pending) = PENDING.lock().ok().as_mut() {
             if pending.len() < 64 {
-                pending.push(event.player);
+                pending.push((event.player, message));
             }
         }
         let _ = host;
     }
+
+    /// A structure chest's view closes: the slots go back into the carried block's `Items`. What arrived in the block
+    /// while the view was open (an actor's drops) goes to the player with whatever the view keeps; if the structure or
+    /// the block is gone, everything left in the slots goes to the player (the compat layer hands the slots back).
+    fn menu_input_closed(&self, host: &mut dyn Host, event: &mut MenuInputClosedEvent<'_>) {
+        let Some(open) = lock_views().remove(&event.window) else { return };
+        let Some(entity) = host.mod_block_entity(open.controller) else { return };
+        let Some(live) = engine::live(&open.dimension, open.controller, &entity.nbt) else { return };
+        let mut moving = live.moving.clone();
+        let Some(block) = moving.blocks.iter_mut().find(|b| b.local == open.local && b.state.name == open.name) else {
+            return;
+        };
+        let arrived = stored_items(block.data.as_ref(), open.slots).into_iter().flatten();
+        let mut entries = Vec::new();
+        for (index, slot) in event.slots.iter_mut().enumerate().take(open.slots) {
+            if let Some(stack) = slot.take()
+                && let Tag::Compound(mut tag) = util::stack_tag(&stack)
+            {
+                tag.insert("Slot".into(), Tag::Byte(index as i8));
+                entries.push(Tag::Compound(tag));
+            }
+        }
+        block.data.get_or_insert_with(Compound::new).insert("Items".into(), Tag::List(entries));
+        let mut back = arrived;
+        for slot in event.slots.iter_mut() {
+            if slot.is_none() {
+                *slot = back.next();
+            }
+        }
+        for rest in back {
+            util::spawn_item(host, util::centre(open.controller), &rest, [0.0; 3], 10);
+        }
+        write_host(host, &open.dimension, open.controller, moving);
+        host.play_sound("minecraft:block.chest.close", util::centre(open.controller), BLOCKS, 0.5, 1.0);
+    }
+}
+
+/// A chest view opened on a storage block of a structure, by window id.
+struct OpenStorage {
+    dimension: String,
+    controller: Pos,
+    local: Pos,
+    name: String,
+    slots: usize,
+}
+
+static STORAGE_VIEWS: std::sync::Mutex<BTreeMap<i32, OpenStorage>> = std::sync::Mutex::new(BTreeMap::new());
+
+fn lock_views() -> std::sync::MutexGuard<'static, BTreeMap<i32, OpenStorage>> {
+    STORAGE_VIEWS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// A carried storage block's saved `Items`, slot by slot (`Slot` as a byte or an int).
+fn stored_items(data: Option<&Compound>, slots: usize) -> Vec<Option<ItemStack>> {
+    let mut items = vec![None; slots];
+    if let Some(Tag::List(list)) = data.and_then(|data| util::get(data, "Items")) {
+        for entry in list {
+            let index = match entry.get("Slot") {
+                Some(Tag::Byte(slot)) => usize::from(*slot as u8),
+                Some(Tag::Int(slot)) => usize::try_from(*slot).unwrap_or(usize::MAX),
+                _ => continue,
+            };
+            if index < slots {
+                items[index] = util::stack_of(entry);
+            }
+        }
+    }
+    items
 }
 
 pub fn hooks() -> Box<dyn Hooks> {
     Box::new(Shared)
 }
 
-/// Players whose empty-handed click arrived, waiting for the level tick (the hook is given the old host,
+/// Players whose message arrived, waiting for the level tick (the hook is given the old host,
 /// and the new API's `ServerHost` is what the structure's shapes need).
-static PENDING: std::sync::Mutex<Vec<u128>> = std::sync::Mutex::new(Vec::new());
+static PENDING: std::sync::Mutex<Vec<(u128, Message)>> = std::sync::Mutex::new(Vec::new());
 
 /// The level tick: answers the messages that arrived.
 pub fn level_tick(host: &mut dyn mod_api::ServerHost) {
-    let waiting: Vec<u128> = match PENDING.lock() {
+    let waiting: Vec<(u128, Message)> = match PENDING.lock() {
         Ok(mut pending) => std::mem::take(&mut *pending),
         Err(_) => return,
     };
-    for who in waiting {
-        handle(host, who, None);
+    for (who, message) in waiting {
+        match message {
+            Message::Click => {
+                // The same click may have come twice (the item hook and the client's message).
+                if !repeated(host, who) && handle(host, who, None) {
+                    taken(host, who);
+                }
+            }
+            Message::Scroll(steps) => scroll(host, who, steps),
+        }
     }
 }
 
 // --- the hooks ---------------------------------------------------------------------------------------------
 
-/// `right_click_block` on either side. Cancels (Success) a click a structure's block took.
+/// `right_click_block` on either side. Cancels a click a structure's block took.
 pub fn right_click_block(host: &mut mod_api::HostSide<'_>, event: &mut mod_api::RightClickBlockEvent<'_>) -> mod_api::Flow {
-    let mod_api::HostSide::Server(host) = host else { return mod_api::Flow::Continue };
     let click = event.click;
+    let host = match host {
+        mod_api::HostSide::Server(host) => host,
+        mod_api::HostSide::Client(host) => {
+            // `ContraptionHandlerClient`: the structure's block nearer than the one aimed at takes the click.
+            let host: &dyn mod_api::ClientHost = &**host;
+            let Some(view) = client_view(host) else { return mod_api::Flow::Continue };
+            let aimed = Some(distance(view.eye, click.hit.point));
+            return if client_hit(&view, aimed).is_some() { cancel(event.cancellation_result) } else { mod_api::Flow::Continue };
+        }
+    };
     if click.hand != mod_api::Hand::Main {
         // The off hand's turn of a click the main hand took.
         return if repeated(&mut **host, click.player) { cancel(event.cancellation_result) } else { mod_api::Flow::Continue };
@@ -118,8 +245,24 @@ pub fn right_click_block(host: &mut mod_api::HostSide<'_>, event: &mut mod_api::
 
 /// `right_click_item` on either side: a held item, aimed at the air.
 pub fn right_click_item(host: &mut mod_api::HostSide<'_>, event: &mut mod_api::RightClickItemEvent<'_>) -> mod_api::Flow {
-    let mod_api::HostSide::Server(host) = host else { return mod_api::Flow::Continue };
     let click = event.click;
+    let host = match host {
+        mod_api::HostSide::Server(host) => host,
+        mod_api::HostSide::Client(host) => {
+            let Some(view) = client_view(&**host) else { return mod_api::Flow::Continue };
+            // A click on a real block is `right_click_block`'s: it hears this one first when the block took it.
+            let aimed = aimed_distance(&**host, view.eye);
+            if client_hit(&view, aimed).is_none() {
+                return mod_api::Flow::Continue;
+            }
+            if click.hand == mod_api::Hand::Main {
+                // A cancelled item use sends nothing: the click goes as a message.
+                let mut adapter = Adapter::ClientMut(&mut **host);
+                let _ = Host::net_send_to_server(&mut adapter, CHANNEL, &[2]);
+            }
+            return cancel(event.cancellation_result);
+        }
+    };
     if repeated(&mut **host, click.player) {
         return cancel(event.cancellation_result);
     }
@@ -140,9 +283,144 @@ pub fn right_click_empty(host: &mut dyn mod_api::ClientHost, event: &mut mod_api
     let _ = Host::net_send_to_server(&mut adapter, CHANNEL, &[1]);
 }
 
-fn cancel(result: &mut mod_api::InteractionResult) -> mod_api::Flow {
-    *result = mod_api::InteractionResult::Success;
+/// `ElevatorControlsHandler.onScroll` (client): the wheel over an elevator's Controls is the floor's, not the hotbar's.
+pub fn mouse_scrolling(host: &mut dyn mod_api::ClientHost, event: &mut mod_api::MouseScrollingEvent) -> mod_api::Flow {
+    if !registry::client_any() || !host.playing() {
+        return mod_api::Flow::Continue;
+    }
+    let delta = event.scroll[1];
+    if delta == 0.0 {
+        return mod_api::Flow::Continue;
+    }
+    let Some(view) = client_view(&*host) else { return mod_api::Flow::Continue };
+    let aimed = aimed_distance(&*host, view.eye);
+    let Some(hit) = client_hit(&view, aimed) else { return mod_api::Flow::Continue };
+    if hit.name != CONTROLS || !hit.elevator {
+        return mod_api::Flow::Continue;
+    }
+    // Rounded away from zero (a touchpad's 0.9 is a step).
+    let steps = if delta > 0.0 { delta.ceil() } else { delta.floor() }.clamp(-100.0, 100.0) as i8;
+    let mut adapter = Adapter::ClientMut(host);
+    let _ = Host::net_send_to_server(&mut adapter, CHANNEL, &[3, steps as u8]);
     mod_api::Flow::Cancel
+}
+
+/// Create cancels the use and does not swing: `Consume`.
+fn cancel(result: &mut mod_api::InteractionResult) -> mod_api::Flow {
+    *result = mod_api::InteractionResult::Consume;
+    mod_api::Flow::Cancel
+}
+
+// --- the client's ray -----------------------------------------------------------------------------------------
+
+/// The local player's eye, look and reach (`ContraptionHandlerClient.getRayInputs`).
+struct View {
+    eye: [f64; 3],
+    look: [f64; 3],
+    reach: f64,
+}
+
+fn client_view(host: &dyn mod_api::ClientHost) -> Option<View> {
+    if !registry::client_any() {
+        return None;
+    }
+    let camera = host.camera()?;
+    let eye = [camera.position[0], camera.position[1] + f64::from(camera.eye_height), camera.position[2]];
+    let reach = host
+        .camera_entity()
+        .and_then(|entity| host.living(entity))
+        .and_then(|living| living.attribute_value(host, REACH_ATTRIBUTE))
+        .filter(|reach| reach.is_finite() && *reach > 0.0)
+        .unwrap_or(REACH);
+    Some(View { eye, look: look_vector(camera.yaw, camera.pitch), reach })
+}
+
+/// How far the crosshair's block or entity is from the eye (`mc.hitResult`).
+fn aimed_distance(host: &dyn mod_api::ClientHost, eye: [f64; 3]) -> Option<f64> {
+    match host.crosshair_target()? {
+        mod_api::CrosshairTarget::Block { hit, .. } => Some(distance(eye, hit.point)),
+        mod_api::CrosshairTarget::Entity { point, .. } => Some(distance(eye, point)),
+        _ => None,
+    }
+}
+
+/// The structure block the client's ray meets before `aimed`, if any.
+fn client_hit(view: &View, aimed: Option<f64>) -> Option<crate::solid::client::ClientHit> {
+    let reach = rules::ray_reach(view.reach, aimed);
+    let hit = crate::solid::client::click_ray(view.eye, view.look, reach)?;
+    rules::structure_takes_click(hit.distance, aimed).then_some(hit)
+}
+
+// --- the elevator's floor choice ---------------------------------------------------------------------------------
+
+/// The floor each player chose on each elevator's Controls (`ElevatorFloorSelection.currentIndex`): by
+/// dimension, controller and player.
+static CHOSEN: std::sync::Mutex<Option<std::collections::HashMap<(String, Pos, u128), usize>>> = std::sync::Mutex::new(None);
+
+fn chosen(dimension: &str, controller: Pos, who: u128) -> usize {
+    CHOSEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .and_then(|map| map.get(&(dimension.to_owned(), controller, who)).copied())
+        .unwrap_or(0)
+}
+
+fn choose(dimension: &str, controller: Pos, who: u128, index: usize) {
+    let mut guard = CHOSEN.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let map = guard.get_or_insert_with(Default::default);
+    if map.len() > 256 {
+        map.clear();
+    }
+    map.insert((dimension.to_owned(), controller, who), index);
+}
+
+/// The line the action bar shows for a floor (Create draws it on the Controls: `currentShortName`,
+/// `currentLongName`, and the unreachable text in place of the long name).
+fn floor_line(short: &str, long: &str, unreachable: bool) -> Text {
+    if unreachable {
+        let reason = Text::translate_with_fallback("create.contraption.controls.floor_unreachable", "Unreachable", &[]);
+        return Text::translate_with_fallback("create.contraption.controls.floor_line", "%s: %s", &[Text::literal(short.to_owned()), reason]);
+    }
+    Text::literal(if long.is_empty() { short.to_owned() } else { format!("{short}: {long}") })
+}
+
+/// `ElevatorControlsHandler.onScroll` on the server: the choice moves, and the action bar says where it is.
+fn scroll(host: &mut dyn mod_api::ServerHost, who: u128, steps: i8) {
+    if steps == 0 {
+        return;
+    }
+    let Some(game_mode) = player_mode(host, who) else { return };
+    if game_mode == util::SPECTATOR {
+        return;
+    }
+    let Some((found, _)) = find(host, who, None, game_mode) else { return };
+    let Some(nbt) = found.elevator.as_ref() else { return };
+    if found.name != CONTROLS {
+        return;
+    }
+    let dimension = host.dimension().to_owned();
+    let mut adapter = Adapter::Server(&mut *host);
+    let Some(floors) = super::elevator::floors_of(&adapter, &dimension, nbt) else { return };
+    if floors.heights.is_empty() {
+        return;
+    }
+    let before = chosen(&dimension, found.controller, who);
+    let index = rules::scroll_floor(before, f64::from(steps), floors.heights.len());
+    choose(&dimension, found.controller, who, index);
+    let unreachable = floors.heights[index] < floors.min || floors.heights[index] > floors.max;
+    let (short, long) = &floors.names[index];
+    Host::action_bar(&mut adapter, who, floor_line(short, long, unreachable));
+    if index != before {
+        // `AllSoundEvents.SCROLL_VALUE`: a rising tick as the choice goes up the list.
+        let pitch = 1.0 + 0.5 * index as f32 / floors.heights.len() as f32;
+        Host::play_sound(&mut adapter, "minecraft:block.note_block.hat", found.world, BLOCKS, 1.0, pitch);
+    }
+}
+
+fn player_mode(host: &mut dyn mod_api::ServerHost, who: u128) -> Option<i32> {
+    let adapter = Adapter::Server(host);
+    Host::server_players(&adapter).iter().find(|p| p.uuid == who).map(|p| p.game_mode)
 }
 
 // --- the click's memory (`click.rs`) -----------------------------------------------------------------------
@@ -207,13 +485,17 @@ struct Found {
     hit: Hit,
     world: [f64; 3],
     distance: f64,
+    /// The name of the block hit.
+    name: String,
+    /// The controller's saved data when it is an elevator pulley (the cabin's floors are read from it).
+    elevator: Option<Compound>,
 }
 
 /// `rayTraceContraption` for every structure of the level: the nearest hit within `limit` (the distance to
 /// the real block aimed at, if any) and the reach.
 fn find(host: &mut dyn mod_api::ServerHost, who: u128, limit: Option<f64>, game_mode: i32) -> Option<(Found, Moving)> {
     let (eye, look) = eye_of(host, who)?;
-    let reach = if game_mode == CREATIVE { CREATIVE_REACH } else { REACH };
+    let reach = reach_of(&*host, who, game_mode);
     let reach = limit.map_or(reach, |l| l.min(reach));
     let dimension = host.dimension();
     let level = host.level(dimension)?;
@@ -237,7 +519,9 @@ fn find(host: &mut dyn mod_api::ServerHost, who: u128, limit: Option<f64>, game_
         let world = pose.to_global_vector(hit.point, 1.0, false);
         let d = distance(eye, world);
         if best.as_ref().is_none_or(|(b, _)| d < b.distance) {
-            best = Some((Found { controller, entry, pose, hit, world, distance: d }, live.moving.clone()));
+            let name = live.moving.blocks.iter().find(|b| b.local == hit.local).map(|b| b.state.name.clone()).unwrap_or_default();
+            let elevator = (entity.id == ELEVATOR_PULLEY).then(|| entity.nbt.clone());
+            best = Some((Found { controller, entry, pose, hit, world, distance: d, name, elevator }, live.moving.clone()));
         }
     }
     best
@@ -264,11 +548,14 @@ fn handle(host: &mut dyn mod_api::ServerHost, who: u128, limit: Option<f64>) -> 
     let Some(block) = moving.blocks.iter().find(|b| b.local == found.hit.local) else { return false };
     let wrench = held.as_ref().is_some_and(|stack| &*stack.item == WRENCH);
     let dimension = host.dimension().to_owned();
-    match rules::route(&block.state.name, wrench) {
-        Route::Storage => false,
+    // Create's client cancels the click whatever `handlePlayerInteraction` answers: a block that does nothing
+    // (stone, a chest) still takes it.
+    let _acted = match rules::route(&block.state.name, wrench) {
+        Route::Storage => open_storage(host, &dimension, &found, moving, who),
         Route::Sit => sit(host, &dimension, &found, who),
         Route::Behaviour(kind) => behave(host, &dimension, &found, moving, kind, who, held, wrench),
-    }
+    };
+    true
 }
 
 fn registry_has_server_structures(host: &mut dyn mod_api::ServerHost) -> bool {
@@ -334,19 +621,48 @@ fn apply_toggle(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Fou
 /// (`engine::set_live`, as actors do): the controller's next tick rebuilds the colliders from it
 /// (the new `Live` is a new token) and the update tag sends the new states to the clients.
 fn write(host: &mut dyn mod_api::ServerHost, dimension: &str, controller: Pos, moving: Moving) {
+    write_host(&mut Adapter::Server(host), dimension, controller, moving);
+}
+
+fn write_host(host: &mut dyn Host, dimension: &str, controller: Pos, moving: Moving) {
     let saved = moving.to_nbt(false);
-    let mut adapter = Adapter::Server(&mut *host);
-    Host::change_mod_block_entity(&mut adapter, controller, &mut |entity| {
+    host.change_mod_block_entity(controller, &mut |entity| {
         entity.nbt.insert(CONTRAPTION.into(), Tag::Compound(saved.clone()));
     });
-    Host::block_entity_sync(&mut adapter, controller);
+    host.block_entity_sync(controller);
     engine::set_live(dimension, controller, moving);
+}
+
+/// `MountedStorageManager.handlePlayerStorageInteraction`: a chest, barrel or shulker box on a structure opens its own
+/// slots (a double chest opens the half that was clicked; an Item Vault opens nothing here). The block is emptied while
+/// the view is open, so a structure that is set down meanwhile can't give the same items out twice; `menu_input_closed`
+/// writes the view back.
+fn open_storage(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, mut moving: Moving, who: u128) -> bool {
+    let local = found.hit.local;
+    let Some(block) = moving.blocks.iter_mut().find(|b| b.local == local) else { return false };
+    let name = block.state.name.clone();
+    let Some(slots) = create_kinetics::rules::portable_interface::item_slots(&name).filter(|n| *n <= 54) else {
+        return false;
+    };
+    let items = stored_items(block.data.as_ref(), slots);
+    let rows = slots.div_ceil(9).clamp(1, 6) as u8;
+    let title = Text::literal(name.rsplit(':').next().unwrap_or(&name).replace('_', " "));
+    let window = Host::open_menu_with_input(&mut Adapter::Server(&mut *host), who, rows, title, items, 0..slots);
+    let Some(window) = window else { return false };
+    block.data.get_or_insert_with(Compound::new).insert("Items".into(), Tag::List(Vec::new()));
+    write(host, dimension, found.controller, moving);
+    lock_views().insert(window, OpenStorage { dimension: dimension.to_owned(), controller: found.controller, local, name, slots });
+    Host::play_sound(&mut Adapter::Server(host), "minecraft:block.chest.open", found.world, BLOCKS, 0.5, 1.0);
+    true
 }
 
 // --- Contraption Controls -----------------------------------------------------------------------------------
 
 /// `ContraptionControlsMovingInteraction.handlePlayerInteraction`.
-fn controls(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, moving: Moving, who: u128) -> bool {
+fn controls(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, mut moving: Moving, who: u128) -> bool {
+    if let Some(nbt) = &found.elevator {
+        return elevator_controls(host, dimension, found, nbt, who);
+    }
     let local = found.hit.local;
     let filter_stack = moving
         .blocks
@@ -356,13 +672,36 @@ fn controls(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, 
         .and_then(|data| util::get(data, "Filter"))
         .and_then(util::stack_of);
     let filter = filter_stack.as_ref().map_or_else(String::new, |s| s.item.to_string());
-    let Some(disable) = super::actor::toggle_controls(dimension, found.controller, &filter) else { return false };
+    let Some((disable, list)) = super::actor::toggle_controls(dimension, found.controller, &filter) else { return false };
+    // `Contraption.disabledActors` is saved with the structure.
+    moving.disabled = Some(list);
+    write(host, dimension, found.controller, moving);
     let mut adapter = Adapter::Server(host);
     let line = super::contraption_controls::status(filter_stack.as_ref(), !disable);
     Host::action_bar(&mut adapter, who, line);
     // `AllSoundEvents.CONTROLLER_CLICK`, with the stand-in the Controls on the ground use.
     let pitch = create_kinetics::rules::contraption_controls::click_pitch(disable);
     Host::play_sound(&mut adapter, "minecraft:entity.item_frame.add_item", found.world, BLOCKS, 0.35, pitch);
+    true
+}
+
+/// `ContraptionControlsMovingInteraction.elevatorInteraction`: the sounds (the server's branch), and the floor the
+/// player chose (the client's branch sends `ElevatorTargetFloorPacket`, whose handler is `call_floor`).
+fn elevator_controls(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, nbt: &Compound, who: u128) -> bool {
+    let mut adapter = Adapter::Server(host);
+    // `CONTROLLER_CLICK` at pitch 1.5 and `CONTRAPTION_ASSEMBLE` (0.75, 0.8), with the stand-ins used elsewhere.
+    Host::play_sound(&mut adapter, "minecraft:entity.item_frame.add_item", found.world, BLOCKS, 1.0, 1.5);
+    Host::play_sound(&mut adapter, "minecraft:block.piston.contract", found.world, BLOCKS, 0.75, 0.8);
+    let Some(floors) = super::elevator::floors_of(&adapter, dimension, nbt) else { return true };
+    let index = chosen(dimension, found.controller, who);
+    match rules::floor_click(&floors.heights, index, floors.target, floors.min, floors.max) {
+        FloorClick::Call(y) => super::elevator::call_floor(&mut adapter, dimension, floors.coords, y),
+        FloorClick::Unreachable => {
+            let (short, long) = &floors.names[index.min(floors.names.len() - 1)];
+            Host::action_bar(&mut adapter, who, floor_line(short, long, true));
+        }
+        FloorClick::AlreadyTarget | FloorClick::NoFloors => {}
+    }
     true
 }
 

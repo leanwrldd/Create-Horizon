@@ -127,7 +127,10 @@ impl Run {
         let controls = controls_of(moving);
         let refs: Vec<(bool, Option<&str>)> = controls.iter().map(|(d, f)| (*d, f.as_deref())).collect();
         // `ElevatorContraption.disableActorOnStart` does nothing.
-        let disabled = if structure.controls_disable_on_start() {
+        // A list the structure saved (a click on the Controls, `Contraption.disabledActors`) wins.
+        let disabled = if let Some(saved) = &moving.disabled {
+            saved.clone()
+        } else if structure.controls_disable_on_start() {
             rules::disabled_filters(&refs)
         } else {
             Vec::new()
@@ -210,6 +213,30 @@ impl Store {
             .iter()
             .filter_map(|slot| slot.stack.as_ref().filter(|stack| stack.count > 0))
             .any(|stack| items.to_stack(stack).is_some_and(|game| test(&game)))
+    }
+
+    /// How many items of the kind `extract` would take first pass `test`: `ItemHelper.extract(.., EXACTLY,
+    /// amount, true)` asks whether this is at least `amount`.
+    pub fn available(&mut self, host: &dyn Host, test: &dyn Fn(&ItemStack) -> bool) -> i32 {
+        let items = self.items(host);
+        let mut wanted: Option<&str> = None;
+        let mut available = 0;
+        for slot in &items.inventory.slots {
+            let Some(stack) = &slot.stack else { continue };
+            match wanted {
+                Some(key) if stack.key != key => continue,
+                Some(_) => {}
+                None => {
+                    let Some(game) = items.to_stack(stack) else { continue };
+                    if !test(&game) {
+                        continue;
+                    }
+                    wanted = Some(&stack.key);
+                }
+            }
+            available += stack.count;
+        }
+        available
     }
 
     /// `ItemHelper.extract(inventory, test, mode, amount, false)`: up to (or exactly, when `exact`)
@@ -475,7 +502,7 @@ pub(super) fn with_actor<R>(dimension: &str, controller: Pos, local: Pos, f: imp
 /// `ContraptionControlsMovingInteraction`'s change of `Contraption.disabledActors` and
 /// `setActorsActive`: the Controls' `filter` (a block name, "" for none) clicked. Returns whether the
 /// click disabled the filter; `None` when no actor runs (the structure has no actors).
-pub(super) fn toggle_controls(dimension: &str, controller: Pos, filter: &str) -> Option<bool> {
+pub(super) fn toggle_controls(dimension: &str, controller: Pos, filter: &str) -> Option<(bool, Vec<String>)> {
     with_runs(|runs| {
         let run = runs.get_mut(&(dimension.to_owned(), controller))?;
         let names: Vec<String> = run
@@ -489,6 +516,6 @@ pub(super) fn toggle_controls(dimension: &str, controller: Pos, filter: &str) ->
         for actor in &mut run.actors {
             actor.ctx.disabled = actor.state.name != rules::CONTROLS && rules::is_disabled(&run.disabled, &actor.state.name);
         }
-        Some(disable)
+        Some((disable, run.disabled.clone()))
     })
 }

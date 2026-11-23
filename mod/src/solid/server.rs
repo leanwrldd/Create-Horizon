@@ -62,7 +62,10 @@ pub fn observe(host: &mut dyn ServerHost, pos: Pos, entity: &ModBlockEntity) {
         _ => {
             // The game's shapes of the structure's states: asked once for each, put in the update
             // tag (a client can't ask), so it is sent again when any was new.
-            if shapes::fill(&*host, level, pos, live.moving.blocks.iter().map(|b| &b.state)) {
+            // The outlines (what a click's ray meets) ride with them, for the client's own ray.
+            let filled = shapes::fill(&*host, level, pos, live.moving.blocks.iter().map(|b| &b.state));
+            let outlined = shapes::fill_outlines(&*host, level, pos, live.moving.blocks.iter().map(|b| &b.state));
+            if filled || outlined {
                 host.block_entity_sync(pos);
             }
             token = token_of(shapes::version());
