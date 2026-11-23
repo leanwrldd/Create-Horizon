@@ -212,6 +212,30 @@ impl Store {
             .any(|stack| items.to_stack(stack).is_some_and(|game| test(&game)))
     }
 
+    /// How many items of the kind `extract` would take first pass `test`: `ItemHelper.extract(.., EXACTLY,
+    /// amount, true)` asks whether this is at least `amount`.
+    pub fn available(&mut self, host: &dyn Host, test: &dyn Fn(&ItemStack) -> bool) -> i32 {
+        let items = self.items(host);
+        let mut wanted: Option<&str> = None;
+        let mut available = 0;
+        for slot in &items.inventory.slots {
+            let Some(stack) = &slot.stack else { continue };
+            match wanted {
+                Some(key) if stack.key != key => continue,
+                Some(_) => {}
+                None => {
+                    let Some(game) = items.to_stack(stack) else { continue };
+                    if !test(&game) {
+                        continue;
+                    }
+                    wanted = Some(&stack.key);
+                }
+            }
+            available += stack.count;
+        }
+        available
+    }
+
     /// `ItemHelper.extract(inventory, test, mode, amount, false)`: up to (or exactly, when `exact`)
     /// `amount` items that pass `test`, taken slot by slot, all of the kind of the first found.
     pub fn extract(
