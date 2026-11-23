@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 
-use create_kinetics::rules::collider::StructurePose;
+use create_kinetics::rules::collider::{Rotation, StructurePose};
 use create_kinetics::rules::solid::Solid;
 use create_kinetics::Pos;
 
@@ -46,6 +46,17 @@ impl Entry {
             Sample::Turn { axis, now: angle, prev } => {
                 let prev = if stale { angle } else { prev };
                 StructurePose::turning(self.anchor.map(f64::from), axis, angle, prev)
+            }
+            Sample::Oriented { now: at, prev, initial_yaw, yaw, prev_yaw, pitch, prev_pitch } => {
+                let (prev, prev_yaw, prev_pitch) = if stale { (at, yaw, pitch) } else { (prev, prev_yaw, prev_pitch) };
+                StructurePose {
+                    position: at,
+                    prev_position: prev,
+                    prev_pos_invalid: false,
+                    delta_movement: [at[0] - prev[0], at[1] - prev[1], at[2] - prev[2]],
+                    rotation: Rotation::Oriented { initial_yaw, pitch, yaw, prev_pitch, prev_yaw },
+                    translating: false,
+                }
             }
         }
     }

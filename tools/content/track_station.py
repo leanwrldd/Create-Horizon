@@ -48,6 +48,8 @@ NAMES = {
     "create.train_assembly.requires_casing": "Use Train Casing to create bogeys on tracks",
     "create.train_assembly.single_bogey_carriage": "This Bogey type cannot support a carriage on its own",
     "create.train_assembly.too_many_bogeys": "Too many Bogeys attached: %1$s",
+    # Create 6.0.10 throws this key with no lang entry; a plain line here.
+    "create.train_assembly.sideways_controls": "Train Controls must face along the track",
     "create.train.unnamed": "Unnamed Train",
 }
 

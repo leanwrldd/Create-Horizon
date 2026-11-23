@@ -12,14 +12,14 @@
 //! - **No station or assembly screen** (`StationScreen`, `AssemblyScreen`): right-clicking the station tells its state and the
 //!   `/station` command stands in for the buttons: `name <text>`, `assembly` (enter assembly mode), `cancel`, `assemble`,
 //!   `disassemble`, `schedule`. It works on the station right-clicked last.
-//! - **Assembling goes as far as the track**: `assemble` checks the bogeys (`frontmost_bogey_at_station`, `bogeys_too_close`,
-//!   `no_bogeys`) and puts the wheel points on the graph (`place_travelling_points`), then stops: gathering each carriage's
-//!   blocks into a moving structure (`CarriageContraption.assemble`) and the train's entities are part 3. Nothing is removed from
-//!   the world and no train is made. Disassembling and the schedule slot have no train to work on until then.
-//! - No train presence (`trainPresent`, `imminentTrain`, the comparator's 15, `applyAutoSchedule`): a station has no train yet.
+//! - **Assembling** checks the bogeys (`frontmost_bogey_at_station`, `bogeys_too_close`, `no_bogeys`), puts the wheel points on the
+//!   graph (`place_travelling_points`) and then `train_assemble.rs` gathers each carriage's blocks, makes the `Train` and takes the blocks
+//!   out of the world; `disassemble` puts them back (`Train.disassemble`) and `/station schedule` gives the train's schedule back. The
+//!   comparator reads 15 while a train stands here (`trainPresent`), and a Schedule item right-clicked into the station (an empty
+//!   sneaking hand takes it out) is the auto-schedule slot (`depotBehaviour`, `applyAutoSchedule`).
 //! - Not drawn: the flag (`StationRenderer`), the overlay on the track and the assembly outlines (`TRACK_ASSEMBLING_OVERLAY`,
 //!   the green and red bogey spots): `/station` tells the bogey offsets instead.
-//! - No door controls (`DoorControlBehaviour`), no depot slot for an auto-schedule, no map markers (`StationMarker`), no computer
+//! - No door controls (`DoorControlBehaviour`), no real depot behaviour (the slot holds one Schedule), no map markers (`StationMarker`), no computer
 //!   behaviour, no display sources, no package ports (`attachPackagePort`).
 //! - Waterlogging is left out, as elsewhere.
 
@@ -48,12 +48,15 @@ use crate::compat::{
 
 use super::diodes_signal as signal;
 use super::train_net as net;
+use super::trains;
 use super::track as world;
 use crate::util;
 
 pub const STATION: &str = "create:track_station";
 const RAILWAY_CASING: &str = "create:railway_casing";
 const NAME: &str = "StationName";
+/// The Schedule item left in the station's slot (`depotBehaviour`, `getAutoSchedule`).
+const AUTO_SCHEDULE: &str = "AutoSchedule";
 const SMALL_BOGEY: &str = "create:small_bogey";
 const LARGE_BOGEY: &str = "create:large_bogey";
 /// `SoundSource.BLOCKS`.
@@ -69,17 +72,20 @@ pub fn hooks() -> Box<dyn Hooks> {
 
 /// What `refreshAssemblyInfo` found for a station.
 #[derive(Clone, Debug)]
-struct Assembly {
+pub(super) struct Assembly {
     /// The track block the station targets.
-    target: Pos,
+    pub(super) target: Pos,
     /// `assemblyDirection`'s normal.
-    direction: [i32; 3],
+    pub(super) direction: [i32; 3],
     /// `BlockPos.containing(track.getUpNormal(..))`.
-    up: Pos,
-    scan: AssemblyScan<BogeyType>,
+    pub(super) up: Pos,
+    pub(super) scan: AssemblyScan<BogeyType>,
 }
 
 /// `StationBlockEntity.assemblyAreas` and what each station last scanned, by dimension and station position.
+/// The train that stood at each station at the last tick, to tell an arrival.
+static ARRIVED: LazyLock<Mutex<HashMap<(&'static str, Pos), create_kinetics::rules::trains::graph::Uuid>>> = LazyLock::new(Mutex::default);
+
 static ASSEMBLIES: LazyLock<Mutex<HashMap<(&'static str, Pos), Assembly>>> = LazyLock::new(Mutex::default);
 
 fn bogey_type(block: &str) -> Option<BogeyType> {
@@ -90,13 +96,13 @@ fn bogey_type(block: &str) -> Option<BogeyType> {
     }
 }
 
-fn offset(p: Pos, d: [i32; 3], n: i32) -> Pos {
+pub(super) fn offset(p: Pos, d: [i32; 3], n: i32) -> Pos {
     [p[0] + d[0] * n, p[1] + d[1] * n, p[2] + d[2] * n]
 }
 
 /// `getAssemblyDirection()` and `refreshAssemblyInfo()`: scans the track beyond the station. `None` when the station has no
 /// valid track.
-fn refresh(host: &dyn Host, target: &TargetingState, pos: Pos) -> Option<Assembly> {
+pub(super) fn refresh(host: &dyn Host, target: &TargetingState, pos: Pos) -> Option<Assembly> {
     let track = target.global_position(pos);
     let shape = world::shape_at(host, track)?;
     let axis = *shape.axes().first()?;
@@ -188,7 +194,27 @@ fn tick(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     } else if !lock_assemblies().is_empty() {
         lock_assemblies().remove(&(dimension, pos));
     }
-    net::set_output(level, pos, rules::station_analog_output(false));
+    // `trainPresent`: the comparator's 15 while a train stands here, and the schedule left in the slot goes to a train
+    // that has just arrived (`applyAutoSchedule`).
+    let train_here = trains::train_at(dimension, target.id);
+    net::set_output(level, pos, rules::station_analog_output(train_here.is_some()));
+    let before = {
+        let mut seen = net::lock(&ARRIVED);
+        match train_here {
+            Some(train) => seen.insert((dimension, pos), train),
+            None => seen.remove(&(dimension, pos)),
+        }
+    };
+    if let (Some(train), true) = (train_here, before != train_here) {
+        if let Some(Tag::Compound(slot)) = util::get(&nbt, AUTO_SCHEDULE).cloned()
+            && let Some(stack) = util::stack_of(&Tag::Compound(slot))
+            && let Some(schedule) = super::schedule::schedule_of(&stack)
+            && !schedule.entries.is_empty()
+            && trains::give_schedule(host, train, schedule, true)
+        {
+            host.play_sound("minecraft:entity.experience_orb.pickup", util::centre(pos), BLOCKS, 1.0, 1.0);
+        }
+    }
 
     net::store(&target, &mut nbt, pos);
     if nbt != event.entity.nbt {
@@ -196,7 +222,7 @@ fn tick(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     }
 }
 
-fn lock_assemblies() -> std::sync::MutexGuard<'static, HashMap<(&'static str, Pos), Assembly>> {
+pub(super) fn lock_assemblies() -> std::sync::MutexGuard<'static, HashMap<(&'static str, Pos), Assembly>> {
     net::lock(&ASSEMBLIES)
 }
 
@@ -260,15 +286,15 @@ fn update_station(host: &dyn Host, pos: Pos, change: impl FnOnce(&mut create_kin
     net::with_point(host, EdgePointType::Station, id, |point| point.station_mut().map(change)).flatten().is_some()
 }
 
-/// `StationBlockEntity.assemble`, as far as the track goes (see the module header).
-fn assemble(host: &mut dyn Host, uuid: u128, pos: Pos) {
+/// `StationBlockEntity.assemble`: the bogeys are checked and the wheel points put on the graph here, the train made by `train_assemble.rs`.
+fn assemble(host: &mut dyn Host, uuid: u128, pos: Pos) -> bool {
     let dimension = host.dimension();
-    let Some(entity) = host.mod_block_entity(pos) else { return };
+    let Some(entity) = host.mod_block_entity(pos) else { return false };
     let target = net::load(&entity.nbt, EdgePointType::Station, pos);
     // `refreshAssemblyInfo`.
     let Some(assembly) = refresh(&*host, &target, pos) else {
         net::tell(host, uuid, "The station has no track to assemble on");
-        return;
+        return false;
     };
     lock_assemblies().insert((dimension, pos), assembly.clone());
     let scan = &assembly.scan;
@@ -276,7 +302,7 @@ fn assemble(host: &mut dyn Host, uuid: u128, pos: Pos) {
         Ok(offsets) => offsets,
         Err(error) => {
             say_error(host, uuid, &error);
-            return;
+            return false;
         }
     };
     // The end of the station's track block in the assembly direction.
@@ -288,7 +314,7 @@ fn assemble(host: &mut dyn Host, uuid: u128, pos: Pos) {
     let ends: Vec<(TrackNodeLocation, Vec3)> = query.connected(track, true, None).iter().map(|e| (e.loc, e.loc.location())).collect();
     let Some(start) = create_kinetics::rules::trains::assembly::find_assembly_start(&ends, centre, dir_vec) else {
         net::tell(host, uuid, "Cannot assemble: the station's track has no end that way");
-        return;
+        return false;
     };
     let length = scan.length;
     let placed = net::with_nets(&*host, |nets| {
@@ -303,31 +329,29 @@ fn assemble(host: &mut dyn Host, uuid: u128, pos: Pos) {
             let next = [at.location()[0] + dir_vec[0] * 0.5, at.location()[1] + dir_vec[1] * 0.5, at.location()[2] + dir_vec[2] * 0.5];
             at = TrackNodeLocation::new(next, at.dimension);
         }
-        let graph = nets.graphs.get(&graph?)?;
-        Some(place_travelling_points(graph, start, dir_vec, length, &offsets))
+        let graph_id = graph?;
+        let graph = nets.graphs.get(&graph_id)?;
+        Some((graph_id, place_travelling_points(graph, start, dir_vec, length, &offsets)))
     })
     .flatten();
     match placed {
-        None => net::tell(host, uuid, "Cannot assemble: the track isn't part of a graph yet (build or touch it so it joins one)"),
-        Some(Err(error)) => net::tell(
-            host,
-            uuid,
-            match error {
-                PlacePointsError::NoStartingNode => "Cannot assemble: No valid starting node found",
-                PlacePointsError::MissingEdge => "Cannot assemble: Missing graph edge",
-                PlacePointsError::NotAllPoints => "Cannot assemble: Not all Points created",
-            },
-        ),
-        Some(Ok(points)) => net::tell(
-            host,
-            uuid,
-            format!(
-                "The track is ready for {} bogey{} ({} wheel points). Attaching the carriages (a moving structure each) and making the train isn't implemented yet.",
-                scan.bogey_count(),
-                if scan.bogey_count() == 1 { "" } else { "s" },
-                points.len()
-            ),
-        ),
+        None => {
+            net::tell(host, uuid, "Cannot assemble: the track isn't part of a graph yet (build or touch it so it joins one)");
+            false
+        }
+        Some((_, Err(error))) => {
+            net::tell(
+                host,
+                uuid,
+                match error {
+                    PlacePointsError::NoStartingNode => "Cannot assemble: No valid starting node found",
+                    PlacePointsError::MissingEdge => "Cannot assemble: Missing graph edge",
+                    PlacePointsError::NotAllPoints => "Cannot assemble: Not all Points created",
+                },
+            );
+            false
+        }
+        Some((graph_id, Ok(points))) => super::train_assemble::finish(host, uuid, pos, &assembly, target.id, graph_id, points),
     }
 }
 
@@ -342,13 +366,70 @@ fn set_assembling(host: &mut dyn Host, pos: Pos, on: bool) {
     host.block_entity_sync(pos);
 }
 
+/// A click on the station's slot: a held Schedule goes in when it is empty, an empty sneaking hand takes it out.
+fn slot_click(host: &mut dyn Host, uuid: u128, pos: Pos, held: Option<crate::compat::ItemStack>) -> bool {
+    let Some(entity) = host.mod_block_entity(pos) else { return false };
+    let slot = match util::get(&entity.nbt, AUTO_SCHEDULE) {
+        Some(Tag::Compound(c)) => util::stack_of(&Tag::Compound(c.clone())),
+        _ => None,
+    };
+    match (held, slot) {
+        (Some(stack), None) => {
+            let mut one = stack.clone();
+            one.count = 1;
+            host.take_items(super::schedule::SCHEDULE, 1);
+            let tag = util::stack_tag(&one);
+            host.change_mod_block_entity(pos, &mut |e| {
+                e.nbt.insert(AUTO_SCHEDULE.into(), tag.clone());
+            });
+            net::tell(host, uuid, "The Schedule is in the station: trains that arrive here follow it");
+            true
+        }
+        (Some(_), Some(_)) => {
+            net::tell(host, uuid, "The station already holds a Schedule (sneak with an empty hand to take it)");
+            true
+        }
+        (None, Some(stack)) => {
+            host.change_mod_block_entity(pos, &mut |e| {
+                util::remove(&mut e.nbt, AUTO_SCHEDULE);
+            });
+            if host.give_stack(uuid, stack.clone()).is_some() {
+                util::spawn_item(host, util::centre(pos), &stack, [0.0; 3], 10);
+            }
+            true
+        }
+        (None, None) => false,
+    }
+}
+
+/// `StationBlockEntity.dropSchedule`: the train's Schedule item goes to the sender's hands, or hangs at the station.
+fn drop_schedule(host: &mut dyn Host, uuid: u128, pos: Pos) {
+    let dimension = host.dimension();
+    let Some(entity) = host.mod_block_entity(pos) else { return };
+    let target = net::load(&entity.nbt, EdgePointType::Station, pos);
+    let Some(train) = trains::train_at(dimension, target.id) else {
+        net::tell(host, uuid, "No train is standing at this station");
+        return;
+    };
+    let Some(schedule) = trains::take_schedule(host, train) else {
+        net::tell(host, uuid, "The train has no Schedule to give back");
+        return;
+    };
+    let Some(stack) = super::schedule::stack_with(&*host, &schedule) else { return };
+    let hand_free = host.held_stack(uuid).is_none();
+    if !hand_free || host.give_stack(uuid, stack.clone()).is_some() {
+        util::spawn_item(host, util::centre(pos), &stack, [0.0; 3], 10);
+    }
+}
+
 /// `StationEditPacket.applySettings`.
 fn apply_edit(host: &mut dyn Host, uuid: u128, pos: Pos, edit: &StationEdit) {
     let is_station = host.block(pos) == STATION;
     let steps = rules::plan_edit(edit, is_station, assembling(&*host, pos));
+    let mut assembled = false;
     for step in steps {
         match step {
-            EditStep::DropSchedule => net::tell(host, uuid, "No train is standing at this station"),
+            EditStep::DropSchedule => drop_schedule(host, uuid, pos),
             EditStep::Rename(name) => {
                 host.change_mod_block_entity(pos, &mut |e| {
                     e.nbt.insert(NAME.into(), Tag::String(name.as_str().into()));
@@ -359,10 +440,18 @@ fn apply_edit(host: &mut dyn Host, uuid: u128, pos: Pos, edit: &StationEdit) {
                 host.block_entity_sync(pos);
                 net::tell(host, uuid, format!("The station is now called '{name}'"));
             }
-            EditStep::Assemble => assemble(host, uuid, pos),
-            EditStep::Disassemble => net::tell(host, uuid, "No train is standing at this station"),
-            // No train is made, so there is never one present afterwards.
-            EditStep::ContinueIfTrainPresent => return,
+            EditStep::Assemble => assembled = assemble(host, uuid, pos),
+            EditStep::Disassemble => {
+                if super::train_assemble::disassemble(host, Some(uuid), pos) {
+                    net::tell(host, uuid, "The train is back in blocks");
+                }
+            }
+            // A train must stand here now (the assembly made one).
+            EditStep::ContinueIfTrainPresent => {
+                if !assembled {
+                    return;
+                }
+            }
             EditStep::EnterAssembly => {
                 if assembling(&*host, pos) {
                     continue;
@@ -479,7 +568,16 @@ impl Hooks for Stations {
             return Flow::Continue;
         }
         let Some(player) = host.acting_player() else { return Flow::Continue };
-        if player.sneaking || host.held_stack(player.uuid).is_some_and(|s| &*s.item == util::WRENCH) {
+        let held = host.held_stack(player.uuid);
+        // The station's slot (`depotBehaviour.onlyAccepts(SCHEDULE)`): a Schedule item is put in, and taken out again
+        // with an empty hand while sneaking.
+        let is_schedule = held.as_ref().is_some_and(|s| &*s.item == super::schedule::SCHEDULE);
+        if (is_schedule || (player.sneaking && held.is_none())) && util::first_click(&*host, player.uuid, pos) {
+            if slot_click(host, player.uuid, pos, held.clone()) {
+                return Flow::Cancel;
+            }
+        }
+        if player.sneaking || held.as_ref().is_some_and(|s| &*s.item == util::WRENCH) {
             return Flow::Continue;
         }
         if !util::first_click(&*host, player.uuid, pos) {

@@ -169,6 +169,12 @@ pub enum AssemblyError {
     NotConnectedInOrder,
     SingleBogeyCarriage,
     NoControls,
+    /// `CarriageContraption.assemble`: more than two bogeys in one carriage.
+    TooManyBogeys { count: usize },
+    /// `CarriageContraption.assemble`: Train Controls that face across the track.
+    SidewaysControls,
+    /// `CarriageContraption.assemble` threw another `AssemblyException`: a block that can't move, a chunk that isn't loaded.
+    Structure { message: String },
 }
 
 impl AssemblyError {
@@ -182,6 +188,9 @@ impl AssemblyError {
             AssemblyError::NotConnectedInOrder => "train_assembly.not_connected_in_order",
             AssemblyError::SingleBogeyCarriage => "train_assembly.single_bogey_carriage",
             AssemblyError::NoControls => "train_assembly.no_controls",
+            AssemblyError::TooManyBogeys { .. } => "train_assembly.too_many_bogeys",
+            AssemblyError::SidewaysControls => "train_assembly.sideways_controls",
+            AssemblyError::Structure { .. } => "train_assembly.structure",
         }
     }
 
@@ -190,6 +199,7 @@ impl AssemblyError {
         match self {
             AssemblyError::BogeysTooClose { a, b } => vec![*a, *b],
             AssemblyError::NothingAttached { carriage } => vec![*carriage],
+            AssemblyError::TooManyBogeys { count } => vec![*count],
             _ => Vec::new(),
         }
     }

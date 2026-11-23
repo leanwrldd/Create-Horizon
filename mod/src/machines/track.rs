@@ -36,6 +36,7 @@ use create_kinetics::rules::contraption::{State, replaceable as vanilla_replacea
 use create_kinetics::rules::trains::bezier::BezierConnection;
 use create_kinetics::rules::trains::graph::{DiscoveredLocation, TrackNodeLocation};
 use create_kinetics::rules::trains::network::RailNetworks;
+use create_kinetics::rules::trains::railways::Railways;
 use create_kinetics::rules::trains::propagator::TrackWorld;
 use create_kinetics::rules::trains::track_block::{self as rules, CONNECTIONS, MATERIAL, TRACK, TrackView};
 use create_kinetics::rules::trains::track_shape::TrackShape;
@@ -193,15 +194,21 @@ pub fn remove_connection(host: &mut dyn Host, pos: Pos, target: Pos) {
 
 // --- TrackWorld over the host ----------------------------------------------------------------------------------
 
+static DIMENSION_NAMES: LazyLock<Mutex<Vec<String>>> = LazyLock::new(Mutex::default);
+
 /// The dimension index the rules number a dimension by (`ResourceKey<Level>` there).
 pub fn dimension_id(name: &str) -> u32 {
-    static NAMES: LazyLock<Mutex<Vec<String>>> = LazyLock::new(Mutex::default);
-    let mut names = lock(&NAMES);
+    let mut names = lock(&DIMENSION_NAMES);
     if let Some(i) = names.iter().position(|n| n == name) {
         return i as u32;
     }
     names.push(name.to_owned());
     (names.len() - 1) as u32
+}
+
+/// The name of a dimension index (the inverse of [`dimension_id`]); an index never named is "minecraft:overworld".
+pub fn dimension_name(id: u32) -> String {
+    lock(&DIMENSION_NAMES).get(id as usize).cloned().unwrap_or_else(|| "minecraft:overworld".to_owned())
 }
 
 /// `ITrackBlock.getConnected` for the real blocks.
@@ -247,7 +254,8 @@ const BUDGET: usize = 96;
 struct DimState {
     token: i64,
     time: i64,
-    nets: RailNetworks,
+    /// The graphs and the trains on them (`GlobalRailwayManager.sided(level)`); `trains.rs` ticks it.
+    rails: Railways,
     tracks: BTreeSet<Pos>,
     /// The ends each track block had when last added, so its removal knows what to take out of the graphs.
     known: HashMap<Pos, Vec<DiscoveredLocation>>,
@@ -268,7 +276,12 @@ static STATE: LazyLock<Mutex<HashMap<String, DimState>>> = LazyLock::new(Mutex::
 /// been ticked.
 #[allow(dead_code)]
 pub fn with_networks<R>(dimension: &str, f: impl FnOnce(&mut RailNetworks) -> R) -> Option<R> {
-    lock(&STATE).get_mut(dimension).map(|st| f(&mut st.nets))
+    lock(&STATE).get_mut(dimension).map(|st| f(&mut st.rails.nets))
+}
+
+/// Runs `f` on a dimension's railways: the graphs and the trains (`trains.rs`).
+pub fn with_railways<R>(dimension: &str, f: impl FnOnce(&mut Railways) -> R) -> Option<R> {
+    lock(&STATE).get_mut(dimension).map(|st| f(&mut st.rails))
 }
 
 /// A track block was placed or changed: its graph is updated at the next tick.
@@ -364,7 +377,7 @@ fn run(host: &dyn Host, st: &mut DimState, id: u32, now: i64) {
         if st.tracks.remove(&pos) {
             st.dirty = true;
         }
-        st.nets.on_rail_removed(&world, pos, &ends);
+        st.rails.nets.on_rail_removed(&world, pos, &ends);
     }
     for _ in 0..BUDGET {
         let Some(pos) = st.added.pop_front() else { break };
@@ -388,7 +401,9 @@ fn run(host: &dyn Host, st: &mut DimState, id: u32, now: i64) {
         }
     }
     sweep(host, st, level);
-    let _ = st.nets.drain_events();
+    // What the track's changes do to the trains on it (`removeNode`, `transfer`, `notifyTrains`).
+    let events = st.rails.nets.drain_events();
+    st.rails.apply_rail_events(&events);
 }
 
 fn add_now(world: &HostTracks<'_>, st: &mut DimState, pos: Pos) {
@@ -401,7 +416,7 @@ fn add_now(world: &HostTracks<'_>, st: &mut DimState, pos: Pos) {
     st.known.insert(pos, world.connected(pos, false, None));
     let partners = connections_at(world.host, pos).iter().map(|bc| bc.key()).collect();
     st.partners.insert(pos, partners);
-    let _ = st.nets.on_rail_added(world, pos);
+    let _ = st.rails.nets.on_rail_added(world, pos);
 }
 
 /// A few known blocks each tick: any that is gone is queued as removed (and its curves cut).

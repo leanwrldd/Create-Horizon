@@ -133,6 +133,8 @@ pub enum Interaction {
     Seat,
     Deployer,
     Controls,
+    /// `ControlsInteractionBehaviour`: the Train Controls of a carriage start a drive.
+    TrainControls,
 }
 
 /// `BlockTags.WOODEN_DOORS` and `WOODEN_TRAPDOORS`: every door of wood, not iron or copper.
@@ -160,6 +162,7 @@ pub fn interaction_of(name: &str) -> Option<Interaction> {
         "create" => match path {
             "deployer" => Some(Interaction::Deployer),
             "contraption_controls" => Some(Interaction::Controls),
+            "controls" => Some(Interaction::TrainControls),
             p if p.ends_with("_seat") => Some(Interaction::Seat),
             _ => None,
         },
@@ -252,7 +255,7 @@ pub fn simple_toggle(
                 colliders: true,
             })
         }
-        Interaction::Seat | Interaction::Deployer | Interaction::Controls => None,
+        Interaction::Seat | Interaction::Deployer | Interaction::Controls | Interaction::TrainControls => None,
     }
 }
 

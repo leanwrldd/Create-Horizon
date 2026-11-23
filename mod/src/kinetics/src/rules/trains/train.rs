@@ -878,6 +878,32 @@ impl Train {
         r
     }
 
+    /// `navigation.findNearestApproachable(forward)`.
+    pub fn find_nearest_approachable(&mut self, nets: &RailNetworks, others: &BTreeMap<Uuid, Train>, forward: bool) -> Option<Uuid> {
+        let nav = std::mem::take(&mut self.navigation);
+        let r = {
+            let other_views: Vec<OtherTrain> = others.iter().filter(|(id, _)| **id != self.id).filter_map(|(_, t)| t.as_other()).collect();
+            let view = self.view_of(others);
+            let track_type_of = |_: Option<&str>| TRACK_TYPE_STANDARD.to_string();
+            let env = SearchEnv { nets, trains: &view, others: &other_views, track_type_of: &track_type_of };
+            nav.find_nearest_approachable(&env, &*self, forward)
+        };
+        self.navigation = nav;
+        r
+    }
+
+    /// `train.approachTargetSpeed(accelerationMod)` for the manual controls: a train at a station leaves it when it
+    /// starts to move (`leaveStation()`).
+    pub fn approach_target_speed_manual(&mut self, nets: &mut RailNetworks, acceleration_mod: f64) {
+        NavTrain::approach_target_speed(self, acceleration_mod);
+        self.flush(nets);
+    }
+
+    /// `train.burnFuel()`.
+    pub fn burn_fuel_manual(&mut self) {
+        NavTrain::burn_fuel(self);
+    }
+
     /// `runtime.setSchedule(schedule, auto)`.
     pub fn set_schedule(
         &mut self,

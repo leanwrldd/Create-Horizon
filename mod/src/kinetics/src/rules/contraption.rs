@@ -619,6 +619,13 @@ pub fn search(world: &dyn World, config: &Config<'_>) -> Result<Found, Fail> {
                 _ => {}
             }
         }
+        // Bogeys tend to have sticky sides (`AbstractBogeyBlock.getStickySurfaces`: along the track's axis).
+        if matches!(state.name.as_str(), "create:small_bogey" | "create:large_bogey") {
+            let sides = if state.get("axis") == Some("x") { [Dir::East, Dir::West] } else { [Dir::South, Dir::North] };
+            for side in sides {
+                add(relative(pos, side, 1), &mut frontier, &mut queued);
+            }
+        }
         // A bearing takes the block in front of it along (it is not stabilised here).
         if state.name == "create:mechanical_bearing" {
             if let Some(facing) = state.dir("facing") {

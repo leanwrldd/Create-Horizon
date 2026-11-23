@@ -136,6 +136,7 @@
     "create:green_toolbox",
     "create:red_toolbox",
     "create:black_toolbox",
+    "create:carriage_anchor",
     "create:turntable",
     "create:weighted_ejector",
     "create:windmill_bearing",

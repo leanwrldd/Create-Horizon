@@ -10,8 +10,7 @@
 //!   leaves the graph within a second.
 //! - The graphs are not saved (`track.rs`), so the points are made again from the block entities' own saved data (their `Id`,
 //!   their target) after a load; a station keeps its name in its block entity for that.
-//! - The graphs' points are ticked here (`tickAllPoints` before and after the trains): this stands in for
-//!   `Railways::tick` until trains are ticked (part 3), which owns the same calls then.
+//! - The graphs' points are ticked by `trains.rs` (`Railways::tick`: `tickAllPoints` before and after the trains).
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex, PoisonError};
@@ -313,18 +312,13 @@ fn sweep(host: &dyn Host) {
     });
 }
 
-/// Every level tick: the points of the graphs tick before and after the trains (`GlobalRailwayManager.tick`), and the
-/// points of lost block entities are swept.
+/// Every level tick: the points of lost block entities are swept.
 pub fn level_tick(host: &mut dyn Host, _: &mut LevelTickPostEvent<'_>) {
     if host.window() {
         return;
     }
+    // The points are ticked by `trains.rs` through `Railways::tick`, before and after the trains.
     let now = util::game_time(&*host);
-    with_nets(&*host, |nets| {
-        nets.clear_group_occupancy();
-        nets.tick_all_points(true);
-        nets.tick_all_points(false);
-    });
     if now % 5 == 0 {
         sweep(&*host);
     }

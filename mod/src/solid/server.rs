@@ -54,6 +54,8 @@ pub fn observe(host: &mut dyn ServerHost, pos: Pos, entity: &ModBlockEntity) {
     let turn_axis = match sample {
         Sample::Turn { axis, .. } => Some(axis),
         Sample::Slide { .. } => None,
+        // `expandBoundsAroundAxis(Axis.Y)` of an assembled carriage.
+        Sample::Oriented { .. } => Some(create_kinetics::Axis::Y),
     };
     let token_of = |version: u64| (Arc::as_ptr(&live) as usize as u64) ^ version.rotate_left(32);
     let mut token = token_of(shapes::version());
