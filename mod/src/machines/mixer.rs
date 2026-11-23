@@ -11,7 +11,8 @@
 //! - Create is told at once when the basin's contents change (`contentsChanged`); the mixer looks
 //!   at the basin every five ticks, and again every 200 ticks as Create's backup check does.
 //! - Vanilla's shapeless crafting recipes of two or more ingredients run (`allowShapelessInMixer`,
-//!   read by `machines/basin.rs`); there is no brewing (`PotionMixingRecipes`).
+//!   read by `machines/basin.rs`); brewing (`PotionMixingRecipes`,
+//!   `allowBrewingInMixer`) is made from `minecraft:brewing` recipes in `basin.rs`/`rules::potion_mixing`.
 //! - `currentRecipe` is kept as `RecipeId`, so a cycle survives a reload; Create forgets it.
 //! - Only the whirlpool sound plays; no ingredient or fluid particles, no mixing sound, no
 //!   advancement. The block's shape is the player's (14 pixel casing) for everything.

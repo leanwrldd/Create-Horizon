@@ -109,6 +109,7 @@ pub mod ponder_timeline;
 pub mod portable_interface;
 pub mod potato_cannon;
 pub mod potion_fluid;
+pub mod potion_mixing;
 pub mod pulley;
 pub mod pump;
 pub mod redstone_contact;

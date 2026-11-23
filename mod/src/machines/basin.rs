@@ -47,6 +47,7 @@ use create_kinetics::rules::basin::{
     self as rules, HeatCondition, HeatLevel, INPUT_SLOTS, SLOTS, SLOT_LIMIT, Spout, TANKS,
     TANK_CAPACITY,
 };
+use create_kinetics::rules::potion_mixing::{self, Brew};
 use create_kinetics::rules::vanilla_recipes;
 use create_kinetics::Dir;
 use crate::compat::serde_json::Value;
@@ -65,6 +66,7 @@ pub(crate) const ID: &str = "create:basin";
 const MIXING: &str = "create:mixing";
 /// Vanilla's crafting recipes, which the mixer and the press take some of.
 const CRAFTING: &str = "minecraft:crafting";
+const BREWING: &str = "minecraft:brewing";
 const COMPACTING: &str = "create:compacting";
 
 /// Horizon's own key for a block entity's tanks (`native_block_entity_fluids`).
@@ -559,6 +561,89 @@ fn crafting_recipes(host: &dyn Host) -> Arc<Vec<Recipe>> {
     found
 }
 
+type PotionCache = Option<(usize, usize, Arc<Vec<Recipe>>)>;
+static POTION_RECIPES: Mutex<PotionCache> = Mutex::new(None);
+
+/// A string or a list of strings of a recipe file, as a list.
+fn strings(value: Option<&Value>) -> Vec<String> {
+    match value {
+        Some(Value::String(one)) => vec![one.clone()],
+        Some(Value::Array(many)) => many.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The items a brewing recipe's `item` names (items and `#tags`), resolved and in order.
+fn brew_items(host: &dyn Host, names: Vec<String>) -> Vec<String> {
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let json = Value::Array(names.into_iter().map(Value::String).collect());
+    host.recipe_ingredient(&json).map(|ingredient| item_list(&ingredient)).unwrap_or_default()
+}
+
+/// A `minecraft:potion_contents` of a recipe: a potion id, or an object with `potion` (an output) or `potions` (an
+/// input's filter).
+fn contents_potions(value: Option<&Value>) -> Option<Vec<String>> {
+    let value = value?;
+    if let Some(one) = value.as_str() {
+        return Some(vec![one.to_owned()]);
+    }
+    let list = strings(value.get("potions").or_else(|| value.get("potion")));
+    (!list.is_empty()).then_some(list)
+}
+
+/// One `minecraft:brewing` recipe file as `rules::potion_mixing` reads it.
+fn read_brew(host: &dyn Host, json: &Value) -> Option<Brew> {
+    let input = json.get("input")?;
+    let output = json.get("output")?;
+    let potion_contents = |value: &Value| {
+        contents_potions(value.get("potion_contents").or_else(|| value.get("components")?.get("minecraft:potion_contents")))
+    };
+    Some(Brew {
+        input_items: brew_items(host, strings(input.get("item"))),
+        input_potions: potion_contents(input),
+        reagent: brew_items(host, strings(json.get("reagent")?.get("item"))),
+        output_item: output.get("id")?.as_str()?.to_owned(),
+        output_potion: potion_contents(output).and_then(|list| list.into_iter().next()),
+    })
+}
+
+/// Create's `PotionMixingRecipes.createRecipes`: the brewing recipes as mixing recipes (a potion fluid and an ingredient
+/// over heat), found once while the game hands out the same brewing table.
+fn potion_recipes(host: &dyn Host) -> Arc<Vec<Recipe>> {
+    let table = host.recipes_of_type(BREWING);
+    let key = (table.as_ptr() as usize, table.len());
+    let mut cache = POTION_RECIPES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((ptr, len, found)) = cache.as_ref()
+        && (*ptr, *len) == key
+    {
+        return Arc::clone(found);
+    }
+    let brews: Vec<Brew> = table.iter().filter_map(|recipe| read_brew(host, &recipe.json)).collect();
+    let found: Arc<Vec<Recipe>> = Arc::new(
+        potion_mixing::mixes(&brews)
+            .into_iter()
+            .filter_map(|mix| {
+                let json = Value::Array(mix.reagent.iter().cloned().map(Value::String).collect());
+                let ingredient = host.recipe_ingredient(&json)?;
+                Some(Recipe {
+                    id: mix.id,
+                    kind: Kind::Mixing,
+                    ingredients: vec![ItemIngredient::Plain(ingredient)],
+                    fluids: vec![FluidIngredient::Single(mix.from, potion_mixing::AMOUNT)],
+                    results: Vec::new(),
+                    fluid_results: vec![(mix.to, potion_mixing::AMOUNT)],
+                    processing_time: 0,
+                    heat: HeatCondition::Heated,
+                })
+            })
+            .collect(),
+    );
+    *cache = Some((key.0, key.1, Arc::clone(&found)));
+    found
+}
+
 /// Every recipe of `kind`, in the order the game holds them (Create's own, then vanilla's crafting
 /// recipes it takes).
 pub(crate) fn recipes(host: &dyn Host, kind: Kind) -> Vec<Recipe> {
@@ -568,6 +653,10 @@ pub(crate) fn recipes(host: &dyn Host, kind: Kind) -> Vec<Recipe> {
         .filter_map(|recipe| parse(host, &recipe.id, kind, &recipe.json))
         .collect();
     all.extend(crafting_recipes(host).iter().filter(|recipe| recipe.kind == kind).cloned());
+    // `MechanicalMixerBlockEntity.getMatchingRecipes`: the brewing mixes come after, for the mixer only.
+    if kind == Kind::Mixing {
+        all.extend(potion_recipes(host).iter().cloned());
+    }
     all
 }
 
@@ -582,6 +671,7 @@ pub(crate) fn recipe_by_id(host: &dyn Host, id: &str) -> Option<Recipe> {
                 .and_then(|recipe| parse(host, &recipe.id, kind, &recipe.json))
         })
         .or_else(|| crafting_recipes(host).iter().find(|recipe| recipe.id == id).cloned())
+        .or_else(|| potion_recipes(host).iter().find(|recipe| recipe.id == id).cloned())
 }
 
 fn max_stack(host: &dyn Host, stack: &ItemStack) -> u32 {
