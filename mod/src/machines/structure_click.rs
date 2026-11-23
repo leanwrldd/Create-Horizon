@@ -43,10 +43,13 @@
 //!   client's actor context, and draws the floor's name on the Controls): the wheel steps a choice kept for each
 //!   player, the action bar names it, and the click calls it (`ElevatorTargetFloorPacket.handle`'s checks). The
 //!   Controls' screen and indicator are not drawn.
-//! - The Train Door, the Conductor's burner, the Depot's `MountedDepotInteractionBehaviour`, train controls and
-//!   `handlePlayerStorageInteraction` (a chest on a structure: the menu of the contraption's storage) are not
-//!   here: a click on such a block is taken (cancelled) and does nothing.
+//! - `handlePlayerStorageInteraction`: a chest, barrel or shulker box on a structure opens a chest view of its own
+//!   slots (`open_storage`; a double chest only the clicked half, an Item Vault nothing). The Train Door, the
+//!   Conductor's burner, the Depot's `MountedDepotInteractionBehaviour` and train controls are not here: a click on
+//!   such a block is taken (cancelled) and does nothing.
 //! - A Deployer's fake player is not made for the swap: the hand is this port's own (`actor_tools`).
+
+use std::collections::BTreeMap;
 
 use create_kinetics::Pos;
 use create_kinetics::rules::collider::StructurePose;
@@ -56,7 +59,7 @@ use create_kinetics::rules::contraption_click::{
 use create_kinetics::rules::nixie_tube::look_vector;
 
 use crate::compat::TextExt;
-use crate::compat::{Adapter, Compound, Hooks, Host, ItemStack, NetFromClientEvent, Tag, Text};
+use crate::compat::{Adapter, Compound, Hooks, Host, ItemStack, MenuInputClosedEvent, NetFromClientEvent, Tag, Text};
 use crate::machines::contraption::{self as engine, CONTRAPTION, Moving};
 use crate::solid::registry::{self, Entry, Side};
 use crate::solid::shapes;
@@ -112,6 +115,74 @@ impl Hooks for Shared {
         }
         let _ = host;
     }
+
+    /// A structure chest's view closes: the slots go back into the carried block's `Items`. What arrived in the block
+    /// while the view was open (an actor's drops) goes to the player with whatever the view keeps; if the structure or
+    /// the block is gone, everything left in the slots goes to the player (the compat layer hands the slots back).
+    fn menu_input_closed(&self, host: &mut dyn Host, event: &mut MenuInputClosedEvent<'_>) {
+        let Some(open) = lock_views().remove(&event.window) else { return };
+        let Some(entity) = host.mod_block_entity(open.controller) else { return };
+        let Some(live) = engine::live(&open.dimension, open.controller, &entity.nbt) else { return };
+        let mut moving = live.moving.clone();
+        let Some(block) = moving.blocks.iter_mut().find(|b| b.local == open.local && b.state.name == open.name) else {
+            return;
+        };
+        let arrived = stored_items(block.data.as_ref(), open.slots).into_iter().flatten();
+        let mut entries = Vec::new();
+        for (index, slot) in event.slots.iter_mut().enumerate().take(open.slots) {
+            if let Some(stack) = slot.take()
+                && let Tag::Compound(mut tag) = util::stack_tag(&stack)
+            {
+                tag.insert("Slot".into(), Tag::Byte(index as i8));
+                entries.push(Tag::Compound(tag));
+            }
+        }
+        block.data.get_or_insert_with(Compound::new).insert("Items".into(), Tag::List(entries));
+        let mut back = arrived;
+        for slot in event.slots.iter_mut() {
+            if slot.is_none() {
+                *slot = back.next();
+            }
+        }
+        for rest in back {
+            util::spawn_item(host, util::centre(open.controller), &rest, [0.0; 3], 10);
+        }
+        write_host(host, &open.dimension, open.controller, moving);
+        host.play_sound("minecraft:block.chest.close", util::centre(open.controller), BLOCKS, 0.5, 1.0);
+    }
+}
+
+/// A chest view opened on a storage block of a structure, by window id.
+struct OpenStorage {
+    dimension: String,
+    controller: Pos,
+    local: Pos,
+    name: String,
+    slots: usize,
+}
+
+static STORAGE_VIEWS: std::sync::Mutex<BTreeMap<i32, OpenStorage>> = std::sync::Mutex::new(BTreeMap::new());
+
+fn lock_views() -> std::sync::MutexGuard<'static, BTreeMap<i32, OpenStorage>> {
+    STORAGE_VIEWS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// A carried storage block's saved `Items`, slot by slot (`Slot` as a byte or an int).
+fn stored_items(data: Option<&Compound>, slots: usize) -> Vec<Option<ItemStack>> {
+    let mut items = vec![None; slots];
+    if let Some(Tag::List(list)) = data.and_then(|data| util::get(data, "Items")) {
+        for entry in list {
+            let index = match entry.get("Slot") {
+                Some(Tag::Byte(slot)) => usize::from(*slot as u8),
+                Some(Tag::Int(slot)) => usize::try_from(*slot).unwrap_or(usize::MAX),
+                _ => continue,
+            };
+            if index < slots {
+                items[index] = util::stack_of(entry);
+            }
+        }
+    }
+    items
 }
 
 pub fn hooks() -> Box<dyn Hooks> {
@@ -480,7 +551,7 @@ fn handle(host: &mut dyn mod_api::ServerHost, who: u128, limit: Option<f64>) -> 
     // Create's client cancels the click whatever `handlePlayerInteraction` answers: a block that does nothing
     // (stone, a chest) still takes it.
     let _acted = match rules::route(&block.state.name, wrench) {
-        Route::Storage => false,
+        Route::Storage => open_storage(host, &dimension, &found, moving, who),
         Route::Sit => sit(host, &dimension, &found, who),
         Route::Behaviour(kind) => behave(host, &dimension, &found, moving, kind, who, held, wrench),
     };
@@ -550,13 +621,39 @@ fn apply_toggle(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Fou
 /// (`engine::set_live`, as actors do): the controller's next tick rebuilds the colliders from it
 /// (the new `Live` is a new token) and the update tag sends the new states to the clients.
 fn write(host: &mut dyn mod_api::ServerHost, dimension: &str, controller: Pos, moving: Moving) {
+    write_host(&mut Adapter::Server(host), dimension, controller, moving);
+}
+
+fn write_host(host: &mut dyn Host, dimension: &str, controller: Pos, moving: Moving) {
     let saved = moving.to_nbt(false);
-    let mut adapter = Adapter::Server(&mut *host);
-    Host::change_mod_block_entity(&mut adapter, controller, &mut |entity| {
+    host.change_mod_block_entity(controller, &mut |entity| {
         entity.nbt.insert(CONTRAPTION.into(), Tag::Compound(saved.clone()));
     });
-    Host::block_entity_sync(&mut adapter, controller);
+    host.block_entity_sync(controller);
     engine::set_live(dimension, controller, moving);
+}
+
+/// `MountedStorageManager.handlePlayerStorageInteraction`: a chest, barrel or shulker box on a structure opens its own
+/// slots (a double chest opens the half that was clicked; an Item Vault opens nothing here). The block is emptied while
+/// the view is open, so a structure that is set down meanwhile can't give the same items out twice; `menu_input_closed`
+/// writes the view back.
+fn open_storage(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, mut moving: Moving, who: u128) -> bool {
+    let local = found.hit.local;
+    let Some(block) = moving.blocks.iter_mut().find(|b| b.local == local) else { return false };
+    let name = block.state.name.clone();
+    let Some(slots) = create_kinetics::rules::portable_interface::item_slots(&name).filter(|n| *n <= 54) else {
+        return false;
+    };
+    let items = stored_items(block.data.as_ref(), slots);
+    let rows = slots.div_ceil(9).clamp(1, 6) as u8;
+    let title = Text::literal(name.rsplit(':').next().unwrap_or(&name).replace('_', " "));
+    let window = Host::open_menu_with_input(&mut Adapter::Server(&mut *host), who, rows, title, items, 0..slots);
+    let Some(window) = window else { return false };
+    block.data.get_or_insert_with(Compound::new).insert("Items".into(), Tag::List(Vec::new()));
+    write(host, dimension, found.controller, moving);
+    lock_views().insert(window, OpenStorage { dimension: dimension.to_owned(), controller: found.controller, local, name, slots });
+    Host::play_sound(&mut Adapter::Server(host), "minecraft:block.chest.open", found.world, BLOCKS, 0.5, 1.0);
+    true
 }
 
 // --- Contraption Controls -----------------------------------------------------------------------------------
