@@ -22,7 +22,7 @@ _STATION = [[0, 0, 0, 1, 2 / 16, 1], [1 / 16, 0, 1 / 16, 15 / 16, 13 / 16, 15 / 
 
 BLOCKS = {
     "track_station": block({"assembling": {"type": "boolean"}}, {"assembling": "false"}, SOFT_METAL, PODZOL,
-                           _STATION, render_shape="MODEL"),
+                           {"default": _STATION}, render_shape="MODEL"),
 }
 
 TAB = ["track_station"]

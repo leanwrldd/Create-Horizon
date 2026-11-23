@@ -98,7 +98,8 @@ pub struct SignalTick {
 pub struct SignalLights {
     pub state: SignalState,
     pub overlay: OverlayState,
-    switch_to_red_after_train_entered: i32,
+    /// `switchToRedAfterTrainEntered`: ticks a green or yellow light keeps red off (not saved by Create).
+    pub switch_to_red_after_train_entered: i32,
     pub last_reported_power: bool,
 }
 
@@ -373,10 +374,72 @@ pub fn can_enter_assembly_mode(has_valid_track: bool, track_axis: Option<[f64; 3
     has_valid_track && track_axis.is_some_and(super::station::track_axis_is_aligned)
 }
 
-/// The error a failed assembly shows, with its numbers: the lang key and the arguments.
-pub fn assembly_error_message(error: &AssemblyError) -> (&'static str, Vec<usize>) {
-    (error.key(), error.args())
+/// The error a failed assembly shows, with its numbers: the lang key (`AssemblyError::key` is the part after `create.`) and
+/// the arguments.
+pub fn assembly_error_message(error: &AssemblyError) -> (String, Vec<usize>) {
+    (format!("create.{}", error.key()), error.args())
 }
+
+// --- the targeting item ------------------------------------------------------------------------------------
+
+/// `TrackTargetingBlockItem.useOn`'s reach: the selected track must be closer than 16 blocks to the placed block
+/// (`closerThan`, over `maxTrackPlacementLength + 16` for a curve).
+pub fn targeting_reach(bezier: bool, max_track_placement_length: i32) -> f64 {
+    if bezier { f64::from(max_track_placement_length + 16) } else { 16.0 }
+}
+
+/// `Vec3i.closerThan(other, distance)`: the squared distance is below the square of `distance`.
+pub fn closer_than(a: Pos, b: Pos, distance: f64) -> bool {
+    let d = [f64::from(a[0] - b[0]), f64::from(a[1] - b[1]), f64::from(a[2] - b[2])];
+    d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < distance * distance
+}
+
+// --- the messages ----------------------------------------------------------------------------------------------
+
+/// The English of the lang keys the blocks and items of this part show (`create.*` in `en_us.json`, the same text the
+/// content's lang file holds), for the places the host takes a literal. `None` for a key not listed.
+pub fn message_text(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "create.track_target.clear" => "Cleared track selection",
+        "create.track_target.invalid" => "Cannot target this track here",
+        "create.track_target.missing" => "Right-click the targeted train track first",
+        "create.track_target.no_junctions" => "Targeted track cannot be an intersection",
+        "create.track_target.occupied" => "Targeted track is occupied",
+        "create.track_target.set" => "Targeted track selected",
+        "create.track_target.success" => "Successfully bound to targeted track",
+        "create.track_target.too_far" => "Targeted track is too far from here",
+        "create.track_signal.cannot_change_mode" => "Unable to switch mode of this Signal",
+        "create.track_signal.mode_change.cross_signal" => "-> Allow passage if section fully traversable",
+        "create.track_signal.mode_change.entry_signal" => "-> Allow passage if section unoccupied",
+        "create.train_assembly.bogey_created" => "Bogey created. Click again to cycle type",
+        "create.train_assembly.bogeys_too_close" => "Bogeys %1$s and %2$s are too close to each other",
+        "create.train_assembly.frontmost_bogey_at_station" => "Frontmost Bogey must be at Station Marker",
+        "create.train_assembly.no_bogeys" => "No Bogeys Found",
+        "create.train_assembly.no_controls" => "Attach at least one forward-facing Train Controls block (Are you missing Super Glue?)",
+        "create.train_assembly.not_connected_in_order" => "Bogeys are not connected in order",
+        "create.train_assembly.nothing_attached" => "No structure attached to Bogey %1$s",
+        "create.train_assembly.requires_casing" => "Use Train Casing to create bogeys on tracks",
+        "create.train_assembly.single_bogey_carriage" => "This Bogey type cannot support a carriage on its own",
+        "create.bogey.style.no_other_sizes" => "No other sizes",
+        "create.schedule.applied_to_train" => "Train is now following this Schedule",
+        "create.schedule.no_stops" => "This Schedule does not have any Stops yet",
+        _ => return None,
+    })
+}
+
+/// A lang string with its `%1$s`, `%2$s` filled in; the key itself when it isn't listed.
+pub fn format_message(key: &str, args: &[String]) -> String {
+    let mut text = message_text(key).unwrap_or(key).to_owned();
+    for (i, arg) in args.iter().enumerate() {
+        text = text.replace(&format!("%{}$s", i + 1), arg);
+    }
+    text
+}
+
+/// `CTrains.maxAssemblyLength`: the longest assembly track of a station (default 128).
+pub const MAX_ASSEMBLY_LENGTH: i32 = 128;
+/// `CTrains.maxBogeyCount`: the most bogeys a train takes (default 20).
+pub const MAX_BOGEY_COUNT: usize = 20;
 
 // --- the assembly area and the bogeys -------------------------------------------------------------------------
 
@@ -645,6 +708,27 @@ mod tests {
         assert_eq!((west.min, west.max), ([5, 64, 0], [9, 64, 0]));
         assert!(area.contains([12, 64, 0]) && !area.contains([16, 64, 0]) && !area.contains([12, 65, 0]));
         assert_eq!(dist_manhattan([10, 64, 0], [13, 64, 0]) - 1, 2);
+    }
+
+    #[test]
+    fn messages_fill_their_numbers() {
+        let (key, args) = assembly_error_message(&AssemblyError::BogeysTooClose { a: 2, b: 3 });
+        let args: Vec<String> = args.iter().map(ToString::to_string).collect();
+        assert_eq!(format_message(&key, &args), "Bogeys 2 and 3 are too close to each other");
+        assert_eq!(format_message("create.track_target.set", &[]), "Targeted track selected");
+        assert_eq!(format_message("create.nothing", &[]), "create.nothing");
+        for error in [AssemblyError::NoBogeys, AssemblyError::NoControls, AssemblyError::SingleBogeyCarriage, AssemblyError::NotConnectedInOrder, AssemblyError::FrontmostBogeyAtStation, AssemblyError::NothingAttached { carriage: 1 }] {
+            let (key, _) = assembly_error_message(&error);
+            assert!(message_text(&key).is_some(), "{key}");
+        }
+    }
+
+    #[test]
+    fn the_targeting_item_reaches_sixteen_blocks() {
+        assert!(closer_than([0, 0, 0], [15, 0, 0], targeting_reach(false, 32)));
+        assert!(!closer_than([0, 0, 0], [16, 0, 0], targeting_reach(false, 32)));
+        assert!(!closer_than([0, 0, 0], [12, 12, 0], targeting_reach(false, 32)));
+        assert!(closer_than([0, 0, 0], [40, 0, 0], targeting_reach(true, 32)));
     }
 
     #[test]

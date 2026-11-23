@@ -29,6 +29,10 @@ Registered through `tools/gen_modules.py`, which now also lists a rules folder w
 | `assembly.rs` | `StationBlockEntity.assemble` (second half), `enterAssemblyMode`, `tick` | carriages and `Train` from scanned bogeys and the glue's contraption results (spacing, two bogeys per carriage, `single_bogey_carriage`, `not_connected_in_order`, `no_controls`, `nothing_attached`), `add_assembled_train`, re-navigation when a station enters assembly, a station's train presence |
 | `targeting.rs` | `track/TrackTargetingBehaviour` | `createEdgePoint` from a graph location: rotated-block direction flip, coexistence, merging a second signal, point placement for signals/stations/observers, `destroy` |
 | `observer.rs` | `observer/TrackObserver`, `SingleBlockEntityEdgePoint` | activation (8 on keep-alive, counted down in both tick phases), filter, current train; `PointData::Observer` in `graph.rs` |
+| `graph_helper.rs` | `graph/TrackGraphHelper`, `track/TrackTargetingBlockItem.withGraphLocation`, `OverlapResult` | the graph location of a track block and a direction (centre on a node; between two nodes, walking to them), of a point on a curve, and the overlap check of a new edge point |
+| `edge_blocks.rs` | `signal/SignalBlock`, `SignalBlockEntity`, `observer/TrackObserverBlock(Entity)`, `station/StationBlock(Entity)`, `StationEditPacket`, `track/TrackTargetingBlockItem`, `AbstractBogeyBlock` | signal lights (`enterState`, the 15-tick hold off red, the power report, the type follow, the 4-tick power release), observer power, station edits and `/station`, the train presence picture, the assembly area, the bogey click (`trackClicked`), the targeting item's reach, the English of the messages |
+| `schedule_nbt.rs` | `schedule/Schedule`, `ScheduleEntry`, `ScheduleInstruction`, `ScheduleWaitCondition` (`write`, `fromTag`, each one's `data` keys) | a schedule as an NBT tree (`create:train_schedule`) |
+| `schedule_edit.rs` | `schedule/ScheduleScreen` (its edits), `ScheduleItem.appendHoverText` | `/schedule`: the stops and conditions as commands, a new stop's defaults, summaries and the tooltip |
 
 Design: Java object references become ids (`NodeId`, edge = `(from, to)`, point = `(type, uuid)`).
 `RailNetworks` is `GlobalRailwayManager`'s graphs + signal edge groups; whatever Java does to trains
@@ -131,15 +135,39 @@ saving the graphs themselves (only the positions are saved), `TrackGraphSync` to
 A block put down by `setblock` or a structure is not in the graph until the sweep or a neighbouring change finds it; there
 is no hook for `onPlace`.
 
+## Glue part 2: stations, signals, observers, bogeys, the schedule item (not played)
+
+Content (`tools/content/`): `track_station.py`, `track_signal.py`, `track_observer.py`, `bogey.py` (the two bogeys, with the
+Train Casing and its item application) and `schedule.py`; Create's datagen recipes, loot and lang. Art comes from the player's
+jar (blockstates, `block_entry_signal`..., the indicator partials). The glue, in `mod/src/machines/`: `train_net.rs` (the track
+questions the rules ask, `TrackTargetingBehaviour`'s data and its edge point, the sweep that removes the point of a lost block
+entity, the tick of the graphs' points), `track_target.rs` (the item: pick a spot on the track, place the block), `track_station.rs`,
+`track_signal.rs`, `track_observer.rs` (the cargo filter is a value box: `Slot::TrackObserver` and its row) and `schedule.rs`.
+Each block entity ensures its point in `RailNetworks` every tick and keeps the saved form (`Id`, `TargetTrack`, `TargetDirection`,
+the station's `StationName`), so the points come back after a load although the graphs aren't saved.
+
+Differences from Create, and what's missing (the module headers have the details):
+- No station, assembly or schedule screens: `/station` and `/schedule` stand in, and a right click prints the state.
+- **Assembly stops at the track**: the scan, the bogey clicks, the errors and the wheel points on the graph are done; no
+  carriage's blocks are gathered into a structure and no `Train` is made (part 3). So no train presence, no disassembly, no
+  station comparator signal, no auto-schedule slot.
+- A point on a curve can't be selected (client curve picking); the signal and observer overlays on the track and the station
+  flag/assembly outlines aren't drawn; the bogeys' wheels aren't drawn; no door controls, display sources, map markers,
+  computer behaviour, package ports.
+- The graphs' points tick in `train_net.rs` (`clear_group_occupancy`, `tick_all_points` before and after) until trains tick through
+  `Railways::tick`, which owns the same calls: **part 3 must drop `train_net::level_tick`'s call** when it adds that.
+- The track-clicks of an assembly area are `use_item_on` on the track block (`TrackBlock.useItemOn`).
+
 ## Next
 
-1. Glue: `TrackGraphHelper` (graph location from a block and axis), drain `RailNetworks::events` into
-   `Railways::apply_rail_events` and the sync layer, real saving of the graphs (with the edge points and trains), and
-   the left-out list above.
-2. Glue: station and signal blocks (block entities calling `TargetingState::create_edge_point`), observer block,
-   `StationBlockEntity` (assembly: `scan_assembly`, `place_travelling_points`, `assemble_train`, `add_assembled_train`;
-   disassembly: `Railways::disassemble_train`), schedule item and screens.
-3. Glue: the train entity (`CarriageContraptionEntity`) drawn through block entities, driven by `Carriage` anchors and
-   `TrainEvent::ManageEntities`; controls (`manual_tick`, `manual_steer`, `speed`), conductors via
-   `TrainWorld::check_conductors`, passengers.
-4. Content: blocks, items, recipes, bogey styles, saved data for `Railways`.
+1. Glue: drain `RailNetworks::events` into `Railways::apply_rail_events` and the sync layer, keep a `Railways` (the nets plus
+   the trains) per dimension instead of bare `RailNetworks`, real saving of the graphs (with the edge points and trains), and the
+   left-out lists above.
+2. Glue (part 3): assembling the carriages (`CarriageContraption.assemble` from each bogey: the structure, controls, seats, the
+   bogey blocks' data, then `assemble_train`, `add_assembled_train`, removing the blocks), disassembly
+   (`Railways::disassemble_train`), the station's train presence (`Railways::station_train_state`, `station_tick`), the auto-schedule
+   slot, handing a schedule to a conductor (`ScheduleItem.handScheduleTo`, `ScheduleItemEntityInteraction`).
+3. Glue (part 3): the train drawn through block entities (`CarriageContraptionEntity`), driven by `Carriage` anchors and
+   `TrainEvent::ManageEntities`; train controls (`manual_tick`, `manual_steer`, `speed`), conductors via
+   `TrainWorld::check_conductors`, passengers; bogey wheels and styles; the train controls block.
+4. Content: the train controls, the train doors and the other train blocks; saved data for `Railways`.
