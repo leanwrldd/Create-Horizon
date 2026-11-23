@@ -523,6 +523,7 @@
     "create:brass_tunnel",
     "create:turntable",
     "create:weighted_ejector",
-    "create:windmill_bearing"
+    "create:windmill_bearing",
+    "create:track"
   ]
 }

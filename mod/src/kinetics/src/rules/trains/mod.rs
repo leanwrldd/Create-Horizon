@@ -19,6 +19,8 @@ pub mod railways;
 pub mod station;
 pub mod targeting;
 pub mod train;
+pub mod track_block;
+pub mod track_render;
 pub mod track_shape;
 pub mod travelling_point;
 pub mod vec;

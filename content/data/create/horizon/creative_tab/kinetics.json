@@ -278,6 +278,7 @@
     "create:windmill_bearing",
     "create:sail_frame",
     "create:white_sail",
-    "create:handheld_worldshaper"
+    "create:handheld_worldshaper",
+    "create:track"
   ]
 }

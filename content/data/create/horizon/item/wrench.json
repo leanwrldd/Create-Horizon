@@ -476,7 +476,8 @@
             "create:andesite_tunnel",
             "create:brass_tunnel",
             "create:weighted_ejector",
-            "create:windmill_bearing"
+            "create:windmill_bearing",
+            "create:track"
           ],
           "correct_for_drops": true
         }
