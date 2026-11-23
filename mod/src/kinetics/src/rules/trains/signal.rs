@@ -682,6 +682,14 @@ impl RailNetworks {
             Some(g) => g.edge_points.ids(EdgePointType::Signal),
             None => return,
         };
+        // `TrackObserver.tick` ignores `preTrains`: it runs in both phases.
+        if let Some(g) = self.graphs.get_mut(&graph) {
+            for oid in g.edge_points.ids(EdgePointType::Observer) {
+                if let Some(o) = g.edge_points.get_mut(EdgePointType::Observer, oid).and_then(|p| p.observer_mut()) {
+                    o.tick();
+                }
+            }
+        }
         for id in ids {
             if !pre_trains {
                 self.tick_signal_state(graph, id);

@@ -13,6 +13,7 @@
 
 use super::bezier::BezierConnection;
 use super::network::TrackGraph;
+use super::observer::TrackObserver;
 use super::signal::SignalBoundary;
 use super::station::GlobalStation;
 use super::vec::{
@@ -210,12 +211,12 @@ impl EdgePointType {
     }
 }
 
-/// What differs between kinds of edge point. Observers are `Plain` until their own port gives them
-/// state.
+/// What differs between kinds of edge point.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PointData {
     Signal(SignalBoundary),
     Station(GlobalStation),
+    Observer(TrackObserver),
     Plain,
 }
 
@@ -249,6 +250,31 @@ impl TrackEdgePoint {
             edge_location,
             position,
             data: PointData::Station(GlobalStation::new()),
+        }
+    }
+
+    /// `new TrackObserver()` placed on an edge.
+    pub fn new_observer(id: Uuid, edge_location: [TrackNodeLocation; 2], position: f64) -> TrackEdgePoint {
+        TrackEdgePoint {
+            id,
+            ty: EdgePointType::Observer,
+            edge_location,
+            position,
+            data: PointData::Observer(TrackObserver::new()),
+        }
+    }
+
+    pub fn observer(&self) -> Option<&TrackObserver> {
+        match &self.data {
+            PointData::Observer(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    pub fn observer_mut(&mut self) -> Option<&mut TrackObserver> {
+        match &mut self.data {
+            PointData::Observer(o) => Some(o),
+            _ => None,
         }
     }
 
@@ -309,7 +335,7 @@ impl TrackEdgePoint {
         match &self.data {
             PointData::Signal(s) => s.can_navigate_via(self.is_primary(side)),
             PointData::Station(s) => s.can_navigate_via(),
-            PointData::Plain => true,
+            PointData::Observer(_) | PointData::Plain => true,
         }
     }
 }

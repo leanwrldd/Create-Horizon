@@ -88,7 +88,7 @@ impl<'a> TrackSelector<'a> {
     }
 }
 
-fn steer_select(graph: &TrackGraph, tp: &TravellingPoint, direction: SteerDirection, up: Vec3, targets: &[Candidate]) -> usize {
+pub fn steer_select(graph: &TrackGraph, tp: &TravellingPoint, direction: SteerDirection, up: Vec3, targets: &[Candidate]) -> usize {
     let mut closest = f64::MAX;
     let mut best: Option<usize> = None;
     let Some(edge) = tp.edge(graph) else { return 0 };
