@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in a test build doesn't work, works differently from Create, or crashes.
+labels: ["bug", "from testing"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing. One bug per report, please. Check the release notes' "Known problems" first.
+  - type: input
+    id: build
+    attributes:
+      label: Test build
+      description: The release you installed, e.g. v0.1.0-test1.
+      placeholder: v0.1.0-test1
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Kinetics (shafts, cogs, gearboxes, motors, generators)
+        - Processing (press, mixer, millstone, crushing wheels, fans, deployer)
+        - Belts, depots, chutes, funnels, tunnels
+        - Fluids (pipes, tanks, pumps, spouts, burners)
+        - Moving structures (pistons, bearings, pulleys, gantries, elevators)
+        - Logistics (stock links, packages, display links)
+        - Trains and tracks
+        - Goggles, wrench, Ponder, tooltips
+        - Rendering (missing or wrong models, textures)
+        - Install or build
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: If it behaves differently from Create, say what Create does.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: From a new creative world if you can. Screenshots or a short video help a lot.
+      placeholder: |
+        1. Place a Creative Motor at 64 RPM
+        2. Connect a shaft to a Mechanical Press over a Depot
+        3. Put 64 iron ingots on the Depot
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: latest.log
+      description: Drag in the file from your instance's logs folder (install.ps1 prints where it is). For a crash, add the file in crash-reports too.
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Operating system and graphics card.
+      placeholder: Windows 11, RTX 3060
