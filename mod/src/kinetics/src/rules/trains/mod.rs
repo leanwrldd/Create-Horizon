@@ -2,6 +2,7 @@
 //! it, signals, stations, navigation and schedules. See `README.md` in this folder for what is ported from
 //! which Java file and what comes next.
 
+pub mod assembly;
 pub mod bezier;
 pub mod bogey;
 pub mod carriage;
@@ -13,7 +14,10 @@ pub mod placement;
 pub mod propagator;
 pub mod schedule;
 pub mod signal;
+pub mod railways;
 pub mod station;
+pub mod targeting;
+pub mod train;
 pub mod track_shape;
 pub mod travelling_point;
 pub mod vec;

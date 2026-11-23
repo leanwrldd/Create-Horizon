@@ -60,6 +60,16 @@ pub struct CargoState {
     pub items: Vec<CargoItem>,
     /// Every tank: the fluid's id and amount (mB).
     pub fluids: Vec<(String, i32)>,
+    /// Every fuel slot (`getFuelItems()`): how many items and the burn time of one (`getBurnTime`).
+    pub fuel: Vec<FuelSlot>,
+}
+
+/// A slot of a carriage's fuel storage.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FuelSlot {
+    pub count: i32,
+    /// `stack.getBurnTime(null)` of one item; 0 or less for a non-fuel.
+    pub burn_time: i32,
 }
 
 /// An item slot of a carriage's storage.
