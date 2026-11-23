@@ -81,8 +81,10 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
 
 **Left:**
 - play-testing everything above (test plans are in the merge commits' agents' notes and on the board rows);
-- trains: part 1 is merged (rules only, `rules/trains/`, its README says what's next: stations, navigation,
-  schedules, carriages, bogeys, then glue). Catnip's `intersect_ranged` there is reconstructed, unverified;
+- trains: the rules are merged in three parts (`rules/trains/`: track geometry and graph, signals, stations and
+  assembly, navigation, schedules, trains, carriages, bogeys, observers, the railway manager's tick). Next is the glue:
+  track blocks and placement, station and signal blocks, drawing trains, controls, the schedule item, content. Catnip's
+  `intersect_ranged` and `intersect_sphere` are reconstructed, unverified (see its README);
 - Ponder: bearings, glue, belt items, pulleys, deployers, arms and particles animate (0d8653f). Then: `modifyBlockEntityNBT`
   (the `put*`/`writeEnum`/`saveOptional` calls become an `nbt` op the player merges into the drawn block entity, so
   every renderer that reads the key Create saves shows it), `setFilterData`, Harvester/Roller `setAnimatedSpeed`,
@@ -92,8 +94,12 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   inventories, recipes and display text (`ponder_storyboards.py` prints what it skips), `modifyBlock` that reads the
   old state, parrots, carts, `showFilterSlotInput`, `toggleControls`, `hideElement`, `propagatePipeChange`, trains;
 - minecart contraptions (blocked: nothing can draw a structure on a vanilla minecart);
-- clicking blocks on a moving structure, Deployer schematic printing on a structure;
-- Factory Gauge arrows and relocation, Table Cloth shop data on the item;
+- Deployer schematic printing on a structure (clicking levers, doors, trapdoors, gates, seats, Deployers and Controls
+  on a moving structure is merged, `006778e`; client-side click cancelling and the elevator Controls branch are not);
+- Factory Gauge links to Redstone and Display Links (items now carry frequencies and orders, the click picks the panel,
+  arrows draw, `/gauge move` relocates: `01b5a40`);
+- merged 2026-11-23, unplayed: Mixer brewing (`507bcfc`; the brewing recipe JSON field names are a guess), pumps and
+  pipes joining other mods' tank block entities (`b67432a`; cauldrons stay unconnected, as in Create 6.0.10);
 - a route for other testers to get Create's art: a pack built from each tester's own Create jar.
 
 ## Building and testing
