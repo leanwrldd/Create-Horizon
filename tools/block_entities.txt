@@ -190,6 +190,9 @@ stock_ticker
 stockpile_switch
 stressometer
 track
+track_observer
+track_signal
+track_station
 turntable
 water_wheel
 water_wheel_structure

@@ -22,6 +22,8 @@ pub enum FilterKind {
     Fluids,
     /// `RollerBlockEntity`'s filter: the block to pave with.
     Paving,
+    /// `TrackObserverBlockEntity`'s filter: the cargo to look for.
+    Cargo,
 }
 
 impl FilterKind {
@@ -32,6 +34,7 @@ impl FilterKind {
             FilterKind::Recipes => "create.logistics.recipe_filter",
             FilterKind::Fluids => "create.logistics.fluid_filter",
             FilterKind::Paving => super::roller::FILTER_LABEL,
+            FilterKind::Cargo => "create.logistics.train_observer.cargo_filter",
         }
     }
 }
@@ -202,6 +205,9 @@ static ROLLER: [BoxDef; 2] = [
     },
 ];
 
+// `TrackObserverBlockEntity.addBehaviours`: the cargo filter (`logistics.train_observer.cargo_filter`), on top.
+static TRACK_OBSERVER: [BoxDef; 1] = [filter(Slot::TrackObserver, FilterKind::Cargo, never, always)];
+
 /// The value boxes of block `block`, none for a block without any.
 pub fn boxes(block: &str) -> &'static [BoxDef] {
     match block {
@@ -217,6 +223,7 @@ pub fn boxes(block: &str) -> &'static [BoxDef] {
         "create:stockpile_switch" => &STOCKPILE_SWITCH,
         "create:smart_fluid_pipe" => &SMART_FLUID_PIPE,
         "create:mechanical_roller" => &ROLLER,
+        "create:track_observer" => &TRACK_OBSERVER,
         _ => &[],
     }
 }
@@ -279,6 +286,7 @@ mod tests {
             "create:stockpile_switch",
             "create:smart_fluid_pipe",
             "create:mechanical_roller",
+            "create:track_observer",
         ] {
             assert!(has_boxes(block), "{block}");
         }

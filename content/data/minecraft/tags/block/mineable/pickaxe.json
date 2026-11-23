@@ -19,6 +19,9 @@
     "create:peculiar_bell",
     "create:haunted_bell",
     "create:crafting_blueprint",
+    "create:small_bogey",
+    "create:large_bogey",
+    "create:railway_casing",
     "create:wooden_bracket",
     "create:metal_bracket",
     "create:blaze_burner",
@@ -519,11 +522,14 @@
     "create:green_toolbox",
     "create:red_toolbox",
     "create:black_toolbox",
+    "create:track",
+    "create:track_observer",
+    "create:track_signal",
+    "create:track_station",
     "create:andesite_tunnel",
     "create:brass_tunnel",
     "create:turntable",
     "create:weighted_ejector",
-    "create:windmill_bearing",
-    "create:track"
+    "create:windmill_bearing"
   ]
 }

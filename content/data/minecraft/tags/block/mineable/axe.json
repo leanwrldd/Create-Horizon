@@ -12,6 +12,7 @@
     "create:mechanical_arm",
     "create:mechanical_bearing",
     "create:crafting_blueprint",
+    "create:railway_casing",
     "create:wooden_bracket",
     "create:chain_conveyor",
     "create:encased_chain_drive",

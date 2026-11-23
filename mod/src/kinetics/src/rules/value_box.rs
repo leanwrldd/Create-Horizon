@@ -178,6 +178,9 @@ pub enum Slot {
     /// `RollerBlockEntity.RollerValueBox(hOffset)`: on top of the block, 3 pixels to one side of its middle for the
     /// filter (`hOffset` 3) and 3 to the other for the mode (-3), turned with the block's facing.
     Roller { h_offset: i32 },
+    /// `TrackObserverBlockEntity.createFilter`'s transform: the middle of the top face (`(0.5, 15.5 / 16, 0.5)`), turned
+    /// 90 degrees about x. Not sided.
+    TrackObserver,
     /// `CenteredSideValueBoxTransform(allowed)`, with the plain default of (8, 8, 15.5).
     Centered(Sides),
 }
@@ -202,7 +205,7 @@ fn sided_rotation(side: Dir) -> Vec<(Axis, f64)> {
 impl Slot {
     /// Whether the box depends on the face of the block that was looked at (`ValueBoxTransform.Sided`).
     pub fn sided(self) -> bool {
-        !matches!(self, Slot::Saw | Slot::SmartPipe | Slot::Roller { .. })
+        !matches!(self, Slot::Saw | Slot::SmartPipe | Slot::Roller { .. } | Slot::TrackObserver)
     }
 
     /// `ValueBoxTransform.getScale`.
@@ -251,7 +254,7 @@ impl Slot {
             // `BrassTunnelBlockEntity.isValidFaceForFilter`: the sides the tunnel has an opening on.
             Slot::BrassTunnelFilter => p.flag(&format!("fact:side_{}", side.name())),
             Slot::BrassTunnelMode => side == Dir::Up,
-            Slot::Saw | Slot::SmartPipe | Slot::Roller { .. } => true,
+            Slot::Saw | Slot::SmartPipe | Slot::Roller { .. } | Slot::TrackObserver => true,
             Slot::Deployer => {
                 let Some(facing) = p.dir("facing") else {
                     return false;
@@ -348,6 +351,7 @@ impl Slot {
                 Some(rotate_centered(voxel_space(8.0, y, 15.5), horizontal_angle(side), Axis::Y))
             }
             Slot::FilteredDetector { .. } => Some(sided_offset(voxel_space(8.0, 8.0, 15.5), side)),
+            Slot::TrackObserver => Some(voxel_space(8.0, 15.5, 8.0)),
             Slot::Roller { h_offset } => {
                 let angle = horizontal_angle(p.dir("facing")?) + 180.0;
                 Some(rotate_centered(voxel_space(8.0 + f64::from(h_offset), 15.5, 11.0), angle, Axis::Y))
@@ -401,6 +405,7 @@ impl Slot {
                 }
                 turns
             }
+            Slot::TrackObserver => vec![(Axis::X, 90.0)],
             Slot::Roller { .. } => {
                 // `RollerValueBox.rotate`: `rotateYDegrees(horizontalAngle(facing) + 180).rotateXDegrees(90)`.
                 let angle = horizontal_angle(p.dir("facing").unwrap_or(Dir::North)) + 180.0;

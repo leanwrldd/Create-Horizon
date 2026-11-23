@@ -1,0 +1,12 @@
+{
+  "template": "minecraft:andesite",
+  "item": true,
+  "properties": {
+    "hardness": 1.5,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:netherite_block",
+    "map_color": 45,
+    "render_shape": "MODEL"
+  }
+}
