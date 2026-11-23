@@ -970,10 +970,97 @@ impl Support {
     }
 }
 
+// --- what a link says and shows ----------------------------------------------------------------------------
+
+/// `RedstoneLinkBlock.updateTransmittedSignal`: the signal a transmitting Redstone Link sends given what its neighbours give
+/// (`getPower`) and what its linked panels say (`shouldBePoweredTristate`: 15 for a satisfied panel). `None` is Create's early return
+/// ("Suppress update if an input panel exists but is not loaded"): the link keeps what it sent.
+pub fn transmitted_power(neighbour: i32, from_panels: Option<bool>) -> Option<i32> {
+    let panels = match from_panels {
+        None => return None,
+        Some(true) => 15,
+        Some(false) => 0,
+    };
+    Some(neighbour.max(panels))
+}
+
+/// `FactoryGaugeDisplaySource.createEntry`'s mark before the item's name: `demand != 0` gives a tick when satisfied, an up arrow while
+/// something is promised, else a small square; no demand gives a blank (`" "`).
+pub fn status_symbol(demand: i64, satisfied: bool, promised: u32) -> char {
+    if demand == 0 {
+        ' '
+    } else if satisfied {
+        '\u{2714}'
+    } else if promised != 0 {
+        '\u{2191}'
+    } else {
+        '\u{25aa}'
+    }
+}
+
+/// `FactoryGaugeDisplaySource.createEntry`: the row for one linked panel, as the name the list shows and the value (`getLevelInStorage`).
+/// Create colours the mark with `getIngredientStatusColor`; the text here is plain. `item_name` is the filter's hover name.
+pub fn display_entry<K: PartialEq + Clone>(panel: &Gauge<K>, max_stack_size: u32, item_name: &str) -> (String, i64) {
+    let demand = panel.demand(max_stack_size);
+    let mark = status_symbol(demand, panel.satisfied, panel.last_reported_promises);
+    (format!("{mark} {item_name}"), i64::from(panel.last_reported_level_in_storage))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::rules::logistics_network::PackagerView;
+
+    #[test]
+    fn a_link_sends_the_larger_of_its_neighbours_and_its_panels() {
+        assert_eq!(transmitted_power(0, Some(false)), Some(0));
+        assert_eq!(transmitted_power(7, Some(false)), Some(7));
+        assert_eq!(transmitted_power(7, Some(true)), Some(15));
+        assert_eq!(transmitted_power(0, Some(true)), Some(15));
+        // An unloaded panel leaves the link as it was.
+        assert_eq!(transmitted_power(9, None), None);
+    }
+
+    #[test]
+    fn a_panels_row_has_a_mark_and_its_level() {
+        assert_eq!(status_symbol(0, true, 3), ' ');
+        assert_eq!(status_symbol(64, true, 0), '\u{2714}');
+        assert_eq!(status_symbol(64, false, 5), '\u{2191}');
+        assert_eq!(status_symbol(64, false, 0), '\u{25aa}');
+        let mut panel: Gauge<&str> = Gauge::new(Slot::BottomLeft, 1);
+        panel.count = 2;
+        panel.up_to = false;
+        panel.last_reported_level_in_storage = 130;
+        // Two stacks of 16 is a demand of 32, so a panel with nothing promised and not satisfied is a small square.
+        assert_eq!(display_entry(&panel, 16, "Ender Pearl"), ("\u{25aa} Ender Pearl".to_owned(), 130));
+        panel.satisfied = true;
+        assert_eq!(display_entry(&panel, 16, "Ender Pearl").0, "\u{2714} Ender Pearl");
+        panel.count = 0;
+        assert_eq!(display_entry(&panel, 16, "Ender Pearl").0, "  Ender Pearl");
+    }
+
+    #[test]
+    fn a_panel_connects_to_a_link_once_and_the_link_remembers_it() {
+        let here = PanelPosition { pos: [0, 64, 0], slot: Slot::BottomLeft };
+        let link = PanelPosition { pos: [3, 64, 0], slot: Slot::TopLeft };
+        let mut panel: Gauge<&str> = Gauge::new(Slot::BottomLeft, 1);
+        panel.enable();
+        assert_eq!(panel.add_connection(here, link, ConnectionSource::Link, false), Added::Link);
+        let again = PanelPosition { pos: [3, 64, 0], slot: Slot::BottomRight };
+        assert_eq!(panel.add_connection(here, again, ConnectionSource::Link, false), Added::Link);
+        assert_eq!(panel.targeted_by_links.len(), 1);
+        assert_eq!(panel.targeted_by_links[0].from, again);
+        // A powered Redstone Link receiving a signal pauses the panel, until it stops.
+        let reads = [LinkRead::Link { is_output: true, powers_panel: true }];
+        assert!(panel.check_for_redstone_input(&reads));
+        assert!(panel.redstone_powered);
+        assert!(!panel.check_for_redstone_input(&reads));
+        assert!(panel.check_for_redstone_input(&[LinkRead::Link { is_output: true, powers_panel: false }]));
+        // A transmitting link or a Display Link (not an output) never pauses it, and is told when the panel changes.
+        let display = [(link.pos, LinkRead::Link { is_output: false, powers_panel: false })];
+        assert_eq!(panel.links_to_notify(&display), vec![link.pos]);
+        assert_eq!(panel.disconnect_all_links(), vec![link.pos]);
+    }
 
     #[test]
     fn a_gauge_faces_back_at_the_player_and_a_floor_gauge_the_other_way() {

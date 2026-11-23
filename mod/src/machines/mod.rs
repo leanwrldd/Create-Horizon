@@ -56,6 +56,7 @@ pub mod display_link;
 pub mod display_link_select;
 pub mod display_link_source;
 pub mod display_link_target;
+pub mod panel_support;
 pub mod diving;
 pub mod drill;
 pub mod elevator;

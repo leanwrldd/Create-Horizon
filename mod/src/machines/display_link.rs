@@ -42,7 +42,11 @@ use crate::compat::{
     StandaloneModelsEvent, StateForPlacementEvent, Tag, Text, UseItemOnEvent,
 };
 
+use create_kinetics::rules::factory_gauge::PanelPosition;
+use create_kinetics::rules::display_link::Reading;
+
 use super::diodes_signal as signal;
+use super::{factory_gauge, panel_support};
 use super::{display_link_source as sources, display_link_target as targets};
 use crate::util;
 
@@ -73,6 +77,8 @@ pub struct Link {
     pub line: usize,
     pub source: Option<(Source, Config)>,
     pub pulse: i64,
+    /// `factoryPanelSupport.getLinkedPanels()`: the Factory Gauge panels attached (kept by `panel_support.rs`, not written here).
+    pub panels: Vec<PanelPosition>,
 }
 
 pub fn load(nbt: &Compound) -> Link {
@@ -89,6 +95,7 @@ pub fn load(nbt: &Compound) -> Link {
         line: util::int(nbt, LINE).max(0) as usize,
         source,
         pulse: if util::has(nbt, PULSE) { util::long(nbt, PULSE) } else { i64::MIN },
+        panels: panel_support::load(nbt).linked_panels,
     }
 }
 
@@ -149,6 +156,25 @@ pub fn source_pos(pos: Pos, facing: Dir) -> Pos {
     step(pos, facing.opposite())
 }
 
+/// `DisplayLinkBlockEntity.getSourcePosition`: the first Factory Gauge panel attached, else the block the link is attached to.
+fn source_of(link: &Link, pos: Pos, facing: Dir) -> Pos {
+    link.panels.first().map_or_else(|| source_pos(pos, facing), |panel| panel.pos)
+}
+
+/// What the source reads (`provideText`'s input): a gauge status reads the attached panels, any other the block at `src`.
+fn read_source_at(host: &mut dyn Host, link: &Link, source: Source, src: Pos, facing: Dir) -> Reading {
+    if source == Source::GaugeStatus {
+        return Reading::List(factory_gauge::status_entries(&*host, &link.panels));
+    }
+    sources::read(host, source, src, facing)
+}
+
+/// `DisplayLinkBlockEntity.updateGatheredData` from outside the link's own tick, for a Factory Gauge that changed what the link
+/// shows (`FactoryPanelSupportBehaviour.notifyLink`).
+pub(super) fn refresh(host: &mut dyn Host, pos: Pos) {
+    gather_now(host, pos);
+}
+
 /// Whether the chunk of `pos` is loaded (`level.isLoaded`).
 fn loaded(host: &dyn Host, pos: Pos) -> bool {
     host.chunk_is_loaded(host.dimension(), [pos[0] >> 4, pos[2] >> 4])
@@ -167,7 +193,7 @@ struct Gathered {
 /// changed as the block entity would be (the source forgotten if its block changed, the config's
 /// stopwatch start, the pulse); the caller saves it.
 fn gather(host: &mut dyn Host, pos: Pos, facing: Dir, link: &mut Link) -> Gathered {
-    let src = source_pos(pos, facing);
+    let src = source_of(link, pos, facing);
     let tgt = [pos[0] + link.offset[0], pos[1] + link.offset[1], pos[2] + link.offset[2]];
     if !loaded(&*host, src) || !loaded(&*host, tgt) {
         return Gathered::default();
@@ -183,7 +209,7 @@ fn gather(host: &mut dyn Host, pos: Pos, facing: Dir, link: &mut Link) -> Gather
     let (Some((source, mut config)), Some(target)) = (link.source.clone(), targets::target_at(&*host, tgt)) else {
         return Gathered::default();
     };
-    let reading = sources::read(host, source, src, facing);
+    let reading = read_source_at(host, link, source, src, facing);
     targets::deliver(host, pos, tgt, target, link.line, source, &mut config, &reading);
     link.source = Some((source, config));
     link.pulse = util::game_time(host);
@@ -233,7 +259,8 @@ fn memory<R>(f: impl FnOnce(&mut Memory) -> R) -> R {
 /// A source whose block has no tick of its own to tell the link something changed: the link
 /// looks at it each tick (`RedstonePowerDisplaySource`, `NixieTubeBlockEntity.notifyGatherers`).
 fn is_polled(source: Source) -> bool {
-    matches!(source, Source::RedstonePower | Source::NixieTube)
+    // The gauge status: a panel's change reaches the link through `FactoryPanelSupportBehaviour.notifyLink` in Create.
+    matches!(source, Source::RedstonePower | Source::NixieTube | Source::GaugeStatus)
 }
 
 // --- messages ------------------------------------------------------------------------------------------
@@ -252,7 +279,7 @@ fn say_red(host: &mut dyn Host, line: &str) {
 
 /// A line telling what the link now does.
 fn describe(host: &dyn Host, pos: Pos, facing: Dir, link: &Link) -> String {
-    let src = host.block(source_pos(pos, facing));
+    let src = host.block(source_of(link, pos, facing));
     let mut line = match &link.source {
         Some((source, config)) => {
             let mut text = format!("{}: {}", block_title(&src), source.name());
@@ -335,7 +362,7 @@ impl Hooks for DisplayLink {
                 *ticks >= source.refresh_ticks()
             });
             if is_polled(source) && !due {
-                let reading = sources::read(host, source, source_pos(pos, facing), facing);
+                let reading = read_source_at(host, &link, source, source_of(&link, pos, facing), facing);
                 let signature = format!("{reading:?}");
                 due = memory(|m| m.seen.insert(key.clone(), signature.clone()).is_some_and(|old| old != signature));
             }
@@ -529,7 +556,7 @@ fn cycle_source(host: &mut dyn Host, pos: Pos) {
         say_red(host, "Link has no valid target, try placing it again");
         return;
     }
-    let offered = sources_for(&host.block(source_pos(pos, facing)));
+    let offered = sources_for(&host.block(source_of(&link, pos, facing)));
     if offered.is_empty() {
         say_red(host, "Not a Display Source");
         return;

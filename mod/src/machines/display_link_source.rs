@@ -98,6 +98,8 @@ pub fn read(host: &mut dyn Host, source: Source, source_pos: Pos, facing: Dir) -
             Reading::Power(power.max(host.neighbor_signal(dimension, source_pos)))
         }
         Source::NixieTube => nixie_tube::text_at(&*host, source_pos).map_or(Reading::Missing, Reading::Text),
+        // Read from the link's attached panels (`display_link::read_source_at`), not from a block.
+        Source::GaugeStatus => Reading::Missing,
     }
 }
 

@@ -21,10 +21,14 @@
 //!   first while there are two or more, as in Create.
 //!
 //! Known differences from Create:
-//! - The screen, the value box, the bulb and the connection to Redstone Links and Display Links (`FactoryPanelSupportBehaviour`) are not
-//!   ported; so the block never powers neighbours and `activeCraftingArrangement` (Mechanical Crafting) can't be set. The arrows' glow
-//!   animation and UV shift aren't drawn, and their status colour is a tint. Connections are made with `/gauge connect`, not by clicking
-//!   a second panel.
+//! - Redstone Links and Display Links (`FactoryPanelSupportBehaviour`, `panel_support.rs`): `/gauge connect <x> <y> <z>` attaches the
+//!   link there (its own slot is the one nearest the panel, as `FactoryPanelConnectionHandler` picks), with an arrow drawn to it;
+//!   `/gauge unlink` lets every link go (the "redstone reset" button). A Redstone Link that receives a signal pauses the panel
+//!   (`checkForRedstoneInput`, every 40 ticks); a transmitting one sends 15 while a linked panel is satisfied with a target; a Display
+//!   Link with panels reads them as the "gauge status" source, one row each.
+//! - The screen, the value box and the bulb are not ported; so `activeCraftingArrangement` (Mechanical Crafting) can't be set. The arrows'
+//!   glow animation and UV shift aren't drawn, and their status colour is a tint. Connections are made with `/gauge connect`, not by
+//!   clicking a second panel or a link.
 //! - `moveTo` only moves a panel to a free slot of an existing gauge block in the same state (it doesn't place a new block).
 //! - An untuned gauge item is refused on any block that isn't a linked block, so it doesn't open chests and the like either.
 //! - The panels' effect packets (the sparks along the arrows) aren't sent.
@@ -34,8 +38,8 @@ use std::collections::BTreeMap;
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 
 use create_kinetics::rules::factory_gauge::{
-    self as rules, Added, Configuration, Connection, ConnectionSource, Disconnected, Gauge, PanelPair, PanelPosition, Reads, RequestEnv,
-    Slot, Source,
+    self as rules, Added, Configuration, Connection, ConnectionSource, Disconnected, Gauge, LinkRead, PanelPair, PanelPosition, PanelRead,
+    Reads, RequestEnv, Slot, Source,
 };
 use create_kinetics::rules::factory_gauge_geometry as geometry;
 use create_kinetics::rules::filter::display_name;
@@ -55,6 +59,8 @@ use crate::compat::{
 };
 
 use super::logistics as network;
+use super::panel_support as support;
+use super::display_link;
 use super::package as items;
 use super::packager::PACKAGER;
 use super::packager_inv as target_inv;
@@ -129,14 +135,14 @@ fn random_freq() -> Freq {
 
 // --- the saved form ---------------------------------------------------------------------------------------
 
-fn pos_tag(at: &PanelPosition) -> Tag {
+pub(super) fn pos_tag(at: &PanelPosition) -> Tag {
     let mut tag = Compound::new();
     tag.insert("pos".into(), Tag::IntArray(at.pos.to_vec()));
     tag.insert("slot".into(), Tag::String(slot_name(at.slot).into()));
     Tag::Compound(tag)
 }
 
-fn pos_of(tag: &Tag) -> Option<PanelPosition> {
+pub(super) fn pos_of(tag: &Tag) -> Option<PanelPosition> {
     let Some(Tag::IntArray(ints)) = tag.get("pos") else {
         return None;
     };
@@ -325,13 +331,39 @@ fn held_of(host: &mut dyn Host, packager: Pos, key: &ItemStack) -> u32 {
 }
 
 /// A panel as `FactoryPanelBehaviour.at` finds it: none unless it is active.
-fn panel_at(host: &mut dyn Host, at: &PanelPosition) -> Option<(Gauge<ItemStack>, bool)> {
+fn panel_at(host: &dyn Host, at: &PanelPosition) -> Option<(Gauge<ItemStack>, bool)> {
     if host.block(at.pos) != ID {
         return None;
     }
     let entity = host.mod_block_entity(at.pos)?;
     let panel = read_panel(&entity.nbt, at.slot);
     panel.active.then(|| (panel, util::boolean(&entity.nbt, RESTOCKER)))
+}
+
+/// What a link's `FactoryPanelSupportBehaviour` sees of a panel (`shouldBePoweredTristate`): not loaded, gone, or its state.
+pub(super) fn panel_read(host: &dyn Host, at: &PanelPosition) -> PanelRead {
+    if !host.chunk_is_loaded(host.dimension(), [at.pos[0] >> 4, at.pos[2] >> 4]) {
+        return PanelRead::Unloaded;
+    }
+    match panel_at(host, at) {
+        Some((panel, _)) => PanelRead::Present { satisfied: panel.satisfied, count: panel.count },
+        None => PanelRead::Missing,
+    }
+}
+
+/// `FactoryGaugeDisplaySource.provideEntries`: a row for each panel a Display Link is attached to (the ones that are gone are left out).
+pub fn status_entries(host: &dyn Host, panels: &[PanelPosition]) -> Vec<(String, i64)> {
+    panels
+        .iter()
+        .filter_map(|at| {
+            let (panel, _) = panel_at(host, at)?;
+            let (name, max_stack) = match &panel.filter {
+                Some(key) => (display_name(&key.item), host.max_stack_size(&key.item).unwrap_or(64)),
+                None => ("Air".to_owned(), 64),
+            };
+            Some(rules::display_entry(&panel, max_stack, &name))
+        })
+        .collect()
 }
 
 /// Changes the panel at `at` and saves it; whether there was one.
@@ -362,12 +394,86 @@ fn update_panel(host: &mut dyn Host, at: &PanelPosition, change: impl FnOnce(&mu
 
 /// What `disconnectAll` leaves for the other panels.
 fn apply_disconnected(host: &mut dyn Host, gone: &Disconnected) {
+    for link in &gone.links {
+        unlink(host, *link, gone.here);
+    }
     for source in &gone.sources_stop_targeting {
         update_panel(host, source, |panel| panel.targeting.retain(|p| *p != gone.here));
     }
     for target in &gone.targets_stop_being_targeted_by {
         update_panel(host, target, |panel| panel.targeted_by.retain(|c| c.from != gone.here));
     }
+}
+
+/// `FactoryPanelSupportBehaviour.disconnect(panel)` of the link at `link`; a Display Link writes its target again, for it no longer
+/// reads that panel.
+fn unlink(host: &mut dyn Host, link: Pos, panel: PanelPosition) {
+    if support::disconnect(host, link, panel) && host.block(link) == display_link::ID {
+        display_link::refresh(host, link);
+    }
+}
+
+/// `FactoryPanelBehaviour.addConnection` to a link (`FactoryPanelConnectionHandler` after a click on a Redstone Link or Display Link):
+/// the panel at `at` keeps the link, and the link keeps the panel.
+fn connect_link(host: &mut dyn Host, at: &PanelPosition, restocker: bool, link: Pos) -> Result<String, String> {
+    let block = host.block(link);
+    if !support::is_support(&block) {
+        return Err("There is no Redstone Link or Display Link there".to_owned());
+    }
+    let (Some((face, facing)), Some(connected)) = (face_and_facing(&*host, at.pos), connected_direction(&*host, at.pos)) else {
+        return Err(rules::Issue::ConnectionAborted.message().to_owned());
+    };
+    // `checkForIssues(from, FactoryPanelSupportBehaviour to)`: the link's own `FACING` must be the gauge's connected direction.
+    let same_facing = match util::facing(&*host, link, "facing") {
+        Some(f) => f == connected,
+        None => true,
+    };
+    let diff = [link[0] - at.pos[0], link[1] - at.pos[1], link[2] - at.pos[2]];
+    let along = match connected.axis().name() {
+        "x" => diff[0],
+        "y" => diff[1],
+        _ => diff[2],
+    };
+    if let Some(issue) = rules::check_link(false, same_facing, diff, along) {
+        return Err(issue.message().to_owned());
+    }
+    let from = PanelPosition { pos: link, slot: geometry::best_link_slot(face, facing, link, *at) };
+    let mut added = Added::No;
+    update_panel(host, at, |panel| {
+        added = panel.add_connection(*at, from, ConnectionSource::Link, restocker);
+    });
+    if added != Added::Link {
+        return Err("Nothing was connected".to_owned());
+    }
+    support::connect(host, link, *at);
+    if block == display_link::ID {
+        display_link::refresh(host, link);
+    }
+    Ok(format!("Connected to {}", create_kinetics::rules::arm_points::block_title(&block)))
+}
+
+/// `FactoryPanelBehaviour.checkForRedstoneInput` for the panels with links: every attached link is read, and a link that is gone is
+/// forgotten (Create's `FactoryPanelSupportBehaviour.destroy` does that when the link is broken).
+fn check_redstone_input(host: &mut dyn Host, panels: &mut [Gauge<ItemStack>]) -> bool {
+    let mut dirty = false;
+    for panel in panels.iter_mut().filter(|p| p.active && !p.targeted_by_links.is_empty()) {
+        let mut reads = Vec::new();
+        let mut gone = Vec::new();
+        for connection in &panel.targeted_by_links {
+            let read = support::read_link(host, connection.from.pos);
+            if read == LinkRead::Missing {
+                gone.push(connection.from.pos);
+            }
+            reads.push(read);
+        }
+        if !gone.is_empty() {
+            panel.targeted_by_links.retain(|c| !gone.contains(&c.from.pos));
+            dirty = true;
+        }
+        let present: Vec<LinkRead> = reads.into_iter().filter(|r| *r != LinkRead::Missing).collect();
+        dirty |= panel.check_for_redstone_input(&present);
+    }
+    dirty
 }
 
 // --- the tick ---------------------------------------------------------------------------------------------------
@@ -576,7 +682,13 @@ fn move_panel(host: &mut dyn Host, at: &PanelPosition, panel: &Gauge<ItemStack>,
     };
     let packager_behind = restocked_packager(&*host, to.pos).is_some();
     let connected: Vec<Pos> =
-        panel.targeting.iter().map(|p| p.pos).chain(panel.targeted_by.iter().map(|c| c.from.pos)).collect();
+        panel
+            .targeting
+            .iter()
+            .map(|p| p.pos)
+            .chain(panel.targeted_by.iter().map(|c| c.from.pos))
+            .chain(panel.targeted_by_links.iter().map(|c| c.from.pos))
+            .collect();
     if let Some(why) = geometry::check_move(target_active, target_is_gauge, same_state, &connected, to.pos, along, packager_behind) {
         return Err(match why {
             geometry::MoveRefusal::Occupied => "That panel slot is taken",
@@ -627,6 +739,11 @@ fn move_panel(host: &mut dyn Host, at: &PanelPosition, panel: &Gauge<ItemStack>,
                 *target = to;
             }
         });
+    }
+    // "Reconnect links": each link forgets the old position and learns the new one.
+    for connection in &panel.targeted_by_links {
+        support::disconnect(host, connection.from.pos, from);
+        support::connect(host, connection.from.pos, to);
     }
     host.block_entity_sync(from.pos);
     host.block_entity_sync(to.pos);
@@ -741,6 +858,22 @@ fn run(host: &mut dyn Host, uuid: u128, line: &str) {
                 message = Some("Nothing was connected".to_owned());
             }
         }
+        Command::ConnectLink { pos } => match connect_link(host, &at, restocker, pos) {
+            Ok(text) => message = Some(text),
+            Err(text) => {
+                host.play_sound("create:deny", util::centre(at.pos), 2, 1.0, 1.0);
+                status(host, uuid, text);
+                return;
+            }
+        },
+        Command::Unlink => {
+            let mut links = Vec::new();
+            update_panel(host, &at, |panel| links = panel.disconnect_all_links());
+            for link in &links {
+                unlink(host, *link, at);
+            }
+            message = Some(if links.is_empty() { "Nothing is linked to this panel".to_owned() } else { "Links removed".to_owned() });
+        }
         Command::Input { pos, slot, amount } => {
             let source = PanelPosition { pos, slot };
             ok = panel.targeted_by.iter().any(|c| c.from == source);
@@ -793,6 +926,20 @@ fn run(host: &mut dyn Host, uuid: u128, line: &str) {
                     mode = rules::cycle_arrow_bend(connection.arrow_bend_mode);
                     break;
                 }
+            }
+            // The links attached to this panel take the same mode (`targetedByLinks`).
+            let links_mode = panel.targeted_by_links.first().map(|c| rules::cycle_arrow_bend(c.arrow_bend_mode));
+            if mode == -1
+                && let Some(first) = links_mode
+            {
+                mode = first;
+            }
+            if mode != -1 && !panel.targeted_by_links.is_empty() {
+                update_panel(host, &at, |own| {
+                    for connection in &mut own.targeted_by_links {
+                        connection.arrow_bend_mode = mode;
+                    }
+                });
             }
             if mode == -1 {
                 message = Some("Nothing is connected to this panel's output".to_owned());
@@ -864,7 +1011,7 @@ fn open(host: &mut dyn Host, uuid: u128, pos: Pos) {
     }
     lock(&OPEN).insert(uuid, at);
     tell(host, uuid, describe(&panel, restocker));
-    tell(host, uuid, "/gauge slot, item, amount, address, output, promises, clearpromises, connect, input, disconnect, bend, reset");
+    tell(host, uuid, "/gauge slot, item, amount, address, output, promises, clearpromises, connect, unlink, input, disconnect, bend, reset");
 }
 
 /// `FactoryPanelBlock.useItemOn`: a gauge item used on the block adds a panel at the slot the click is nearest to, on the network the
@@ -1008,7 +1155,8 @@ fn draw_arrows(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
             panel.promised_satisfied,
         );
         let height = geometry::arrow_height(panel.satisfied, panel.promised_satisfied);
-        for connection in &panel.targeted_by {
+        // `targetedBy` then `targetedByLinks`: the arrows to attached Redstone Links and Display Links run the same way.
+        for connection in panel.targeted_by.iter().chain(&panel.targeted_by_links) {
             let key = (pos, panel.slot, connection.from, connection.arrow_bend_mode);
             let cached = lock(&PATHS).get(&key).cloned();
             let path = match cached {
@@ -1130,6 +1278,8 @@ impl Hooks for Gauges {
                 restocker = should;
                 dirty = true;
             }
+            // `lazyTick`: `checkForRedstoneInput`.
+            dirty |= check_redstone_input(host, &mut panels);
         }
         for i in 0..panels.len() {
             if panels[i].active {
