@@ -112,10 +112,30 @@ the station block's states and `StationEditPacket`, `TrackGraphHelper.getGraphLo
 `TrackTargetingBehaviour`'s rendering and `transform`'s structure transform, `RailwaySavedData`, `TrainRelocator`,
 `GlobalTrainDisplayData`.
 
+## Glue part 1: the track (merged with this folder's rules; not played)
+
+Content `create:track` (`tools/content/track.py`: `shape` and `turn` as Create's blockstate names them, shapes clipped to the
+cell, the sequenced assembly recipe, the tags), the rules `track_block.rs` (`TrackBlock`, `ITrackBlock` defaults,
+`TrackBlockItem.select`, `TrackPlacement.placeTracks`, messages) and `track_render.rs` (`TrackRenderer.getModelAngles`,
+`BezierConnection.SegmentAngles`), and the glue in `mod/src/machines/`: `track.rs` (the block, `Connections` in the block
+entity as Create saves them, `TrackWorld` over the host, one `RailNetworks` per dimension in a static, queued
+add/remove at the level tick, the break hook, a sweep for vanished blocks, the level attachment `create:track_network`
+that keeps a world token and the track positions: the graphs are rebuilt from those on load), `track_item.rs` (the two-click
+curve flow, the selection as the component `create:track_connecting_from` plus the glint, written at the inventory tick)
+and `track_draw.rs` (the curve's ties and rails with the `tie`, `segment_left` and `segment_right` partial models, kept).
+
+Not ported in this part: `TrackBlockEntityTilt` (slope smoothing, `yOffsetAt` is 0), portal tracks, the girder on a curve,
+pavement, the sprint-maximised turn, the placement preview and overlay, `FakeTrackBlock` (the map marker), wrench pick-up
+of a curve's items, `getRequiredItems`, `CurvedTrackInteraction`/`TrackBlockOutline` (selecting a curve with the cursor),
+saving the graphs themselves (only the positions are saved), `TrackGraphSync` to clients, `getBogeyAnchor`.
+A block put down by `setblock` or a structure is not in the graph until the sweep or a neighbouring change finds it; there
+is no hook for `onPlace`.
+
 ## Next
 
-1. Glue: `TrackWorld` implementation from real track blocks, `TrackGraphHelper` (graph location from a block and
-   axis), track blocks and placement, drain `RailNetworks::events` into `Railways::apply_rail_events` and the sync layer.
+1. Glue: `TrackGraphHelper` (graph location from a block and axis), drain `RailNetworks::events` into
+   `Railways::apply_rail_events` and the sync layer, real saving of the graphs (with the edge points and trains), and
+   the left-out list above.
 2. Glue: station and signal blocks (block entities calling `TargetingState::create_edge_point`), observer block,
    `StationBlockEntity` (assembly: `scan_assembly`, `place_travelling_points`, `assemble_train`, `add_assembled_train`;
    disassembly: `Railways::disassemble_train`), schedule item and screens.

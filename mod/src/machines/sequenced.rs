@@ -14,7 +14,8 @@
 //! Known differences from Create:
 //! - Only the four kinds of step this port has a machine for run: deploying, pressing, cutting
 //!   and filling. A recipe with a step of another kind (none of Create's has) is never found.
-//! - The `create:track` recipe is not declared: there are no Track and Sleepers yet.
+//! - The `create:track` recipe is declared (`tools/content/track.py`, Create's datagen file; its sleepers are the
+//!   tag `create:sleepers`).
 //! - The tooltip's lines come from Create's language file (`create.recipe.assembly.*`), as the
 //!   goggle overlay's do. A Deployer step is described by the first item its held ingredient
 //!   lists, a filling step by its fluid's name (`IAssemblyRecipe.getDescriptionForAssembly`).
