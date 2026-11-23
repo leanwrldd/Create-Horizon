@@ -81,15 +81,17 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
 
 **Left:**
 - play-testing everything above (test plans are in the merge commits' agents' notes and on the board rows);
-- trains: the rules are merged in three parts (`rules/trains/`: track geometry and graph, signals, stations and
-  assembly, navigation, schedules, trains, carriages, bogeys, observers, the railway manager's tick). Next is the glue:
-  track blocks and placement, station and signal blocks, drawing trains, controls, the schedule item, content. Catnip's
-  `intersect_ranged` and `intersect_sphere` are reconstructed, unverified (see its README). Glue part 1 is merged
-  (`a1e4d19`: `create:track`, curved placement, graphs kept and saved, curves drawn). Glue part 2 is merged
-  (`4c953e7`: station, signal, observer, bogeys, Train Casing, schedule item; edge points on the graph, signal states,
-  `/station` and `/schedule` stand-ins). Assembly stops after checking bogeys: no carriages or train yet. Part 3 is
-  next: making the train, drawing carriages, controls; `train_net.rs` should hand its point ticking to
-  `Railways::tick` then (see `rules/trains/README.md`);
+- trains: the rules are merged in three parts (`rules/trains/`) and the glue in three: part 1 (`a1e4d19`, track), part 2 (`4c953e7`,
+  station, signal, observer, bogeys, Train Casing, schedule item). **Part 3 (branch `trains-glue-3`, unmerged, unplayed):** assembly and
+  disassembly at the station, `Railways::tick` from the level tick, trains saved in the level attachment `create:trains`, each carriage
+  drawn by an anchor block entity in an invisible block that follows it (`create:carriage_anchor`, why in `rules/trains/README.md`),
+  bogeys with turning wheels, carriages solid (`solid::Sample::Oriented`), driving with W/S/A/D/Space/Sneak (a click on `create:controls` or
+  `/train drive`), the station's schedule slot and `/train`. To check in game: assemble a two-bogey carriage with Train Controls on a
+  straight station track (`/station assembly`, Train Casing on the track, Super Glue, `/station assemble`), watch the carriage appear on
+  the next tick, `/train drive`, drive, `/train info`, stop at a station and `/station disassemble`, save and reload with a train standing
+  still and one moving, ride a slope or a curve (pose and bogey angles), a Schedule in the station slot, and the frame time with a long
+  train (the anchor's update tag carries the structure every other tick while moving). Left for later: `rules/trains/README.md`'s "Next".
+  Catnip's `intersect_ranged` and `intersect_sphere` are reconstructed, unverified (see its README);
 - merged 2026-11-23, unplayed: Deployer schematic printing on structures (`fc27597`), Factory Gauge links to
   Redstone and Display Links (`42abf2c`), structure clicks cancelled on the client, real reach, saved disabled
   actors and elevator floor choice (`22f24bd`); chest storage clicks on structures still open nothing;
