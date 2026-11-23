@@ -189,6 +189,7 @@ stock_link
 stock_ticker
 stockpile_switch
 stressometer
+track
 turntable
 water_wheel
 water_wheel_structure

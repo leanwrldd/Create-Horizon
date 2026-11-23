@@ -98,6 +98,40 @@ pub fn slope_fix(
     best
 }
 
+// --- what the player is told ------------------------------------------------------------------------------
+
+/// The English of a `create.track.*` message (Create's `en_us.json`), by the key `PlacementInfo.message` carries
+/// (`track.too_far`); also the item's own messages.
+pub fn message_text(key: &str) -> &'static str {
+    match key {
+        "track.ascending_s_curve" => "Cannot create sloped S-Bends",
+        "track.hold_for_smooth_curve" => "Hold %1$s for maximized turn",
+        "track.junction_start" => "Cannot start connection from a Junction",
+        "track.leave_slope_ascending" => "Cannot leave this slope while ascending",
+        "track.leave_slope_descending" => "Cannot leave this slope while descending",
+        "track.not_enough_pavement" => "Not holding enough pavement blocks",
+        "track.not_enough_tracks" => "Not holding enough tracks",
+        "track.opposing_slopes" => "Cannot connect opposing slopes",
+        "track.original_missing" => "Original block removed, Sneak-click to reset",
+        "track.perpendicular" => "Cannot connect perpendicularly",
+        "track.second_point" => "Place track or select a second point",
+        "track.selection_cleared" => "Selection Cleared",
+        "track.slope_turn" => "Cannot enter or leave slope on a turn",
+        "track.too_far" => "Too far away",
+        "track.too_sharp" => "Turn too sharp",
+        "track.too_steep" => "Slope too steep",
+        "track.turn_90" => "Can only turn up to 90 Degrees",
+        "track.turn_start" => "Cannot start connection from a Turn",
+        "track.valid_connection" => "Can Connect \u{2714}",
+        _ => "",
+    }
+}
+
+/// The translation key of a message: `create.` and the key.
+pub fn message_key(key: &str) -> String {
+    format!("create.{key}")
+}
+
 // --- ends of a block ------------------------------------------------------------------------------
 
 /// `ITrackBlock.getNearestTrackAxis`: the axis (of the block's axes, either way) whose direction is closest to `look`,
@@ -526,6 +560,19 @@ mod tests {
         assert_eq!(ends.iter().filter(|l| l.turn.is_some()).count(), 2);
         // Linear walks leave the curve out.
         assert_eq!(track_ends(&view(bc.be_positions[0], TrackShape::Xo, true, &curves), true, None).len(), 2);
+    }
+
+    #[test]
+    fn every_placement_error_has_its_english() {
+        use crate::rules::trains::placement::PlacementError::*;
+        for e in [
+            SecondPoint, TooFar, OriginalMissing, TurnStart, Perpendicular, AscendingSCurve, TooSharp, SlopeTurn,
+            OpposingSlopes, LeaveSlopeAscending, LeaveSlopeDescending, TooSteep, Turn90, NotEnoughTracks,
+            NotEnoughPavement,
+        ] {
+            assert!(!message_text(e.key()).is_empty(), "{}", e.key());
+        }
+        assert_eq!(message_key("track.too_far"), "create.track.too_far");
     }
 
     #[test]
