@@ -44,6 +44,8 @@ pub enum Source {
     EntityName,
     RedstonePower,
     NixieTube,
+    /// `FactoryGaugeDisplaySource` (`gauge_status`): the panels a Display Link is attached to, one row each.
+    GaugeStatus,
 }
 
 /// How a source builds its flap display layout (`loadFlapDisplayLayout`).
@@ -66,7 +68,7 @@ enum Shape {
 }
 
 impl Source {
-    pub const ALL: [Source; 13] = [
+    pub const ALL: [Source; 14] = [
         Source::KineticSpeed,
         Source::KineticStress,
         Source::TimeOfDay,
@@ -80,6 +82,7 @@ impl Source {
         Source::EntityName,
         Source::RedstonePower,
         Source::NixieTube,
+        Source::GaugeStatus,
     ];
 
     /// The id Create registers it under (`AllDisplaySources`).
@@ -98,6 +101,7 @@ impl Source {
             Source::EntityName => "create:entity_name",
             Source::RedstonePower => "create:redstone_power",
             Source::NixieTube => "create:nixie_tube",
+            Source::GaugeStatus => "create:gauge_status",
         }
     }
 
@@ -121,6 +125,7 @@ impl Source {
             Source::EntityName => "Entity Name",
             Source::RedstonePower => "Redstone Power",
             Source::NixieTube => "Copy Nixie Tubes",
+            Source::GaugeStatus => "Factory Gauge Status",
         }
     }
 
@@ -132,7 +137,7 @@ impl Source {
             Source::CountFluids | Source::EntityName => Shape::Line,
             Source::ItemNames => Shape::Names,
             Source::NixieTube => Shape::Nixie,
-            Source::ListItems => Shape::ValueList,
+            Source::ListItems | Source::GaugeStatus => Shape::ValueList,
             Source::ListFluids => Shape::FluidList,
         }
     }
@@ -153,7 +158,7 @@ impl Source {
     /// `allowsLabeling` for a link writing to `target`.
     pub fn allows_labeling(self, target: Target) -> bool {
         match self {
-            Source::ListItems | Source::ListFluids => false,
+            Source::ListItems | Source::ListFluids | Source::GaugeStatus => false,
             Source::NixieTube => target != Target::NixieTube,
             _ => true,
         }
@@ -171,7 +176,7 @@ impl Source {
             Source::TimeOfDay => ("Cycle", &["12-hour", "24-hour"]),
             Source::FillLevel => ("Mode", &["Percent", "Progress Bar"]),
             Source::RedstonePower => ("Mode", &["Number", "Progress Bar"]),
-            Source::ListItems | Source::ListFluids => ("Format", &["Shortened", "Full Number"]),
+            Source::ListItems | Source::ListFluids | Source::GaugeStatus => ("Format", &["Shortened", "Full Number"]),
             _ => return None,
         })
     }
@@ -190,6 +195,8 @@ pub fn sources_for(block: &str) -> Vec<Source> {
         "create:stockpile_switch" => vec![Source::FillLevel],
         "create:belt" | "create:depot" | "create:weighted_ejector" => vec![Source::ItemNames],
         "minecraft:target" => vec![Source::RedstonePower],
+        // `AllDisplaySources`: `factory_gauge_source_gauge_status`.
+        "create:factory_gauge" => vec![Source::GaugeStatus],
         b if b.starts_with("create:") && b.ends_with("_seat") => vec![Source::EntityName],
         b if super::nixie_tube::dye_of_block(b).is_some() => vec![Source::NixieTube],
         _ => Vec::new(),
@@ -517,7 +524,7 @@ fn line_of(source: Source, config: &mut Config, reading: &Reading, stats: &Stats
             Reading::Text(text) => Some(text.clone()),
             _ => None,
         },
-        Source::ListItems | Source::ListFluids => None,
+        Source::ListItems | Source::ListFluids | Source::GaugeStatus => None,
     }
 }
 
@@ -536,6 +543,16 @@ pub fn top_entries(mut entries: Vec<(String, i64)>, limit: usize) -> Vec<(String
     entries.sort_by(|a, b| b.1.cmp(&a.1));
     entries.truncate(limit);
     entries
+}
+
+/// The rows a list source writes: the biggest first for the item and fluid lists, but the gauge status keeps its panels' order
+/// (`FactoryGaugeDisplaySource.provideEntries` has its `sorted` commented out), `limit` of them.
+fn listed(source: Source, entries: Vec<(String, i64)>, limit: usize) -> Vec<(String, i64)> {
+    if source == Source::GaugeStatus {
+        entries.into_iter().take(limit).collect()
+    } else {
+        top_entries(entries, limit)
+    }
 }
 
 /// `ValueListDisplaySource.shorten`: the number and the suffix a long number is written with.
@@ -557,7 +574,7 @@ pub fn entry_parts(source: Source, config: &Config, entry: &(String, i64)) -> Ve
         let (number, unit) = fluid_parts(entry.1, shorten);
         return vec![number, unit.to_owned(), name];
     }
-    let value_first = source == Source::ListItems;
+    let value_first = matches!(source, Source::ListItems | Source::GaugeStatus);
     if shorten {
         let (number, suffix) = shortened(entry.1);
         if value_first {
@@ -579,7 +596,7 @@ fn list_text(source: Source, config: &Config, reading: &Reading, stats: &Stats, 
     };
     let book = target == Target::Lectern;
     let limit = stats.rows * if book { ENTRIES_PER_PAGE } else { 1 };
-    let rows: Vec<String> = top_entries(entries.clone(), limit)
+    let rows: Vec<String> = listed(source, entries.clone(), limit)
         .iter()
         .map(|entry| entry_parts(source, config, entry).concat())
         .collect();
@@ -615,7 +632,7 @@ pub fn provide_flap_text(source: Source, config: &mut Config, reading: &Reading,
         let Reading::List(entries) = reading else {
             return Vec::new();
         };
-        return top_entries(entries.clone(), stats.rows)
+        return listed(source, entries.clone(), stats.rows)
             .iter()
             .map(|entry| entry_parts(source, config, entry))
             .collect();
@@ -973,6 +990,27 @@ mod tests {
         assert_eq!(text(Source::ListFluids, &mut cfg, fluids.clone(), Target::Sign), vec!["1.5BWater "]);
         cfg.option = 1;
         assert_eq!(text(Source::ListFluids, &mut cfg, fluids, Target::Sign), vec!["1500mBWater "]);
+    }
+
+    #[test]
+    fn gauge_status_keeps_the_panels_order_and_is_offered_by_a_gauge() {
+        // `FactoryGaugeDisplaySource`: a `ValueListDisplaySource` with the value first and no sorting, found on the gauge block.
+        assert_eq!(sources_for("create:factory_gauge"), vec![Source::GaugeStatus]);
+        assert!(!Source::GaugeStatus.is_single_line());
+        let list = Reading::List(vec![
+            ("\u{2714} Iron".into(), 20),
+            ("\u{25aa} Gold".into(), 3000),
+            ("  Coal".into(), 5),
+            ("\u{2191} Sand".into(), 8),
+            ("\u{2714} Dirt".into(), 9),
+        ]);
+        let mut cfg = Config::default();
+        let rows = text(Source::GaugeStatus, &mut cfg, list.clone(), Target::Sign);
+        assert_eq!(rows, vec!["20 \u{2714} Iron ", "3k \u{25aa} Gold ", "5   Coal ", "8 \u{2191} Sand "]);
+        // A board gets the same rows as its flap sections.
+        let flaps = provide_flap_text(Source::GaugeStatus, &mut cfg, &list, &Stats { rows: 2, columns: 12 });
+        assert_eq!(flaps.len(), 2);
+        assert_eq!(flaps[0].concat(), "20 \u{2714} Iron ");
     }
 
     #[test]

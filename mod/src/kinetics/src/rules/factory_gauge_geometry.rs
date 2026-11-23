@@ -9,7 +9,7 @@
 use super::factory_gauge::{PanelPosition, Slot};
 use super::stock_link::AttachFace;
 use super::value_box::{Vec3, horizontal_angle, rotate, rotate_centered};
-use crate::{Axis, Dir};
+use crate::{Axis, Dir, Pos};
 
 /// `FactoryPanelBlock.getXRot` in degrees.
 pub fn x_rot(face: AttachFace) -> f64 {
@@ -69,6 +69,23 @@ pub fn path_diff(face: AttachFace, facing: Dir, from: PanelPosition, to: PanelPo
     diff = rotate(diff, -x_rot(face) - 90.0, Axis::X);
     diff = rotate(diff, -180.0, Axis::Y);
     [diff[0] + slot_x * 0.5, 0.0, diff[2] + slot_y * 0.5]
+}
+
+/// `FactoryPanelConnectionHandler` when a Redstone Link or Display Link is clicked: the link's own slot is the one of the four whose
+/// `calculatePathDiff` to the panel `to` is shortest (`if (bestDistance < diff.lengthSqr()) continue`, so a tie goes to the later slot).
+pub fn best_link_slot(face: AttachFace, facing: Dir, link: Pos, to: PanelPosition) -> Slot {
+    let mut best = f64::INFINITY;
+    let mut best_slot = Slot::TopLeft;
+    for slot in Slot::ALL {
+        let diff = path_diff(face, facing, PanelPosition { pos: link, slot }, to);
+        let length: f64 = diff.iter().map(|c| c * c).sum();
+        if best < length {
+            continue;
+        }
+        best = length;
+        best_slot = slot;
+    }
+    best_slot
 }
 
 fn manhattan(a: (i32, i32)) -> i32 {
@@ -338,6 +355,24 @@ mod tests {
         for mode in 0..4 {
             let path = connection_path(diff, mode, [0.0; 3], AttachFace::Wall, Dir::South, &|_| true);
             assert_eq!(path.len(), 8, "mode {mode}");
+        }
+    }
+
+    #[test]
+    fn a_link_takes_the_slot_nearest_the_panel() {
+        // `FactoryPanelConnectionHandler`: a link in the same row as the panel, a block aside, is given a slot of that row, the one
+        // whose path is shortest (the slot beside it on the near side).
+        let to = PanelPosition { pos: [0, 64, 0], slot: Slot::BottomLeft };
+        for link in [[2, 64, 0], [-2, 64, 0], [0, 64, 2]] {
+            let best = best_link_slot(AttachFace::Wall, Dir::South, link, to);
+            let length = |slot| {
+                let d = path_diff(AttachFace::Wall, Dir::South, PanelPosition { pos: link, slot }, to);
+                d[0] * d[0] + d[2] * d[2]
+            };
+            for other in Slot::ALL {
+                assert!(length(best) <= length(other) + 1e-9, "{link:?} {best:?} {other:?}");
+            }
+            assert_eq!(best.y_offset(), to.slot.y_offset(), "{link:?}");
         }
     }
 

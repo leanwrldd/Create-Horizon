@@ -39,6 +39,11 @@ pub enum Gauge {
     ClearPromises,
     /// `connect <x> <y> <z> <slot>`: use that panel as an input of this one (`FactoryPanelConnectionPacket`).
     Connect { pos: [i32; 3], slot: Slot },
+    /// `connect <x> <y> <z>`: attach a Redstone Link or Display Link there (`FactoryPanelConnectionPacket` of a click on a
+    /// `FactoryPanelSupportBehaviour`; the link's own slot is chosen from where it is).
+    ConnectLink { pos: [i32; 3] },
+    /// `unlink`: every attached link is let go (`FactoryPanelConfigurationPacket.redstoneReset`).
+    Unlink,
     /// `input <x> <y> <z> <slot> <amount>`: how much of that input one craft needs (`inputAmounts`).
     Input { pos: [i32; 3], slot: Slot, amount: i32 },
     /// `disconnect <x> <y> <z> <slot>`: remove an input (`removeConnection`).
@@ -123,6 +128,14 @@ pub fn parse_gauge(line: &str) -> Result<Gauge, String> {
             None => Err("Use /gauge promises <never|30s|minutes>".to_owned()),
         },
         "clearpromises" => Ok(Gauge::ClearPromises),
+        "connect" if words.len() == 4 => {
+            let mut pos = [0; 3];
+            for (i, word) in words[1..4].iter().enumerate() {
+                pos[i] = word.parse().map_err(|_| "Use /gauge connect <x> <y> <z> [slot]".to_owned())?;
+            }
+            Ok(Gauge::ConnectLink { pos })
+        }
+        "unlink" => Ok(Gauge::Unlink),
         "connect" => parse_pos_slot(&words, "Use /gauge connect <x> <y> <z> <slot>").map(|(pos, slot)| Gauge::Connect { pos, slot }),
         "disconnect" => parse_pos_slot(&words, "Use /gauge disconnect <x> <y> <z> <slot>").map(|(pos, slot)| Gauge::Disconnect { pos, slot }),
         "input" => {
@@ -135,7 +148,7 @@ pub fn parse_gauge(line: &str) -> Result<Gauge, String> {
         "bend" => Ok(Gauge::Bend),
         "reset" => Ok(Gauge::Reset),
         other => Err(format!(
-            "Unknown: /gauge {other} (slot, item, amount, address, output, promises, clearpromises, connect, input, disconnect, move, bend, reset)"
+            "Unknown: /gauge {other} (slot, item, amount, address, output, promises, clearpromises, connect, unlink, input, disconnect, move, bend, reset)"
         )),
     }
 }
@@ -197,6 +210,10 @@ mod tests {
         assert_eq!(parse_gauge(""), Ok(Gauge::Show));
         assert_eq!(parse_gauge("move 1 64 -2 tr"), Ok(Gauge::Move { pos: [1, 64, -2], slot: Slot::TopRight }));
         assert!(parse_gauge("move 1 64").is_err());
+        assert_eq!(parse_gauge("connect 3 64 -1"), Ok(Gauge::ConnectLink { pos: [3, 64, -1] }));
+        assert_eq!(parse_gauge("connect 3 64 -1 tl"), Ok(Gauge::Connect { pos: [3, 64, -1], slot: Slot::TopLeft }));
+        assert!(parse_gauge("connect 3 x -1").is_err());
+        assert_eq!(parse_gauge("unlink"), Ok(Gauge::Unlink));
         assert_eq!(parse_gauge("item"), Ok(Gauge::Item(ItemArg::Held)));
         assert_eq!(parse_gauge("item none"), Ok(Gauge::Item(ItemArg::Clear)));
         assert_eq!(parse_gauge("item copper_ingot"), Ok(Gauge::Item(ItemArg::Id("minecraft:copper_ingot".into()))));

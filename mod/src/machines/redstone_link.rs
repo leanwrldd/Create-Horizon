@@ -21,8 +21,9 @@
 //!   can't read block entities; a receiver in a freshly loaded chunk gives 0 until it has ticked once.
 //! - A link falls off when the block it is on is air, water, a plant or another replaceable thing
 //!   (`RedstoneLinkBlock.canSurvive`: `!neighbour.canBeReplaced()`), checked each tick.
-//! - Factory panels and the Linked Controller are not in this port, so the panel and controller
-//!   parts of Create's link are left out.
+//! - Factory Gauge panels (`FactoryPanelSupportBehaviour`, `panel_support.rs`) are: a transmitter sends
+//!   15 while a linked panel is satisfied with a target, a receiver pauses the panel it is linked to
+//!   while it receives a signal. The Linked Controller part of Create's link is left out.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -40,6 +41,7 @@ use crate::compat::{
 };
 
 use super::diodes_signal as signal;
+use super::panel_support;
 use crate::{int, util};
 
 pub const ID: &str = "create:redstone_link";
@@ -235,14 +237,19 @@ fn tick(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity) {
         // `RedstoneLinkBlock.updateTransmittedSignal`: the signal beside it is what it transmits,
         // and its `powered` state follows.
         // `RedstoneLinkBlock.neighborChanged` calls it; the signal is the one the neighbour event left (`signals`).
-        let power = crate::signals::read(host, &mut entity.nbt, pos);
-        if (power > 0) != powered {
-            host.set_block_property_with(pos, "powered", if power > 0 { "true" } else { "false" }, UPDATE_CLIENTS);
-        }
-        if power != saved_transmit {
-            stored.push((TRANSMIT, Tag::Int(power)));
-            if let Ok(mut state) = STATE.lock() {
-                state.links.set_transmit(level, &key, pos, power);
+        let neighbour = crate::signals::read(host, &mut entity.nbt, pos);
+        // `FactoryPanelSupportBehaviour.shouldBePoweredTristate`: a satisfied linked panel sends 15; while one is in an unloaded chunk the
+        // update is suppressed and the link keeps what it sent.
+        let from_panels = panel_support::powered_by_panels(&*host, &mut entity.nbt);
+        if let Some(power) = create_kinetics::rules::factory_gauge::transmitted_power(neighbour, from_panels) {
+            if (power > 0) != powered {
+                host.set_block_property_with(pos, "powered", if power > 0 { "true" } else { "false" }, UPDATE_CLIENTS);
+            }
+            if power != saved_transmit {
+                stored.push((TRANSMIT, Tag::Int(power)));
+                if let Ok(mut state) = STATE.lock() {
+                    state.links.set_transmit(level, &key, pos, power);
+                }
             }
         }
         if let Ok(mut state) = STATE.lock() {
