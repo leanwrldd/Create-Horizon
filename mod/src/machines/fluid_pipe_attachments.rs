@@ -114,24 +114,24 @@ fn beside(host: &dyn Host, pos: Pos) -> Beside {
 /// `FluidPropagator.hasFluidCapability(world, pos, face)`: a block entity with a fluid handler on
 /// that face. The pipes and the pump have none; the Spout's tank is closed below and the drain's
 /// above (an empty list there).
-fn has_capability(host: &dyn Host, pos: Pos, face: Dir) -> bool {
+fn has_capability(host: &mut dyn Host, pos: Pos, face: Dir) -> bool {
     match host.block(pos).as_str() {
         "minecraft:air" | FLUID_PIPE | GLASS_FLUID_PIPE | ENCASED_FLUID_PIPE | SMART_FLUID_PIPE
         | FLUID_VALVE | MECHANICAL_PUMP => false,
         SPOUT | ITEM_DRAIN => host
             .fluid_tanks(host.dimension(), pos, direction(face))
             .is_some_and(|tanks| !tanks.is_empty()),
-        _ => host.fluid_tanks(host.dimension(), pos, direction(face)).is_some(),
+        _ => fluids::has_fluid_capability(host, pos, direction(face)),
     }
 }
 
 /// `PipeAttachmentModel.gatherModelData` for the block at `pos`.
-fn read(host: &dyn Host, pos: Pos) -> Option<Rims> {
-    let own = own_block(host, pos)?;
+fn read(host: &mut dyn Host, pos: Pos) -> Option<Rims> {
+    let own = own_block(&*host, pos)?;
     let mut rims = Rims::NONE;
     for side in Dir::ALL {
         let next = util::add(pos, side.normal());
-        let mut around = beside(host, next);
+        let mut around = beside(&*host, next);
         if matches!(around, Beside::Encased { .. }) {
             let open = host.block_property(next, side.opposite().name()).as_deref() == Some("true");
             around = Beside::Encased { open_toward_us: open };
@@ -191,7 +191,7 @@ impl Hooks for Attachments {
         if known && (util::game_time(host) + salt).rem_euclid(REFRESH) != 0 {
             return;
         }
-        let Some(rims) = read(&*host, pos) else {
+        let Some(rims) = read(&mut *host, pos) else {
             return;
         };
         let value = Tag::ByteArray(rules::encode(&rims));

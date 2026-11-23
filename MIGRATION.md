@@ -208,8 +208,12 @@ Still neutral, and why:
   synced block entity data. A vanilla or other-mod block (cauldron, another mod's tank) is `None` here: only a `&mut` host can ask the
   capability, so `fluid_tanks_mut` (the same, then the `FLUIDS` capability: size, resource, amount, capacity, `is_valid`) is what
   the callers that hold `&mut dyn Host` use: basin (spout target, overflow, buckets), `fluids::room` and `fluids::contents` (pump
-  transfer), content observer, stockpile switch, display link. Still `&dyn` and so blind to vanilla/other-mod tanks: the pump's
-  network search (`fluids::classify`), `fluid_pipe` and `fluid_pipe_attachments` connection checks. An empty tank of a vanilla block
+  transfer), content observer, stockpile switch, display link. The pump's network search (`fluids::classify_for`, `solve`),
+  `fluid_pipe::connects` and the `fluid_pipe_attachments` tick now hold `&mut dyn Host` too and ask `fluids::has_fluid_capability`:
+  our tanks through `fluid_tanks`, otherwise a block entity (`block_entity_tag`) plus `fluid_tanks_mut`, as Create's
+  `FluidPropagator.hasFluidCapability` (it returns false when there is no block entity, so a vanilla cauldron, which has none,
+  is NOT joined by pipes or the pump in Create 6.0.10; another mod's tank block entity is; `rules::fluids::has_capability`). The
+  client draws a pipe's arms from the synced `Rims` the server tick computed, so it needs no read. An empty tank of a vanilla block
   gets its capacity asked with water as the probe fluid.
 * `open_menu_with_input` and `menu_input_closed` (the Toolbox): wired in `compat/menu_input.rs`, with no content menu type. The new
   API's chest menu (`ServerHost::open_menu`, vanilla's `generic_9x<rows>` screen) needs none; `open_mod_menu` would, and a screen of
