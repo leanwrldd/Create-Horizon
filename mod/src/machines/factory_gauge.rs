@@ -5,23 +5,28 @@
 //! network is `logistics.rs`; this is the block, the saved form and the commands that stand in for the gauge's screen.
 //!
 //! How it works here:
-//! - Place a Factory Gauge on a block: its first panel starts a network of its own, or joins the one you last tuned to (use a Stock
-//!   Link, Stock Ticker or Redstone Requester on a linked block to tune; use a linked item on a gauge to tune to its network). Use
-//!   another gauge item on the block to add a panel (it must be tuned first, as in Create): up to four, bottom row first.
-//! - Right-click a panel with an empty hand to open it, or with an item (not a gauge or a linked one) to set the item it watches.
-//!   `/gauge` then shows it, and `/gauge slot`, `item`, `amount <0-100> [items|stacks]`, `address <text>`, `output <n>`,
-//!   `promises <never|30s|minutes>`, `clearpromises`, `connect <x> <y> <z> <slot>`, `input ...`, `disconnect ...`, `bend` and `reset` change
-//!   it (the screen and the value box). A panel with inputs is a crafting recipe: when it is short of its item it asks the network for the
-//!   inputs, addressed to `address`. A panel on a Packager is a restocker: it orders its item for that Packager's inventory.
-//! - Sneak-use the Wrench to take the open panel off (the block goes with the last one); breaking the block takes the open panel first
-//!   while there are two or more, as in Create.
+//! - A Stock Link, Stock Ticker, Redstone Requester or Factory Gauge item carries a network frequency (`logistics.rs`): click a linked
+//!   block (or a panel) with it to tune it, use it in the air to clear it. A gauge item must be tuned to be placed (`FactoryPanelBlockItem`);
+//!   the first panel joins the item's network. A tuned gauge item used on the block adds a panel at the slot the click is nearest to
+//!   (`FactoryPanelBlock.getTargetedSlot`, from the player's eye ray against the panel plane): up to four.
+//! - Right-click a panel with an empty hand to open it, or with an item (not a gauge or a linked one) to set the item it watches. The
+//!   panel is the one the click is nearest to. `/gauge` then shows it, and `/gauge slot`, `item`, `amount <0-100> [items|stacks]`,
+//!   `address <text>`, `output <n>`, `promises <never|30s|minutes>`, `clearpromises`, `connect <x> <y> <z> <slot>`, `input ...`,
+//!   `disconnect ...`, `move <x> <y> <z> <slot>`, `bend` and `reset` change it (the screen and the value box). A panel with inputs is a
+//!   crafting recipe: when it is short of its item it asks the network for the inputs, addressed to `address`. A panel on a Packager is a
+//!   restocker: it orders its item for that Packager's inventory.
+//! - The arrows between connected panels are drawn from Create's own models (`FactoryPanelRenderer.renderPath`), along the path
+//!   `FactoryPanelConnection.getPath` finds; the Wrench bends them.
+//! - Sneak-use the Wrench to take the clicked panel off (the block goes with the last one); breaking the block takes the clicked panel
+//!   first while there are two or more, as in Create.
 //!
 //! Known differences from Create:
-//! - Which of the four panels a click means is the player's open panel (`/gauge slot`), not where the click lands, and a new panel takes
-//!   the first free slot. The screen, the value box, the arrows (`FactoryPanelConnection.getPath`), the bulb, the relocation of a panel
-//!   (`moveTo`) and the connection to Redstone Links and Display Links (`FactoryPanelSupportBehaviour`) are not ported; so the block
-//!   never powers neighbours and `activeCraftingArrangement` (Mechanical Crafting) can't be set.
-//! - A frequency isn't carried by the item: a placed gauge takes the network the player last tuned (see `logistics.rs`).
+//! - The screen, the value box, the bulb and the connection to Redstone Links and Display Links (`FactoryPanelSupportBehaviour`) are not
+//!   ported; so the block never powers neighbours and `activeCraftingArrangement` (Mechanical Crafting) can't be set. The arrows' glow
+//!   animation and UV shift aren't drawn, and their status colour is a tint. Connections are made with `/gauge connect`, not by clicking
+//!   a second panel.
+//! - `moveTo` only moves a panel to a free slot of an existing gauge block in the same state (it doesn't place a new block).
+//! - An untuned gauge item is refused on any block that isn't a linked block, so it doesn't open chests and the like either.
 //! - The panels' effect packets (the sparks along the arrows) aren't sent.
 
 use std::cell::RefCell;
@@ -32,15 +37,20 @@ use create_kinetics::rules::factory_gauge::{
     self as rules, Added, Configuration, Connection, ConnectionSource, Disconnected, Gauge, PanelPair, PanelPosition, Reads, RequestEnv,
     Slot, Source,
 };
+use create_kinetics::rules::factory_gauge_geometry as geometry;
 use create_kinetics::rules::filter::display_name;
+use create_kinetics::rules::logistics_item as item_rules;
 use create_kinetics::rules::logistics_network::{Freq, Network, Networks};
+use create_kinetics::rules::stock_link::AttachFace;
+use create_kinetics::rules::value_box::{Vec3, view_vector};
 use create_kinetics::rules::package::Big;
 use create_kinetics::rules::request_promises::{Promise, Queue};
 use create_kinetics::rules::shop_commands::{self as commands, Gauge as Command, ItemArg, slot_name};
 use create_kinetics::{Dir, Pos};
 use crate::compat::{
-    BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent, BlockStateId, Compound, DestroyBlockEvent, Flow, Hooks, Host,
-    ItemStack, LevelHost, NativeCommand, PerformCommandEvent, PlaceBlockEvent, RegisterCommandsEvent, RightClickBlockEvent,
+    BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
+    BlockEntityUpdateTagEvent, BlockStateId, Compound, DestroyBlockEvent, Flow, Hooks, Host, ItemStack, LevelHost, NativeCommand,
+    NativeServerPlayer, PerformCommandEvent, PlaceBlockEvent, RegisterCommandsEvent, RightClickBlockEvent, StandaloneModelsEvent,
     StateForPlacementEvent, Tag, Text, UseItemOnEvent,
 };
 
@@ -70,8 +80,32 @@ fn lock<T>(mutex: &'static Mutex<T>) -> MutexGuard<'static, T> {
 
 /// The panel each player has open, for `/gauge`.
 static OPEN: LazyLock<Mutex<BTreeMap<u128, PanelPosition>>> = LazyLock::new(Mutex::default);
-/// A gauge just placed, until its block entity ticks: the network its first panel starts with.
-static PLACED: LazyLock<Mutex<BTreeMap<(String, Pos), Freq>>> = LazyLock::new(Mutex::default);
+/// A gauge just placed, until its block entity ticks: the network its first panel starts with and the slot the click meant.
+static PLACED: LazyLock<Mutex<BTreeMap<(String, Pos), (Freq, Option<Slot>)>>> = LazyLock::new(Mutex::default);
+/// `AllPartialModels.FACTORY_PANEL_ARROWS`, `_LINES`, `_DOTTED`, by the direction they are named after.
+const CONNECTION_MODELS: [&str; 3] = ["arrow", "line", "dotted"];
+/// The paths found for the arrows, kept while the bend mode is the one they were found with (`FactoryPanelConnection.path`).
+static PATHS: LazyLock<Mutex<BTreeMap<(Pos, Slot, PanelPosition, i32), Vec<Dir>>>> = LazyLock::new(Mutex::default);
+
+fn connection_model(kind: &str, dir: Dir) -> String {
+    format!("create:block/factory_gauge/connections/{kind}_{}", dir.name())
+}
+
+fn face_and_facing(host: &dyn Host, pos: Pos) -> Option<(AttachFace, Dir)> {
+    let face = host.block_property(pos, "face").as_deref().and_then(AttachFace::from_name)?;
+    Some((face, util::facing(host, pos, "facing")?))
+}
+
+/// `getTargetedSlot` for where the player's eye ray meets the gauge's plane (the click spot the events don't carry).
+fn hit_slot(host: &dyn Host, player: &NativeServerPlayer, pos: Pos) -> Option<Slot> {
+    let (face, facing) = face_and_facing(host, pos)?;
+    let side = connected_direction(host, pos)?;
+    let eye = [player.position[0], player.position[1] + f64::from(player.eye_height), player.position[2]];
+    let look = view_vector(f64::from(player.yaw), f64::from(player.pitch));
+    let at = create_kinetics::rules::display_link::hit_on_face(eye, look, pos, side.normal());
+    let local: Vec3 = [at[0] - f64::from(pos[0]), at[1] - f64::from(pos[1]), at[2] - f64::from(pos[2])];
+    Some(geometry::targeted_slot(face, facing, local))
+}
 
 fn tell(host: &mut dyn Host, uuid: u128, line: impl Into<String>) {
     host.tell(uuid, Text::literal(line.into()));
@@ -525,6 +559,81 @@ fn connect_issue(host: &mut dyn Host, at: &PanelPosition, target: &Gauge<ItemSta
     })
 }
 
+/// `FactoryPanelBehaviour.moveTo`: the panel at `at` goes to the free slot `to` of a Factory Gauge in the same state (this port doesn't
+/// place a new gauge block for the target), and its connections follow it.
+fn move_panel(host: &mut dyn Host, at: &PanelPosition, panel: &Gauge<ItemStack>, to: PanelPosition) -> Result<String, &'static str> {
+    let target_is_gauge = host.block(to.pos) == ID;
+    let target_active = panel_at(host, &to).is_some();
+    let same_state = ["face", "facing"].iter().all(|key| host.block_property(at.pos, key) == host.block_property(to.pos, key));
+    let diff = [to.pos[0] - at.pos[0], to.pos[1] - at.pos[1], to.pos[2] - at.pos[2]];
+    let along = match connected_direction(&*host, at.pos).map(|d| d.axis()) {
+        Some(axis) => match axis.name() {
+            "x" => diff[0],
+            "y" => diff[1],
+            _ => diff[2],
+        },
+        None => 0,
+    };
+    let packager_behind = restocked_packager(&*host, to.pos).is_some();
+    let connected: Vec<Pos> =
+        panel.targeting.iter().map(|p| p.pos).chain(panel.targeted_by.iter().map(|c| c.from.pos)).collect();
+    if let Some(why) = geometry::check_move(target_active, target_is_gauge, same_state, &connected, to.pos, along, packager_behind) {
+        return Err(match why {
+            geometry::MoveRefusal::Occupied => "That panel slot is taken",
+            geometry::MoveRefusal::NotAGauge => "Move it to a slot of another Factory Gauge",
+            geometry::MoveRefusal::OtherState => "The gauges must face the same way",
+            geometry::MoveRefusal::TooFar => "A connection would be too long",
+            geometry::MoveRefusal::OffSurface => "The panels must be on the same surface",
+            geometry::MoveRefusal::OnPackager => "A restocker can't go there",
+        });
+    }
+    let mut moved = panel.clone();
+    moved.slot = to.slot;
+    let keep = moved.clone();
+    let from = *at;
+    if from.pos == to.pos {
+        host.change_mod_block_entity(from.pos, &mut |entity| {
+            let mut panels = read_panels(&entity.nbt);
+            panels[index(from.slot)].disable();
+            panels[index(to.slot)] = keep.clone();
+            let restocker = util::boolean(&entity.nbt, RESTOCKER);
+            store(&mut entity.nbt, &panels, restocker);
+        });
+    } else {
+        host.change_mod_block_entity(to.pos, &mut |entity| {
+            let mut panels = read_panels(&entity.nbt);
+            panels[index(to.slot)] = keep.clone();
+            let restocker = util::boolean(&entity.nbt, RESTOCKER);
+            store(&mut entity.nbt, &panels, restocker);
+        });
+        host.change_mod_block_entity(from.pos, &mut |entity| {
+            let mut panels = read_panels(&entity.nbt);
+            panels[index(from.slot)].disable();
+            let restocker = util::boolean(&entity.nbt, RESTOCKER);
+            store(&mut entity.nbt, &panels, restocker);
+        });
+    }
+    // "Rewire connections".
+    for target in &panel.targeting {
+        update_panel(host, target, |other| {
+            for connection in other.targeted_by.iter_mut().filter(|c| c.from == from) {
+                connection.from = to;
+            }
+        });
+    }
+    for connection in &panel.targeted_by {
+        update_panel(host, &connection.from, |other| {
+            for target in other.targeting.iter_mut().filter(|p| **p == from) {
+                *target = to;
+            }
+        });
+    }
+    host.block_entity_sync(from.pos);
+    host.block_entity_sync(to.pos);
+    host.play_sound("minecraft:block.copper.place", util::centre(to.pos), 2, 1.0, 0.8);
+    Ok(format!("Panel moved to {} {} {} [{}]", to.pos[0], to.pos[1], to.pos[2], slot_name(to.slot)))
+}
+
 fn run(host: &mut dyn Host, uuid: u128, line: &str) {
     let command = match commands::parse_gauge(line) {
         Ok(command) => command,
@@ -660,6 +769,20 @@ fn run(host: &mut dyn Host, uuid: u128, line: &str) {
                 message = Some("That panel is not an input".to_owned());
             }
         }
+        Command::Move { pos, slot } => {
+            let to = PanelPosition { pos, slot };
+            match move_panel(host, &at, &panel, to) {
+                Ok(text) => {
+                    lock(&OPEN).insert(uuid, to);
+                    message = Some(text);
+                }
+                Err(text) => {
+                    host.play_sound("create:deny", util::centre(at.pos), 2, 1.0, 1.0);
+                    status(host, uuid, text);
+                    return;
+                }
+            }
+        }
         Command::Bend => {
             // `onShortInteract` with a wrench: one mode for every connection leaving this panel.
             let mut mode = -1;
@@ -681,7 +804,7 @@ fn run(host: &mut dyn Host, uuid: u128, line: &str) {
                         }
                     });
                 }
-                message = Some(format!("Arrow path mode {mode} (the arrows are not drawn here)"));
+                message = Some(format!("Arrow path mode {mode}"));
             }
         }
         Command::Reset => {
@@ -707,8 +830,17 @@ fn run(host: &mut dyn Host, uuid: u128, line: &str) {
     }
 }
 
-/// Which panel a click on the block means: the one the player has open here, else the first active one.
+/// Which panel a click on the block means (`getTargetedSlot`): the panel the click landed nearest to, if it is there; else the one
+/// the player has open here, else the first active one.
 fn clicked_panel(host: &mut dyn Host, uuid: u128, pos: Pos) -> Option<PanelPosition> {
+    if let Some(player) = host.acting_player().filter(|p| p.uuid == uuid)
+        && let Some(slot) = hit_slot(&*host, &player, pos)
+    {
+        let at = PanelPosition { pos, slot };
+        if panel_at(host, &at).is_some() {
+            return Some(at);
+        }
+    }
     if let Some(at) = lock(&OPEN).get(&uuid).copied()
         && at.pos == pos
         && panel_at(host, &at).is_some()
@@ -735,9 +867,10 @@ fn open(host: &mut dyn Host, uuid: u128, pos: Pos) {
     tell(host, uuid, "/gauge slot, item, amount, address, output, promises, clearpromises, connect, input, disconnect, bend, reset");
 }
 
-/// `FactoryPanelBlockEntity.addPanel` for a gauge item used on the block: the next free slot, on the player's tuned network.
-fn add_panel(host: &mut dyn Host, uuid: u128, pos: Pos, creative: bool) {
-    let Some(freq) = network::tuned_peek(uuid) else {
+/// `FactoryPanelBlock.useItemOn`: a gauge item used on the block adds a panel at the slot the click is nearest to, on the network the
+/// item carries (it must be tuned).
+fn add_panel(host: &mut dyn Host, uuid: u128, pos: Pos, creative: bool, stack: &ItemStack) {
+    let Some(freq) = network::stack_freq(stack) else {
         host.play_sound("create:deny", util::centre(pos), 2, 1.0, 1.0);
         status(host, uuid, "Tune to a stock link before placing");
         return;
@@ -747,7 +880,9 @@ fn add_panel(host: &mut dyn Host, uuid: u128, pos: Pos, creative: bool) {
     };
     let panels = read_panels(&entity.nbt);
     let active = [panels[0].active, panels[1].active, panels[2].active, panels[3].active];
-    let Some(slot) = rules::next_free_slot(active) else {
+    // `canBeReplaced`/`addPanel`: the clicked slot has to be free; where the click can't be read, the first free one.
+    let clicked = host.acting_player().and_then(|player| hit_slot(&*host, &player, pos));
+    let Some(slot) = clicked.filter(|slot| !active[index(*slot)]).or_else(|| rules::next_free_slot(active)) else {
         return;
     };
     let at = PanelPosition { pos, slot };
@@ -834,7 +969,105 @@ pub fn restock_arrivals(host: &mut dyn Host, pos: Pos, arrivals: &[Big<ItemStack
 
 // --- the hooks -----------------------------------------------------------------------------------------------------
 
+/// Whether the point is inside a block's collision boxes (`level.noCollision(AABB(v, v).inflate(1/128))`).
+fn point_blocked(host: &dyn Host, point: Vec3) -> bool {
+    let cell = [point[0].floor() as i32, point[1].floor() as i32, point[2].floor() as i32];
+    let local = [point[0] - f64::from(cell[0]), point[1] - f64::from(cell[1]), point[2] - f64::from(cell[2])];
+    let pad = 1.0 / 128.0;
+    host.block_collision(cell)
+        .iter()
+        .any(|b| (0..3).all(|i| local[i] + pad > b[i] && local[i] - pad < b[i + 3]))
+}
+
+/// `FactoryPanelRenderer.renderPath`: the arrows into every active panel.
+fn draw_arrows(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
+    let Some((face, facing)) = host
+        .block_state_property(event.state, "face")
+        .and_then(AttachFace::from_name)
+        .zip(host.block_state_property(event.state, "facing").and_then(Dir::from_name))
+    else {
+        return;
+    };
+    let panels = read_panels(&event.entity.nbt);
+    let restocker = util::boolean(&event.entity.nbt, RESTOCKER);
+    let (x_rot, y_rot) = (geometry::x_rot(face), geometry::y_rot(face, facing));
+    let pos = event.pos;
+    let draw = &mut *event.draw;
+    const UP: [f32; 3] = [0.0, 1.0, 0.0];
+    const EAST: [f32; 3] = [1.0, 0.0, 0.0];
+    const CENTRE: [f32; 3] = [0.5; 3];
+    let mut any = false;
+    for panel in panels.iter().filter(|p| p.active) {
+        let to = panel.position(pos);
+        let colour = geometry::arrow_color(
+            panel.count,
+            panel.is_missing_address(restocker),
+            panel.redstone_powered,
+            panel.waiting_for_network,
+            panel.satisfied,
+            panel.promised_satisfied,
+        );
+        let height = geometry::arrow_height(panel.satisfied, panel.promised_satisfied);
+        for connection in &panel.targeted_by {
+            let key = (pos, panel.slot, connection.from, connection.arrow_bend_mode);
+            let cached = lock(&PATHS).get(&key).cloned();
+            let path = match cached {
+                Some(path) => path,
+                None => {
+                    let diff = geometry::path_diff(face, facing, connection.from, to);
+                    let centre = geometry::center_of_slot(face, facing, panel.slot);
+                    let start = [centre[0] + f64::from(pos[0]), centre[1] + f64::from(pos[1]), centre[2] + f64::from(pos[2])];
+                    let path = geometry::connection_path(diff, connection.arrow_bend_mode, start, face, facing, &|p| point_blocked(host, p));
+                    lock(&PATHS).insert(key, path.clone());
+                    path
+                }
+            };
+            for i in 0..path.len() {
+                let (offset, model) = geometry::segment(panel.slot, &path, i, height);
+                draw.push();
+                draw.rotate_about(UP, y_rot as f32, CENTRE);
+                draw.rotate_about(EAST, (x_rot + 90.0) as f32, CENTRE);
+                draw.rotate_about(UP, 180.0, CENTRE);
+                draw.translate([offset[0] as f32, offset[1] as f32, offset[2] as f32]);
+                host.draw_model(draw, &connection_model(if i == 0 { CONNECTION_MODELS[0] } else { CONNECTION_MODELS[1] }, model), colour);
+                draw.pop();
+                any = true;
+            }
+        }
+    }
+    if any {
+        draw.still();
+    }
+}
+
 impl Hooks for Gauges {
+    /// `AllPartialModels.FACTORY_PANEL_ARROWS` and `_LINES`.
+    fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
+        for kind in &CONNECTION_MODELS[..2] {
+            for dir in [Dir::North, Dir::East, Dir::South, Dir::West] {
+                event.models.push(connection_model(kind, dir));
+            }
+        }
+    }
+
+    /// The panels' state reaches the client, which draws the arrows from it.
+    fn block_entity_update_tag(&self, event: &mut BlockEntityUpdateTagEvent<'_>) -> Option<Compound> {
+        (event.entity.id == ID).then(|| event.entity.nbt.clone())
+    }
+
+    /// A connection is at most 16 blocks long (`CONNECTION_RANGE`).
+    fn block_entity_render_bounding_box(&self, _: &dyn Host, event: &mut BlockEntityRenderBoundingBoxEvent<'_>) {
+        if event.block == ID {
+            *event.bounds = [-16.0, -16.0, -16.0, 17.0, 17.0, 17.0];
+        }
+    }
+
+    fn block_entity_submit(&self, host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
+        if event.block == ID {
+            draw_arrows(host, event);
+        }
+    }
+
     fn block_entity(&self, _: &mut dyn Host, event: &mut BlockEntityEvent<'_>) -> Option<(String, Compound)> {
         (event.block == ID).then(|| (event.block.to_owned(), Compound::new()))
     }
@@ -863,8 +1096,9 @@ impl Hooks for Gauges {
             return;
         }
         let dimension = host.dimension().to_owned();
-        let freq = host.acting_player().and_then(|player| network::tuned_peek(player.uuid)).unwrap_or_else(random_freq);
-        lock(&PLACED).insert((dimension, event.pos), freq);
+        let freq = network::stack_freq(event.stack).unwrap_or_else(random_freq);
+        let slot = host.acting_player().and_then(|player| hit_slot(&*host, &player, event.pos));
+        lock(&PLACED).insert((dimension, event.pos), (freq, slot));
     }
 
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
@@ -878,9 +1112,9 @@ impl Hooks for Gauges {
         let mut restocker = util::boolean(&event.entity.nbt, RESTOCKER);
         let mut dirty = false;
         if active_count(&panels) == 0
-            && let Some(freq) = lock(&PLACED).remove(&(dimension, pos))
+            && let Some((freq, clicked)) = lock(&PLACED).remove(&(dimension, pos))
         {
-            let slot = rules::next_free_slot([false; 4]).unwrap_or(Slot::BottomLeft);
+            let slot = clicked.or_else(|| rules::next_free_slot([false; 4])).unwrap_or(Slot::BottomLeft);
             panels[index(slot)].enable();
             panels[index(slot)].network = freq;
             dirty = true;
@@ -963,6 +1197,20 @@ impl Hooks for Gauges {
     /// panel's network, the Wrench takes the panel off or bends the arrows, another item sets the monitored item of an empty panel.
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
         let pos = event.pos;
+        // `FactoryPanelBlockItem.place`: an untuned gauge can't be placed anywhere; on a linked block the click tunes it instead.
+        if &*event.stack.item == ID
+            && item_rules::gauge_refused(&event.stack.item, network::is_tuned(event.stack))
+            && !network::is_linked_block(&host.block(pos))
+        {
+            if let Some(player) = host.acting_player()
+                && player.game_mode != util::SPECTATOR
+            {
+                host.play_sound("create:deny", util::centre(pos), 2, 1.0, 1.0);
+                status(host, player.uuid, "Tune to a stock link before placing");
+                return Flow::Cancel;
+            }
+            return Flow::Continue;
+        }
         if host.block(pos) != ID {
             return Flow::Continue;
         }
@@ -993,7 +1241,7 @@ impl Hooks for Gauges {
             return Flow::Cancel;
         }
         if item == ID {
-            add_panel(host, player.uuid, pos, player.game_mode == util::CREATIVE);
+            add_panel(host, player.uuid, pos, player.game_mode == util::CREATIVE, event.stack);
             return Flow::Cancel;
         }
         let Some(at) = clicked_panel(host, player.uuid, pos) else {
@@ -1008,7 +1256,7 @@ impl Hooks for Gauges {
         if network::is_linked_item(&item) {
             // "Bind logistics items to this panels' frequency".
             network::tune(player.uuid, panel.network);
-            status(host, player.uuid, "Tuned to this network: the next linked block you place joins it");
+            status(host, player.uuid, "Tuned to this network");
             return Flow::Cancel;
         }
         if panel.filter.is_none() && !is_filter(&item) {

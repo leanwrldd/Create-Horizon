@@ -8,10 +8,10 @@
 //! (`packager::attempt_requests`).
 //!
 //! Known differences from Create, for the README:
-//! - A frequency is carried to a new block by the player, not by the item: using a Stock Link, Stock Ticker, Redstone Requester
-//!   or Factory Gauge item on a linked block remembers its network for the next such block that player places (Create writes
-//!   the frequency into the stack's block entity data, which a mod can't write here). Without it, a placed block starts a
-//!   new network. The remembered frequency is kept until it is used or the game quits.
+//! - A frequency is carried by the item, as in Create (`LogisticallyLinkedBlockItem`), but in a registered component
+//!   (`create:logistics_frequency`) instead of `minecraft:block_entity_data`; the order a Stock Ticker programs a Redstone
+//!   Requester or Table Cloth with is `create:auto_request_data`. A click can't change the held stack, so the change is queued
+//!   and written by the next inventory tick of the selected slot (a click with the off hand is dropped).
 //! - The network table is not saved (`LogisticsNetworkSavedData`): it is rebuilt from the loaded links, which add themselves
 //!   (`Added` is saved but `link_added` runs again after a restart, so an owner is kept only for links placed in the same run).
 //! - Only links in the dimension the order is made in are asked (Create's `GlobalPos` keeps all).
@@ -19,16 +19,21 @@
 //! - No Wi-Fi particles; the link's sound plays at the packager.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use create_kinetics::rules::logistics_network::{
     self as net, Freq, GlobalPos, Link, LinkId, LinkView, Logistics, PackagerId, PackagerView, PlayerId, Random,
 };
+use create_kinetics::rules::logistics_item::{self as item_rules, Write};
 use create_kinetics::rules::package::{Context, Summary};
+use create_kinetics::rules::redstone_requester::AutoRequestData;
 use create_kinetics::rules::packager::RequestType;
 use create_kinetics::rules::stock_link::{self as link_rules, AttachFace};
 use create_kinetics::{Dir, Pos};
-use crate::compat::{Compound, Flow, Hooks, Host, ItemStack, Tag, Text, UseItemOnEvent};
+use crate::compat::{
+    ComponentTypesEvent, Compound, Flow, Hooks, Host, InventoryTickEvent, ItemStack, Tag, Text, UseItemEvent, UseItemOnEvent,
+};
 
 use super::chute_inv as inv;
 use super::package as items;
@@ -76,8 +81,6 @@ struct Runtime {
     seen: BTreeSet<LinkId>,
     /// The frequency each link was last registered on, to notice an edited `Freq`.
     registered: BTreeMap<LinkId, Freq>,
-    /// `LogisticallyLinkedBlockItem.assignFrequency`, kept by player until they place a block.
-    tuned: BTreeMap<u128, Freq>,
     /// A block just placed, until its block entity ticks: the frequency and owner it starts with.
     placed: BTreeMap<(String, Pos), (Option<Freq>, u128)>,
     /// The game time `GlobalLogisticsManager.tick` last ran for.
@@ -131,13 +134,13 @@ fn placed_by(nbt: &Compound) -> Option<PlayerId> {
 
 /// A block was placed by the acting player: its network is the one that player last tuned to (if any), and the player owns
 /// it. Called from `place_block` of each linked block; the block entity's first tick uses it ([`tick_link`]).
-pub fn note_placed(host: &mut dyn Host, pos: Pos) {
+pub fn note_placed(host: &mut dyn Host, pos: Pos, stack: &ItemStack) {
     let Some(player) = host.acting_player() else {
         return;
     };
     let dimension = host.dimension().to_owned();
     let mut rt = runtime();
-    let freq = rt.tuned.remove(&player.uuid);
+    let freq = stack_freq(stack);
     rt.placed.insert((dimension, pos), (freq, player.uuid));
 }
 
@@ -244,9 +247,137 @@ pub fn is_lockable(freq: Freq) -> bool {
     runtime().logistics.networks.is_lockable(freq)
 }
 
-/// `LogisticallyLinkedBlockItem.assignFrequency`: the next linked block `player` places joins `freq`.
+// --- the items ------------------------------------------------------------------------------------------
+
+/// `LogisticallyLinkedBlockItem.networkFromStack`.
+pub fn stack_freq(stack: &ItemStack) -> Option<Freq> {
+    match stack.data()?.other(item_rules::FREQ_COMPONENT)? {
+        Tag::IntArray(ints) if ints.len() == 4 => Some(link_rules::freq_from_ints([ints[0], ints[1], ints[2], ints[3]])),
+        _ => None,
+    }
+}
+
+/// `LogisticallyLinkedBlockItem.isTuned`.
+pub fn is_tuned(stack: &ItemStack) -> bool {
+    stack_freq(stack).is_some()
+}
+
+/// `AutoRequestData.CODEC` as a tag.
+pub fn request_tag(data: &AutoRequestData<ItemStack>) -> Tag {
+    let mut tag = Compound::new();
+    tag.insert("request".into(), items::context_tag(&data.encoded_request));
+    tag.insert("address".into(), Tag::String(data.encoded_target_address.as_str().into()));
+    tag.insert("offset".into(), Tag::IntArray(data.target_offset.to_vec()));
+    tag.insert("dim".into(), Tag::String(data.target_dim.as_str().into()));
+    tag.insert("valid".into(), Tag::Byte(i8::from(data.is_valid)));
+    Tag::Compound(tag)
+}
+
+pub fn request_of(tag: &Tag) -> AutoRequestData<ItemStack> {
+    let mut data = AutoRequestData::default();
+    if let Some(request) = tag.get("request").and_then(items::context_of) {
+        data.encoded_request = request;
+    }
+    if let Some(Tag::String(text)) = tag.get("address") {
+        data.encoded_target_address = text.to_string_lossy();
+    }
+    if let Some(Tag::IntArray(at)) = tag.get("offset")
+        && at.len() == 3
+    {
+        data.target_offset = [at[0], at[1], at[2]];
+    }
+    if let Some(Tag::String(text)) = tag.get("dim") {
+        data.target_dim = text.to_string_lossy();
+    }
+    data.is_valid = matches!(tag.get("valid"), Some(Tag::Byte(1)));
+    data
+}
+
+/// `stack.get(AUTO_REQUEST_DATA)`.
+pub fn stack_request(stack: &ItemStack) -> Option<AutoRequestData<ItemStack>> {
+    stack.data()?.other(item_rules::REQUEST_COMPONENT).map(request_of)
+}
+
+/// A change queued for the stack a player holds.
+struct Pending {
+    write: Write,
+    freq: Option<Freq>,
+    data: Option<AutoRequestData<ItemStack>>,
+}
+
+static PENDING: LazyLock<Mutex<BTreeMap<u128, Vec<Pending>>>> = LazyLock::new(Mutex::default);
+static PENDING_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+fn queue(player: u128, pending: Pending) {
+    let mut map = PENDING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    map.entry(player).or_default().push(pending);
+    PENDING_COUNT.store(map.len(), Ordering::Relaxed);
+}
+
+/// `LogisticallyLinkedBlockItem.assignFrequency`: the stack in `player`'s hand takes `freq`.
 pub fn tune(player: u128, freq: Freq) {
-    runtime().tuned.insert(player, freq);
+    queue(player, Pending { write: Write::Tune, freq: Some(freq), data: None });
+}
+
+/// `RedstoneRequesterBlock.programRequester`: the Redstone Requester or Table Cloth in `player`'s hand takes the order. Whether the
+/// held item is one.
+pub fn program(host: &dyn Host, player: u128, data: AutoRequestData<ItemStack>, freq: Freq) -> bool {
+    let Some(held) = host.held_stack(player) else {
+        return false;
+    };
+    if !item_rules::write_applies(Write::Program, &held.item, is_tuned(&held)) {
+        return false;
+    }
+    queue(player, Pending { write: Write::Program, freq: Some(freq), data: Some(data) });
+    true
+}
+
+/// Applies the queued changes to the stack in the selected slot (`inventory_tick`).
+fn apply_pending(host: &mut dyn Host, slot: i32) {
+    let Some(player) = host.acting_player() else {
+        return;
+    };
+    let taken = {
+        let mut map = PENDING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let taken = map.remove(&player.uuid);
+        PENDING_COUNT.store(map.len(), Ordering::Relaxed);
+        taken
+    };
+    let Some(taken) = taken else {
+        return;
+    };
+    let Some(mut stack) = host.carried_stack(slot).map(|s| s.clone()) else {
+        return;
+    };
+    for pending in taken {
+        let item = stack.item.to_string();
+        if !item_rules::write_applies(pending.write, &item, is_tuned(&stack)) {
+            continue;
+        }
+        match pending.write {
+            Write::Tune => {
+                if let Some(freq) = pending.freq {
+                    let _ = host.set_component(&mut stack, item_rules::FREQ_COMPONENT, freq_tag(freq));
+                }
+            }
+            Write::Clear => {
+                let _ = host.remove_component(&mut stack, item_rules::FREQ_COMPONENT);
+            }
+            Write::Program => {
+                if let Some(data) = &pending.data {
+                    let _ = host.set_component(&mut stack, item_rules::REQUEST_COMPONENT, request_tag(data));
+                }
+                if item_rules::program_tunes(&item)
+                    && let Some(freq) = pending.freq
+                {
+                    let _ = host.set_component(&mut stack, item_rules::FREQ_COMPONENT, freq_tag(freq));
+                }
+            }
+        }
+    }
+    if let Some(held) = host.carried_stack(slot) {
+        *held = stack;
+    }
 }
 
 // --- the views of the rules -------------------------------------------------------------------------------
@@ -415,11 +546,6 @@ pub fn with_queue<R>(freq: Freq, f: impl FnOnce(Option<&mut create_kinetics::rul
     f(rt.logistics.networks.queued_promises(freq))
 }
 
-/// The network the player last tuned a linked block to, kept (a stack of Factory Gauges all carry one frequency).
-pub fn tuned_peek(player: u128) -> Option<Freq> {
-    runtime().tuned.get(&player).copied()
-}
-
 /// `PackagerBlockEntity.submitNewArrivals`, for the Packager at `packager`: what its inventory gained since it was last read is told
 /// to the promise queue of every Stock Link network on it and of every restocking Factory Gauge on it. Read every five ticks, and only
 /// while some queue is waiting.
@@ -485,6 +611,39 @@ pub fn linked_count(host: &mut dyn Host, freq: Freq) -> u32 {
 // --- tuning ---------------------------------------------------------------------------------------------------
 
 impl Hooks for Shared {
+    fn component_types(&self, event: &mut ComponentTypesEvent<'_>) {
+        for id in [item_rules::FREQ_COMPONENT, item_rules::REQUEST_COMPONENT] {
+            if !event.types.iter().any(|t| t == id) {
+                event.types.push(id.to_owned());
+            }
+        }
+    }
+
+    /// Writes what a click queued to the stack in hand.
+    fn inventory_tick(&self, host: &mut dyn Host, event: &mut InventoryTickEvent) {
+        if event.selected && PENDING_COUNT.load(Ordering::Relaxed) != 0 {
+            apply_pending(host, event.slot);
+        }
+    }
+
+    /// `LogisticallyLinkedBlockItem.use`: a tuned item used in the air clears its frequency.
+    fn use_item(&self, host: &mut dyn Host, event: &mut UseItemEvent<'_>) -> Flow {
+        if !item_rules::clears_on_use(&event.stack.item, is_tuned(event.stack)) {
+            return Flow::Continue;
+        }
+        let Some(player) = host.acting_player() else {
+            return Flow::Continue;
+        };
+        if util::click_repeated_anywhere(&*host, player.uuid) {
+            return Flow::Cancel;
+        }
+        let at = [player.position[0] as i32, player.position[1] as i32, player.position[2] as i32];
+        util::click_taken(&*host, player.uuid, at);
+        queue(player.uuid, Pending { write: Write::Clear, freq: None, data: None });
+        host.action_bar(player.uuid, Text::literal("Frequency cleared".to_owned()));
+        Flow::Cancel
+    }
+
     /// `LogisticallyLinkedBlockItem.useOn`: one of the linked items used on a linked block takes its network along.
     fn use_item_on(&self, host: &mut dyn Host, event: &mut UseItemOnEvent<'_>) -> Flow {
         if !is_linked_item(&event.stack.item) {
@@ -507,8 +666,8 @@ impl Hooks for Shared {
             return Flow::Cancel;
         }
         if may_interact(host, freq, player.uuid) {
-            runtime().tuned.insert(player.uuid, freq);
-            host.action_bar(player.uuid, Text::literal("Tuned to this network: the next linked block you place joins it".to_owned()));
+            tune(player.uuid, freq);
+            host.action_bar(player.uuid, Text::literal("Tuned to this network".to_owned()));
         }
         Flow::Cancel
     }

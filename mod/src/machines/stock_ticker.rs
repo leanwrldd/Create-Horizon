@@ -9,7 +9,7 @@
 //! - `/stock list [page]` shows what the network holds, the most first. `/stock add <item> [count|stack|all]` and
 //!   `/stock remove ...` build the order (`StockKeeperRequestScreen.mouseClicked`, at most nine kinds, never more than is held),
 //!   `/stock address <text>` sets where the boxes are addressed, `/stock send` broadcasts the order (`PackageOrderRequestPacket`) and
-//!   `/stock program` remembers it for the next Redstone Requester you place (`RedstoneRequesterBlock.programRequester`).
+//!   `/stock program` writes it onto the Redstone Requester or Table Cloth in your hand (`RedstoneRequesterBlock.programRequester`).
 //!
 //! Known differences from Create:
 //! - Create's request screen (the item grid, categories, the recipe viewer, the lock button, the hat) is replaced by commands, and no
@@ -67,18 +67,6 @@ static SESSIONS: LazyLock<Mutex<BTreeMap<u128, Session>>> = LazyLock::new(Mutex:
 
 fn sessions() -> MutexGuard<'static, BTreeMap<u128, Session>> {
     SESSIONS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// An order programmed for the next Redstone Requester a player places.
-pub struct Programmed {
-    pub data: AutoRequestData<ItemStack>,
-}
-
-static PROGRAMMED: LazyLock<Mutex<BTreeMap<u128, Programmed>>> = LazyLock::new(Mutex::default);
-
-/// The order a player programmed, used up by the requester they place.
-pub fn take_programmed(uuid: u128) -> Option<Programmed> {
-    PROGRAMMED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(&uuid)
 }
 
 fn tell(host: &mut dyn Host, uuid: u128, line: impl Into<String>) {
@@ -420,10 +408,13 @@ fn send(host: &mut dyn Host, uuid: u128, ticker: Pos, freq: Freq, order: &Contex
 /// `PackageOrderRequestPacket` with `encodeRequester`: the order is kept for the next requester.
 fn program(host: &mut dyn Host, uuid: u128, ticker: Pos, freq: Freq, order: Context<ItemStack>, address: String) {
     let data = AutoRequestData::programmed(order, address, ticker, host.dimension());
-    PROGRAMMED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(uuid, Programmed { data });
-    network::tune(uuid, freq);
+    // `RedstoneRequesterBlock.programRequester`: only a Redstone Requester or Table Cloth in the main hand takes it.
+    if !network::program(&*host, uuid, data, freq) {
+        tell(host, uuid, "Hold a Redstone Requester or a Table Cloth to program it");
+        return;
+    }
     host.play_sound("create:stock_ticker_request", util::centre(ticker), 2, 1.0, 1.0);
-    tell(host, uuid, "Order programmed: the next Redstone Requester you place sends it (and joins this network)");
+    tell(host, uuid, "Order programmed into the item in your hand (a Redstone Requester also joins this network)");
 }
 
 // --- the hooks -----------------------------------------------------------------------------------------------
@@ -467,7 +458,7 @@ impl Hooks for Tickers {
 
     fn place_block(&self, host: &mut dyn Host, event: &mut PlaceBlockEvent<'_>) {
         if &*event.stack.item == network::STOCK_TICKER {
-            network::note_placed(host, event.pos);
+            network::note_placed(host, event.pos, event.stack);
         }
     }
 

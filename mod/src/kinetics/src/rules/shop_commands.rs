@@ -43,7 +43,9 @@ pub enum Gauge {
     Input { pos: [i32; 3], slot: Slot, amount: i32 },
     /// `disconnect <x> <y> <z> <slot>`: remove an input (`removeConnection`).
     Disconnect { pos: [i32; 3], slot: Slot },
-    /// `bend`: cycle the arrow path mode (`cycleArrowBend`; the arrows are not drawn here).
+    /// `move <x> <y> <z> <slot>`: relocate this panel to a free slot of a Factory Gauge (`FactoryPanelBehaviour.moveTo`).
+    Move { pos: [i32; 3], slot: Slot },
+    /// `bend`: cycle the arrow path mode (`cycleArrowBend`).
     Bend,
     /// `reset`: the panel's settings and connections are cleared (`reset`).
     Reset,
@@ -129,10 +131,11 @@ pub fn parse_gauge(line: &str) -> Result<Gauge, String> {
             let amount = text.parse::<i32>().ok().filter(|n| *n >= 0).ok_or_else(|| format!("'{text}' is not an amount"))?;
             Ok(Gauge::Input { pos, slot, amount })
         }
+        "move" => parse_pos_slot(&words, "Use /gauge move <x> <y> <z> <slot>").map(|(pos, slot)| Gauge::Move { pos, slot }),
         "bend" => Ok(Gauge::Bend),
         "reset" => Ok(Gauge::Reset),
         other => Err(format!(
-            "Unknown: /gauge {other} (slot, item, amount, address, output, promises, clearpromises, connect, input, disconnect, bend, reset)"
+            "Unknown: /gauge {other} (slot, item, amount, address, output, promises, clearpromises, connect, input, disconnect, move, bend, reset)"
         )),
     }
 }
@@ -192,6 +195,8 @@ mod tests {
     #[test]
     fn gauge_commands_parse() {
         assert_eq!(parse_gauge(""), Ok(Gauge::Show));
+        assert_eq!(parse_gauge("move 1 64 -2 tr"), Ok(Gauge::Move { pos: [1, 64, -2], slot: Slot::TopRight }));
+        assert!(parse_gauge("move 1 64").is_err());
         assert_eq!(parse_gauge("item"), Ok(Gauge::Item(ItemArg::Held)));
         assert_eq!(parse_gauge("item none"), Ok(Gauge::Item(ItemArg::Clear)));
         assert_eq!(parse_gauge("item copper_ingot"), Ok(Gauge::Item(ItemArg::Id("minecraft:copper_ingot".into()))));

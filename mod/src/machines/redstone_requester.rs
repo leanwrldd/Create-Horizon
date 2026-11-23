@@ -34,7 +34,6 @@ use crate::compat::{
 use super::diodes_signal as signal;
 use super::logistics as network;
 use super::package as items;
-use super::stock_ticker;
 use crate::util;
 
 const ID: &str = network::REDSTONE_REQUESTER;
@@ -202,10 +201,11 @@ impl Hooks for Requesters {
         if host.neighbor_signal(dimension, pos) > 0 {
             host.set_block_property(pos, "powered", "true");
         }
-        let programmed = host.acting_player().and_then(|player| stock_ticker::take_programmed(player.uuid).map(|p| (player.uuid, p)));
-        network::note_placed(host, pos);
-        if let Some((uuid, programmed)) = programmed {
-            let (data, message) = programmed.data.read_from_item(dimension, pos);
+        // `AutoRequestData.readFromItem`: the order the item carries.
+        let programmed = host.acting_player().and_then(|player| network::stack_request(event.stack).map(|data| (player.uuid, data)));
+        network::note_placed(host, pos, event.stack);
+        if let Some((uuid, carried)) = programmed {
+            let (data, message) = carried.read_from_item(dimension, pos);
             // `AutoRequestData.readFromItem`: a ticker out of reach leaves the requester empty.
             if data.is_valid {
                 lock(&INITIAL).insert((dimension.to_owned(), pos), data);

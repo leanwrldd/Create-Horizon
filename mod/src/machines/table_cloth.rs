@@ -7,7 +7,7 @@
 //!
 //! How it works here:
 //! - Right-click a cloth with an item (the main hand) to lay it out, up to four; with an empty hand to take the last one back.
-//! - Program a shop at a Stock Ticker (`/stock add ...` then `/stock program`), then place a cloth: it becomes your shop, facing you,
+//! - Program a shop at a Stock Ticker (`/stock add ...` then `/stock program` with a cloth in hand), then place that cloth: it becomes your shop, facing you,
 //!   its goods the order, its address the order's. Sneak-click it with the price item to set the price tag (the owner only; any item
 //!   but a filter or a Shopping List), then `/cloth price <1-100>` for the amount per order.
 //! - Right-click a shop with an empty hand (or a Shopping List) to add one order to a list. The shopkeeper at the ticker has to be there
@@ -19,7 +19,7 @@
 //!   `entity` state (every cloth keeps a block entity), no placement helper (`PlacementHelper`: place cloths beside each other by hand),
 //!   no occlusion of its side (`sideOccluded`, the price tag's top or side model), and no price tag model drawn: the shop shows its goods.
 //! - A new Shopping List goes into the first free slot of the inventory, not the hand; no tooltip lists the goods and the cost.
-//! - A shop's order and address come from a player's memory (`/stock program`), not the placed item (see `logistics.rs`). The data
+//! - A shop's order and address come from the item (`/stock program` with the cloth in hand, as `programRequester`). The data
 //!   `writeToItem` would put in the dropped cloth isn't kept: a broken shop drops a plain cloth.
 //! - A list keys a cloth by its block position (Create's Y is "pixel perfect").
 
@@ -193,35 +193,7 @@ fn facing_of(value: i32) -> Dir {
     [Dir::South, Dir::West, Dir::North, Dir::East][value.rem_euclid(4) as usize]
 }
 
-fn data_tag(data: &AutoRequestData<ItemStack>) -> Tag {
-    let mut tag = Compound::new();
-    tag.insert("request".into(), items::context_tag(&data.encoded_request));
-    tag.insert("address".into(), Tag::String(data.encoded_target_address.as_str().into()));
-    tag.insert("offset".into(), Tag::IntArray(data.target_offset.to_vec()));
-    tag.insert("dim".into(), Tag::String(data.target_dim.as_str().into()));
-    tag.insert("valid".into(), Tag::Byte(i8::from(data.is_valid)));
-    Tag::Compound(tag)
-}
-
-fn data_of(tag: &Tag) -> AutoRequestData<ItemStack> {
-    let mut data = AutoRequestData::default();
-    if let Some(request) = tag.get("request").and_then(items::context_of) {
-        data.encoded_request = request;
-    }
-    if let Some(Tag::String(text)) = tag.get("address") {
-        data.encoded_target_address = text.to_string_lossy();
-    }
-    if let Some(Tag::IntArray(at)) = tag.get("offset")
-        && at.len() == 3
-    {
-        data.target_offset = [at[0], at[1], at[2]];
-    }
-    if let Some(Tag::String(text)) = tag.get("dim") {
-        data.target_dim = text.to_string_lossy();
-    }
-    data.is_valid = matches!(tag.get("valid"), Some(Tag::Byte(1)));
-    data
-}
+use network::{request_of as data_of, request_tag as data_tag};
 
 /// `TableClothBlockEntity.read`.
 fn read(nbt: &Compound) -> Cloth<ItemStack> {
@@ -515,11 +487,12 @@ impl Hooks for Cloths {
         let Some(player) = host.acting_player() else {
             return;
         };
-        let Some(programmed) = stock_ticker::take_programmed(player.uuid) else {
+        // `AutoRequestData.readFromItem`: the shop the item carries.
+        let Some(carried) = network::stack_request(event.stack) else {
             return;
         };
         let dimension = host.dimension().to_owned();
-        let (data, message) = programmed.data.read_from_item(&dimension, event.pos);
+        let (data, message) = carried.read_from_item(&dimension, event.pos);
         let facing = create_kinetics::rules::deployer::horizontal_direction(player.yaw);
         {
             let mut initial = lock(&INITIAL);
