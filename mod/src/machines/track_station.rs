@@ -514,7 +514,8 @@ impl Hooks for Stations {
         if &*event.stack.item == world_track() {
             return Flow::Continue;
         }
-        if !util::first_click(&*host, player.uuid, pos) {
+        // The rest of a click this handler took: cancel it. A click it doesn't take goes on to the item (`useItemOn` passes).
+        if util::click_repeated(&*host, player.uuid, pos) {
             return Flow::Cancel;
         }
         for (station, assembly) in stations {
@@ -526,6 +527,7 @@ impl Hooks for Stations {
             let assembly = fresh.unwrap_or(assembly);
             if track_clicked(host, &player, station, &assembly, pos) {
                 lock_assemblies().insert((dimension, station), assembly);
+                util::click_taken(&*host, player.uuid, pos);
                 return Flow::Cancel;
             }
         }
