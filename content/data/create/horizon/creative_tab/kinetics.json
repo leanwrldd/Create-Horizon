@@ -28,6 +28,7 @@
     "create:peculiar_bell",
     "create:haunted_bell",
     "create:crafting_blueprint",
+    "create:railway_casing",
     "create:wooden_bracket",
     "create:metal_bracket",
     "create:empty_blaze_burner",
@@ -218,6 +219,7 @@
     "create:sand_paper",
     "create:red_sand_paper",
     "create:mechanical_saw",
+    "create:schedule",
     "create:schematicannon",
     "create:schematic_table",
     "create:empty_schematic",
@@ -269,6 +271,10 @@
     "create:green_toolbox",
     "create:red_toolbox",
     "create:black_toolbox",
+    "create:track",
+    "create:track_observer",
+    "create:track_signal",
+    "create:track_station",
     "create:tree_fertilizer",
     "create:andesite_tunnel",
     "create:brass_tunnel",
@@ -278,7 +284,6 @@
     "create:windmill_bearing",
     "create:sail_frame",
     "create:white_sail",
-    "create:handheld_worldshaper",
-    "create:track"
+    "create:handheld_worldshaper"
   ]
 }

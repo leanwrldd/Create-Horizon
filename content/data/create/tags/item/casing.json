@@ -1,5 +1,6 @@
 {
   "values": [
+    "create:railway_casing",
     "create:andesite_casing",
     "create:brass_casing",
     "create:copper_casing",

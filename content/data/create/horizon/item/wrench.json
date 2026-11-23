@@ -20,6 +20,9 @@
             "create:mechanical_bearing",
             "create:peculiar_bell",
             "create:haunted_bell",
+            "create:small_bogey",
+            "create:large_bogey",
+            "create:railway_casing",
             "create:blaze_burner",
             "create:lit_blaze_burner",
             "create:chain_conveyor",
@@ -473,11 +476,14 @@
             "create:andesite_table_cloth",
             "create:brass_table_cloth",
             "create:copper_table_cloth",
+            "create:track",
+            "create:track_observer",
+            "create:track_signal",
+            "create:track_station",
             "create:andesite_tunnel",
             "create:brass_tunnel",
             "create:weighted_ejector",
-            "create:windmill_bearing",
-            "create:track"
+            "create:windmill_bearing"
           ],
           "correct_for_drops": true
         }
