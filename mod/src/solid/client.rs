@@ -76,6 +76,8 @@ pub fn observe(host: &mut dyn ClientHost, event: &BlockEntityClientTickEvent<'_>
             let turn_axis = match sample {
                 Sample::Turn { axis, .. } => Some(axis),
                 Sample::Slide { .. } => None,
+                // `expandBoundsAroundAxis(Axis.Y)` of an assembled carriage.
+                Sample::Oriented { .. } => Some(create_kinetics::Axis::Y),
             };
             Arc::new(build_solid(&moving, turn_axis, &|state: &State| match shapes.get(&shapes::text(state)) {
                 Some(boxes) => boxes.clone(),

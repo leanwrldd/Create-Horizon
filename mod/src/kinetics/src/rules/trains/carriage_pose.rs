@@ -113,6 +113,77 @@ pub fn distance_moved(diff: Vec3, yaw: f32) -> (f64, bool) {
     (length * signum, signum < 0.0)
 }
 
+/// `Mth.wrapDegrees`: an angle difference in -180..180.
+pub fn wrap_degrees(angle: f32) -> f32 {
+    let a = angle.rem_euclid(360.0);
+    if a >= 180.0 { a - 360.0 } else { a }
+}
+
+/// A carriage's pose and how it is changing, as the server sends it: the client draws the carriage where it will
+/// be a moment later (`now`, in ticks and the fraction of the frame) from the last news (Create's entity has its
+/// position and rotation synced every tick and the renderer lerps between the last two; this stands in for that,
+/// news arriving less often).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Motion {
+    pub position: Vec3,
+    /// Blocks per tick.
+    pub velocity: Vec3,
+    pub yaw: f32,
+    /// Degrees per tick.
+    pub yaw_rate: f32,
+    pub pitch: f32,
+    pub pitch_rate: f32,
+    /// The game time the pose is of.
+    pub time: i64,
+}
+
+impl Motion {
+    /// The pose now and the one a tick before it.
+    pub fn new(now: &CarriagePose, before: &CarriagePose, time: i64) -> Motion {
+        Motion {
+            position: now.position,
+            velocity: [
+                now.position[0] - before.position[0],
+                now.position[1] - before.position[1],
+                now.position[2] - before.position[2],
+            ],
+            yaw: now.yaw,
+            yaw_rate: wrap_degrees(now.yaw - before.yaw),
+            pitch: now.pitch,
+            pitch_rate: wrap_degrees(now.pitch - before.pitch),
+            time,
+        }
+    }
+
+    /// The pose at `now` ticks of game time (a fraction counts), at most `LOOKAHEAD` ticks past the news.
+    pub fn at(&self, now: f64) -> CarriagePose {
+        let dt = (now - self.time as f64).clamp(0.0, LOOKAHEAD);
+        CarriagePose {
+            position: [
+                self.position[0] + self.velocity[0] * dt,
+                self.position[1] + self.velocity[1] * dt,
+                self.position[2] + self.velocity[2] * dt,
+            ],
+            yaw: self.yaw + self.yaw_rate * dt as f32,
+            pitch: self.pitch + self.pitch_rate * dt as f32,
+        }
+    }
+
+    pub fn is_moving(&self) -> bool {
+        self.velocity.iter().any(|v| *v != 0.0) || self.yaw_rate != 0.0 || self.pitch_rate != 0.0
+    }
+}
+
+/// How many ticks past its news a pose is extrapolated (a client that hears nothing for longer holds still).
+pub const LOOKAHEAD: f64 = 6.0;
+
+/// How the wheels turn per tick while the carriage moves by `diff` this tick (`updateAngles`): the change of
+/// `wheelAngle` in degrees.
+pub fn wheel_rate(diff: Vec3, yaw: f32, wheel_radius: f64) -> f64 {
+    let (moved, _) = distance_moved(diff, yaw);
+    -wheel_step(moved, wheel_radius)
+}
+
 /// `CarriageContraptionEntityRenderer.translateBogey`: where a bogey is drawn, from the entity's own position.
 /// `bogey_yaw` and `bogey_pitch` are the bogey's own angles ([`bogey_angles`]).
 #[allow(clippy::too_many_arguments)]
@@ -154,8 +225,9 @@ pub fn bogey_ops(
 pub enum BogeyPart {
     /// A `create:shaft` block drawn from its corner: `axis` is `"x"` or `"z"`.
     Shaft { axis: char, at: Vec3, turn_about: char, angle: f32 },
-    /// A partial model with its pose: a translation, then a turn about X.
-    Model { model: &'static str, at: Vec3, angle_x: f32, scale: f32, then: Vec3, scroll: Option<f32> },
+    /// A partial model with its pose, in the order Java's calls stack them: `translate(at)`, `rotateX(angle_x)`,
+    /// `translate(then)`, `rotateX(unturn)`, then the `scale`.
+    Model { model: &'static str, at: Vec3, angle_x: f32, then: Vec3, unturn: f32, scale: f32, scroll: Option<f32> },
 }
 
 /// `AllPartialModels` names of the bogey's pieces (`block("track/bogey/...")`).
@@ -170,7 +242,7 @@ pub const BELT: &str = "create:block/track/bogey/bogey_drive_belt";
 /// `StandardBogeyRenderer.render` and its `Small` / `Large` subclasses.
 pub fn standard_bogey(large: bool, wheel_angle: f32) -> Vec<BogeyPart> {
     fn model(parts: &mut Vec<BogeyPart>, model: &'static str, at: Vec3, angle_x: f32, scale: f32, then: Vec3, scroll: Option<f32>) {
-        parts.push(BogeyPart::Model { model, at, angle_x, scale, then, scroll });
+        parts.push(BogeyPart::Model { model, at, angle_x, then, unturn: 0.0, scale, scroll });
     }
     let mut parts = Vec::new();
     let angle = wheel_angle;
@@ -200,6 +272,9 @@ pub fn standard_bogey(large: bool, wheel_angle: f32) -> Vec<BogeyPart> {
     model(&mut parts, LARGE_WHEELS, [0.0, 1.0, 0.0], angle, 1.0, [0.0; 3], None);
     // The pin: turned with the wheel, moved a quarter up along the turned axis, turned back.
     model(&mut parts, PIN, [0.0, 1.0, 0.0], angle, 1.0, [0.0, 0.25, 0.0], None);
+    if let Some(BogeyPart::Model { unturn, .. }) = parts.last_mut() {
+        *unturn = -angle;
+    }
     parts
 }
 
@@ -217,6 +292,30 @@ mod tests {
         let pose = align([5.0, 70.0, 5.0], [[4.0, 70.0, 5.0], [8.0, 70.0, 5.0]]);
         assert!(near(pose.yaw.rem_euclid(360.0), 0.0) || near(pose.yaw.rem_euclid(360.0), 360.0), "{}", pose.yaw);
         assert!(near(pose.pitch, 0.0));
+    }
+
+    #[test]
+    fn the_motion_runs_on_from_its_news_and_stops_after_a_while() {
+        let before = CarriagePose { position: [0.0, 0.0, 0.0], yaw: 350.0, pitch: 0.0 };
+        let now = CarriagePose { position: [1.0, 0.0, 0.0], yaw: 10.0, pitch: 0.0 };
+        let m = Motion::new(&now, &before, 100);
+        assert!(m.is_moving());
+        assert!((m.yaw_rate - 20.0).abs() < 1e-4);
+        let later = m.at(102.5);
+        assert!((later.position[0] - 3.5).abs() < 1e-9);
+        assert!((later.yaw - 60.0).abs() < 1e-3);
+        // Never before the news, never beyond the look-ahead.
+        assert_eq!(m.at(90.0).position, now.position);
+        assert!((m.at(200.0).position[0] - (1.0 + LOOKAHEAD)).abs() < 1e-9);
+        let still = Motion::new(&now, &now, 5);
+        assert!(!still.is_moving());
+    }
+
+    #[test]
+    fn the_wheels_turn_against_the_way_the_carriage_goes() {
+        assert!(wheel_rate([-0.5, 0.0, 0.0], 0.0, 0.5) < 0.0);
+        assert!(wheel_rate([0.5, 0.0, 0.0], 0.0, 0.5) > 0.0);
+        assert_eq!(wheel_rate([0.0; 3], 0.0, 0.5), 0.0);
     }
 
     #[test]

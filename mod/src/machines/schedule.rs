@@ -83,13 +83,25 @@ fn tag_of(value: Value) -> Tag {
     }
 }
 
+/// The schedule in a player's main hand (`ScheduleItem.getSchedule` of the held stack).
+pub fn held_schedule(host: &dyn Host, uuid: u128) -> Option<Schedule> {
+    host.held_stack(uuid).filter(|stack| &*stack.item == SCHEDULE).and_then(|stack| schedule_of(&stack))
+}
+
 /// `ScheduleItem.getSchedule`: the stack's schedule, none for a stack without the component.
-fn schedule_of(stack: &ItemStack) -> Option<Schedule> {
+pub fn schedule_of(stack: &ItemStack) -> Option<Schedule> {
     let tag = stack.data()?.other(COMPONENT)?;
     match value_of(tag)? {
         Value::Compound(fields) => Some(read_schedule(&fields)),
         _ => None,
     }
+}
+
+/// A Schedule item holding `schedule` (`Train.runtime.returnSchedule`'s stack), none when the host won't set the data.
+pub fn stack_with(host: &dyn Host, schedule: &Schedule) -> Option<ItemStack> {
+    let mut stack = ItemStack { item: SCHEDULE.into(), count: 1, damage: 0, extra: None };
+    host.set_component(&mut stack, COMPONENT, tag_for(schedule)).ok()?;
+    Some(stack)
 }
 
 fn tag_for(schedule: &Schedule) -> Tag {

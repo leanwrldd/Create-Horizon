@@ -173,6 +173,8 @@ pub enum AssemblyError {
     TooManyBogeys { count: usize },
     /// `CarriageContraption.assemble`: Train Controls that face across the track.
     SidewaysControls,
+    /// `CarriageContraption.assemble` threw another `AssemblyException`: a block that can't move, a chunk that isn't loaded.
+    Structure { message: String },
 }
 
 impl AssemblyError {
@@ -188,6 +190,7 @@ impl AssemblyError {
             AssemblyError::NoControls => "train_assembly.no_controls",
             AssemblyError::TooManyBogeys { .. } => "train_assembly.too_many_bogeys",
             AssemblyError::SidewaysControls => "train_assembly.sideways_controls",
+            AssemblyError::Structure { .. } => "train_assembly.structure",
         }
     }
 

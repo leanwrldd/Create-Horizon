@@ -33,6 +33,10 @@ Registered through `tools/gen_modules.py`, which now also lists a rules folder w
 | `edge_blocks.rs` | `signal/SignalBlock`, `SignalBlockEntity`, `observer/TrackObserverBlock(Entity)`, `station/StationBlock(Entity)`, `StationEditPacket`, `track/TrackTargetingBlockItem`, `AbstractBogeyBlock` | signal lights (`enterState`, the 15-tick hold off red, the power report, the type follow, the 4-tick power release), observer power, station edits and `/station`, the train presence picture, the assembly area, the bogey click (`trackClicked`), the targeting item's reach, the English of the messages |
 | `schedule_nbt.rs` | `schedule/Schedule`, `ScheduleEntry`, `ScheduleInstruction`, `ScheduleWaitCondition` (`write`, `fromTag`, each one's `data` keys) | a schedule as an NBT tree (`create:train_schedule`) |
 | `schedule_edit.rs` | `schedule/ScheduleScreen` (its edits), `ScheduleItem.appendHoverText` | `/schedule`: the stops and conditions as commands, a new stop's defaults, summaries and the tooltip |
+| `carriage_pose.rs` | `entity/Carriage.java` (`DimensionalCarriageEntity.alignEntity`), `CarriageContraptionEntityRenderer`, `OrientedContraptionEntity.applyLocalTransforms`, `CarriageBogey.updateAngles`, `bogey/StandardBogeyRenderer` | a carriage's yaw and pitch from its rotation anchors, the draw operations of the carriage and of each bogey, the bogey angles and wheel turn, the standard bogeys' pieces, and the pose news a client runs on (`Motion`) |
+| `carriage_contraption.rs` | `entity/CarriageContraption.java`, `AbstractBogeyBlock.getStickySurfaces` (in `contraption::search`) | what a carriage's blocks are: bogeys, the second bogey, Train Controls facing, conductor seats, `assemble`'s verdict and errors |
+| `train_nbt.rs` | `Train`, `Carriage`, `CarriageBogey`, `TravellingPoint`, `Navigation`, `ScheduleRuntime` (`write` / `read`), `TrackNodeLocation.write` | a train as an NBT tree and back against the rebuilt graph |
+| `train_controls.rs` | `CarriageContraptionEntity.startControlling` / `control`, `ControlsServerHandler`, `ControlsHandler`, `ControlsUtil`, `TrainStatus` | driving by hand: the held keys with their 30-tick keepalive, `control` (target speed, steering, approaching a station, the prompts), the train status lines |
 
 Design: Java object references become ids (`NodeId`, edge = `(from, to)`, point = `(type, uuid)`).
 `RailNetworks` is `GlobalRailwayManager`'s graphs + signal edge groups; whatever Java does to trains
@@ -148,26 +152,76 @@ the station's `StationName`), so the points come back after a load although the 
 
 Differences from Create, and what's missing (the module headers have the details):
 - No station, assembly or schedule screens: `/station` and `/schedule` stand in, and a right click prints the state.
-- **Assembly stops at the track**: the scan, the bogey clicks, the errors and the wheel points on the graph are done; no
-  carriage's blocks are gathered into a structure and no `Train` is made (part 3). So no train presence, no disassembly, no
-  station comparator signal, no auto-schedule slot.
+- **Assembly stopped at the track in part 2**: the scan, the bogey clicks, the errors and the wheel points on the graph; part 3 (below)
+  gathers the carriages and makes the train, with disassembly, the station's train presence and the auto-schedule slot.
 - A point on a curve can't be selected (client curve picking); the signal and observer overlays on the track and the station
   flag/assembly outlines aren't drawn; the bogeys' wheels aren't drawn; no door controls, display sources, map markers,
   computer behaviour, package ports.
-- The graphs' points tick in `train_net.rs` (`clear_group_occupancy`, `tick_all_points` before and after) until trains tick through
-  `Railways::tick`, which owns the same calls: **part 3 must drop `train_net::level_tick`'s call** when it adds that.
+- The graphs' points ticked in `train_net.rs` in part 2; `Railways::tick` owns them since part 3 (`trains.rs`).
 - The track-clicks of an assembly area are `use_item_on` on the track block (`TrackBlock.useItemOn`).
+
+## Glue part 3: trains exist and run (not played)
+
+The glue, in `mod/src/machines/`: `trains.rs` (the railways of each dimension ticked every level tick: `Railways::tick`, its
+`TrainEvent`s applied, each carriage put where its wheels are; the trains saved in the level attachment `create:trains`
+and read back once their track is back; `/train`), `train_assemble.rs` (the second half of `StationBlockEntity.assemble`
+and `Train.disassemble`), `train_draw.rs` (the carriage anchor block entity and its drawing), `train_controls.rs` (the keys
+of a driving player) and the pieces in `track.rs` (the `Railways` kept beside the graphs, `dimension_name`),
+`track_station.rs` (assembling, the train presence's comparator output, the auto-schedule slot), `schedule.rs`,
+`structure_click.rs` (a click on a carriage's Train Controls) and `solid/` (a carriage is a solid structure).
+Content (`tools/content/train_controls.py`): the Train Controls (`create:controls`) and the carriage anchor block.
+
+- **Assembling** (`/station assemble`, or the station's assemble step): each carriage is what `Contraption.searchMovedStructure`
+  finds from its bogey (`rules::contraption::search`, the bogey's sticky sides added); `assemble_train` checks it; the blocks leave
+  the world as a pistons' structure does (`capture`, `remove_from_world`) and are kept in the carriage's runtime; the `Train` joins
+  the dimension's `Railways` standing at the station (`add_assembled_train`). A failed assembly changes nothing.
+- **Disassembling** (`/station disassemble`): `Railways::disassemble_train` (every carriage level and square to the track), each carriage set
+  down by `place_in_world` turned by `-yaw + initialYaw`; the station remembers the name for the next assembly; the schedule goes back
+  to the player or the station (`dropSchedule`).
+- **Running**: `Railways::tick` from `level_tick_post`; `train_net.rs` no longer ticks the points. `updateContraptionAnchors` and the
+  pose (`alignEntity`) are worked out each tick from the wheels. A crash's explosion is a flash and a sound (Horizon has no `explode`).
+  Status lines (`TrainStatus`) go to the owner in chat.
+- **Drawing** (why a block entity in an invisible block): Horizon has no entity a mod can draw (a general entity type, declared with
+  `declare_general_entity`, has a record, a payload and a tick, and no renderer), so each carriage has an anchor
+  (`create:carriage_anchor`: no shape, no item, an empty model) that `trains.rs` keeps in an air cell within six blocks of the carriage
+  and moves when the carriage gets far from it. The anchor's block entity holds the structure and the pose; its draw hook turns and moves
+  what it draws each frame (`translate` and `rotate_about`, never `keep()`, as a moving piston is drawn) and widens its render box. The
+  other routes were worse: a block entity at a fixed place (the station, the track under it) can't be drawn once the train is further
+  than the view of block entities, and a display entity per block is per viewer, unsaved and a packet per block. The pose goes out as
+  news (position, velocity, yaw and pitch and their rates, the game time) every other tick while the carriage moves and once when it
+  stops, and the client runs it on for at most six ticks. The update tag is the whole block entity data, structure included (a mod can't tell
+  a chunk being sent from a block change), about a kilobyte per carriage per news.
+- **Bogeys** are drawn from their wheel angle with `StandardBogeyRenderer`'s pieces (two shafts, the frame and wheels; the large one with its drive,
+  belt, piston and pin), under `translateBogey`'s operations; the bogey blocks themselves are part of the structure.
+- **Solid**: a carriage's anchor is a controller of `solid/` (`Sample::Oriented`, `Rotation::Oriented` of the collider): entities are pushed,
+  carried and held up by it, and the local player's mixin collides with it. Clicks on a carriage's blocks work through the structure click
+  (`structure_click.rs`: levers, doors, deployers, storage): a click on the Train Controls starts a drive. A click on a seat does nothing:
+  nothing carries a seated rider's marker along with a carriage yet (`seat::carry` is called by the actors' tick).
+- **Controls**: a click on the Train Controls of a carriage, or `/train drive` near it, starts driving; the client takes the movement keys and
+  sends the six keys (`create:train_controls`, a keepalive every 5 ticks), the server holds each key 30 ticks (`HeldKeys`) and runs
+  `train_controls::control` each tick; sneaking stops it. Prompts (`Arrived at`, `Departing from`, the approach bar) are the action bar.
+- **Schedules**: `/train schedule` gives the held Schedule to the nearest train, a Schedule right-clicked into the station (empty hand while
+  sneaking takes it out) is the auto-schedule slot and starts `ScheduleRuntime` on a train that arrives (`applyAutoSchedule`);
+  `/train conductor` says a driver is aboard (Create's seated villager or blaze burner: no mob can sit on a seat here).
+
+Differences and gaps (what is *not* Create):
+- No carriage entities: seats on a carriage hold no passenger the rules know, no mob conductors (`/train conductor` stands in), no
+  `countPlayerPassengers`, no sounds, steam, honking or particles, no couplings between carriages drawn.
+- The cargo is not kept (`TrainCargoManager`): fuel isn't burnt from chests, cargo conditions see nothing, no mail transfer.
+- The anchors' light is the anchor cell's; the bogeys' belt texture doesn't scroll; the Controls' lever and cover are still.
+- A train in a chunk nobody loads still runs (Create stalls a train a player rides into unloaded chunks); trains don't cross dimensions.
+- After a load a train waits (60 ticks, then every second) for the graph its wheels name and for the stations' and signals' points; a train
+  whose track never comes back stays as the saved anchors draw it. The graphs are still rebuilt from the track blocks.
+- The first full run of trains in game has not been done: see HANDOFF.md for what to check.
 
 ## Next
 
-1. Glue: drain `RailNetworks::events` into `Railways::apply_rail_events` and the sync layer, keep a `Railways` (the nets plus
-   the trains) per dimension instead of bare `RailNetworks`, real saving of the graphs (with the edge points and trains), and the
-   left-out lists above.
-2. Glue (part 3): assembling the carriages (`CarriageContraption.assemble` from each bogey: the structure, controls, seats, the
-   bogey blocks' data, then `assemble_train`, `add_assembled_train`, removing the blocks), disassembly
-   (`Railways::disassemble_train`), the station's train presence (`Railways::station_train_state`, `station_tick`), the auto-schedule
-   slot, handing a schedule to a conductor (`ScheduleItem.handScheduleTo`, `ScheduleItemEntityInteraction`).
-3. Glue (part 3): the train drawn through block entities (`CarriageContraptionEntity`), driven by `Carriage` anchors and
-   `TrainEvent::ManageEntities`; train controls (`manual_tick`, `manual_steer`, `speed`), conductors via
-   `TrainWorld::check_conductors`, passengers; bogey wheels and styles; the train controls block.
-4. Content: the train controls, the train doors and the other train blocks; saved data for `Railways`.
+1. Play-test glue part 3 (HANDOFF.md lists what to watch).
+2. Train doors (`TrainDoorBlock`, `DoorControlBehaviour`), the station's door controls, display sources (`StationSummary`, `TrainStatus`
+   sources, `TrainDisplay`), map markers (`StationMarker`, `StationMapData`), portals (`AllPortalTracks`, the carriage cutoffs), the
+   station screens, `TrainRelocator`, `GlobalTrainDisplayData`.
+3. The track overlays of edge points, the station's flag and assembly outlines, and edge points on curved track (picking a point on a
+   curve with the cursor), the girder and tilt of a curve.
+4. Cargo: `TrainCargoManager` over the carriages' chests, barrels and vaults (fuel, cargo conditions), passengers and seated conductors,
+   `ScheduleItemEntityInteraction`, the Blaze Burner conductor hat.
+5. One-shot update fields for the pose (`set_client_update_fields`) so only the pose travels, once the compat layer exposes them.

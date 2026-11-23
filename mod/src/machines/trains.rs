@@ -1,0 +1,1290 @@
+//! Trains in the world: the railways of each dimension ticked every level tick, the carriages' structures and their
+//! anchors, the trains saved with the world, and `/train`. The decisions are
+//! `create_kinetics::rules::trains::{railways, train, carriage_pose, carriage_contraption, train_nbt, train_controls}`;
+//! this reads the world, calls them and applies what they say. The track and its graphs are `track.rs`
+//! (`Railways` lives beside them, per dimension), assembling and disassembling at a station is `train_assemble.rs`, the
+//! drawing is `train_draw.rs` and driving by hand `train_controls.rs`.
+//!
+//! # The tick (`GlobalRailwayManager.tick`, `CarriageContraptionEntity.tickContraption`)
+//!
+//! [`Railways::tick`] runs the signal groups and the points of every graph, then the trains. What the trains did that
+//! the world must be told (`TrainEvent`) is applied here: a crash's explosion (a flash and a sound: Horizon has no
+//! `explode`), a train that left the manager (its carriages' anchors are removed). Then each carriage is put where its
+//! wheels say (`updateContraptionAnchors`, `alignEntity`): the pose goes into the carriage's anchor block entity.
+//!
+//! # Saving
+//!
+//! Create saves the trains with the graphs (`RailwaySavedData`). The graphs aren't saved here (`track.rs` rebuilds them
+//! from the track blocks), so the trains are kept in a level attachment (`create:trains`) with the carriages'
+//! structures: each train's NBT (`train_nbt`) and the structure of each carriage. After a load a train waits (`Pending`)
+//! until the graph its wheels name is back, every wheel on its edge and the world has had a while for the stations and
+//! signals to put their points on the graph; then it joins the railways again. Its anchors stay where the chunks saved
+//! them, so a train that can't be restored is still seen where it stood.
+//!
+//! Differences from Create, for the README:
+//! - No carriage entities: the passengers and the seats' riders aren't carried (seats on a carriage hold no one), no
+//!   entity collision (carriages aren't solid yet), no sounds, particles, honking or couplings.
+//! - The cargo (`TrainCargoManager`) is not kept: fuel isn't burnt from chests, and cargo conditions see nothing.
+//! - Conductors: a mob can't sit on a seat, so `/train conductor` says a driver stands in for the train (Create's seated
+//!   villager or blaze burner), and the schedule is given with `/train schedule` or put in the station.
+//! - A carriage in a chunk nobody loads still runs (Create stalls a train whose player rides it into unloaded chunks).
+//! - Trains are not kept moving across dimensions (portals); the nether is never ticked with the overworld's trains.
+
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{LazyLock, Mutex};
+
+use create_kinetics::rules::contraption::State;
+use create_kinetics::rules::snbt::Value;
+use create_kinetics::rules::trains::carriage::{Carriage, CarriageBogey};
+use create_kinetics::rules::trains::carriage_contraption as cc;
+use create_kinetics::rules::trains::carriage_pose::{self as pose, CarriagePose, Motion};
+use create_kinetics::rules::trains::graph::{EdgePointType, Uuid};
+use create_kinetics::rules::trains::network::TrackGraph;
+use create_kinetics::rules::trains::railways::Railways;
+use create_kinetics::rules::trains::schedule::Schedule;
+use create_kinetics::rules::trains::train::{StatusMessage, TrainEvent, TrainWorld};
+use create_kinetics::rules::trains::train_controls as drive;
+use create_kinetics::rules::trains::train_nbt;
+use create_kinetics::{Dir, Pos};
+use crate::compat::{
+    AttachmentCodec, AttachmentType, BlockEntityTickEvent, Compound, Flow, Holder, Hooks, Host, LevelTickPostEvent,
+    NativeCommand, PerformCommandEvent, RegisterCommandsEvent, Tag, Text,
+};
+
+use super::contraption::{MovedBlock, Moving};
+use super::track as world;
+use super::train_draw::{self as draw, ANCHOR, ANCHOR_RADIUS, BogeyData};
+use crate::util;
+
+struct Trains;
+
+pub fn hooks() -> Box<dyn Hooks> {
+    Box::new(Trains)
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// `Block.UPDATE_CLIENTS | UPDATE_KNOWN_SHAPE | UPDATE_SUPPRESS_DROPS`: moving an anchor sets no neighbour off.
+const ANCHOR_FLAGS: i32 = 2 | 16 | 32;
+/// Ticks a pending train waits before its first try, for the points of the stations and signals to be back.
+const SETTLE: i64 = 60;
+/// Ticks between two tries.
+const RETRY: i64 = 20;
+/// Ticks between two saves of the trains.
+const SAVE_EVERY: i64 = 100;
+/// Ticks between pose news of a moving carriage.
+const NEWS_EVERY: i64 = 2;
+/// Ticks an anchor with no train is left before it is removed.
+const ORPHAN_TICKS: i64 = 400;
+
+// --- a carriage's runtime ---------------------------------------------------------------------------------------------
+
+/// What the glue keeps of a carriage besides what `Carriage` holds.
+#[derive(Clone, Debug)]
+pub struct CarriageRt {
+    /// The carriage's blocks, local to its first bogey's block (`Contraption.blocks`, `anchor`).
+    pub structure: Moving,
+    /// The station's assembly direction when it was assembled (`CarriageContraption.assemblyDirection`).
+    pub direction: Dir,
+    pub forward_controls: bool,
+    pub backward_controls: bool,
+    /// Each Train Controls block: local position and facing.
+    pub controls: Vec<(Pos, Dir)>,
+    /// The block the anchor is in now.
+    pub anchor: Option<Pos>,
+    pub last_pose: Option<CarriagePose>,
+    /// The last tick's pose, for the velocity.
+    pub prev_pose: Option<CarriagePose>,
+    /// Each bogey's wheel angle.
+    pub wheel: [f64; 2],
+    /// Game time of the last news and whether it said the carriage moved.
+    pub news_at: i64,
+    pub news_moving: bool,
+    /// The bogeys' blocks changed or the structure is new: send everything.
+    pub fresh: bool,
+}
+
+impl CarriageRt {
+    pub fn new(structure: Moving, direction: Dir, summary: &cc::Summary) -> CarriageRt {
+        let controls = structure
+            .blocks
+            .iter()
+            .filter(|b| b.state.is(cc::CONTROLS))
+            .filter_map(|b| b.state.dir("facing").map(|d| (b.local, d)))
+            .collect();
+        CarriageRt {
+            structure,
+            direction,
+            forward_controls: summary.forward_controls,
+            backward_controls: summary.backward_controls,
+            controls,
+            anchor: None,
+            last_pose: None,
+            prev_pose: None,
+            wheel: [0.0; 2],
+            news_at: i64::MIN,
+            news_moving: false,
+            fresh: true,
+        }
+    }
+
+    /// The `(forward, backward)` conductor sides a stand-in driver gives (`checkConductors`).
+    fn conductor_sides(&self) -> [bool; 2] {
+        [self.forward_controls, self.backward_controls]
+    }
+}
+
+type Key = (Uuid, i32);
+
+/// A saved train waiting for its track.
+struct Pending {
+    train: Vec<(String, Value)>,
+    carriages: BTreeMap<i32, CarriageRt>,
+    next_try: i64,
+}
+
+/// A player driving a carriage.
+struct Drive {
+    train: Uuid,
+    carriage: i32,
+    controls: Pos,
+    keys: drive::HeldKeys,
+    driver: drive::Driver,
+}
+
+#[derive(Default)]
+struct Dim {
+    token: i64,
+    carriages: BTreeMap<Key, CarriageRt>,
+    pending: Vec<Pending>,
+    /// Trains a stand-in driver is aboard (`/train conductor`).
+    conductors: std::collections::BTreeSet<Uuid>,
+    drives: HashMap<u128, Drive>,
+    saved_at: i64,
+    dirty: bool,
+    /// Stations whose block is powered / in an unloaded chunk, read every few ticks.
+    powered: std::collections::BTreeSet<Uuid>,
+    unloaded: std::collections::BTreeSet<Uuid>,
+    /// Stations that had a train present at the last tick (`trainPresent`).
+    present: BTreeMap<Uuid, Uuid>,
+}
+
+static DIMS: LazyLock<Mutex<HashMap<String, Dim>>> = LazyLock::new(Mutex::default);
+/// Anchors whose carriage nobody knows, since when: `(dimension, pos)` to game time.
+static ORPHANS: LazyLock<Mutex<HashMap<(String, Pos), i64>>> = LazyLock::new(Mutex::default);
+/// Anchors to remove at the next level tick.
+static REMOVE: LazyLock<Mutex<Vec<(String, Pos)>>> = LazyLock::new(Mutex::default);
+
+/// Runs `f` on a dimension's trains data (the dimension's state is out of the map during a tick, so this is `None`
+/// then: callers on the server thread outside the tick are the ones that use it).
+pub fn with_dim<R>(dimension: &str, f: impl FnOnce(&mut DimHandle<'_>) -> R) -> Option<R> {
+    let mut map = lock(&DIMS);
+    let dim = map.get_mut(dimension)?;
+    Some(f(&mut DimHandle { dim }))
+}
+
+/// The part of the dimension's trains data other modules may use.
+pub struct DimHandle<'a> {
+    dim: &'a mut Dim,
+}
+
+impl DimHandle<'_> {
+    /// A carriage made by an assembly joins (`Carriage.setContraption`).
+    pub fn add_carriage(&mut self, train: Uuid, carriage: i32, rt: CarriageRt) {
+        self.dim.carriages.insert((train, carriage), rt);
+        self.dim.dirty = true;
+    }
+
+    /// The carriage's runtime, taken out (a disassembly).
+    pub fn take_carriage(&mut self, train: Uuid, carriage: i32) -> Option<CarriageRt> {
+        self.dim.dirty = true;
+        self.dim.carriages.remove(&(train, carriage))
+    }
+
+    pub fn dirty(&mut self) {
+        self.dim.dirty = true;
+    }
+}
+
+/// Whether the server knows a carriage (in the railways or waiting to be restored).
+fn knows(dimension: &str, train: Uuid, carriage: i32) -> bool {
+    let known = lock(&DIMS).get(dimension).is_some_and(|d| {
+        d.carriages.contains_key(&(train, carriage))
+            || d.pending.iter().any(|p| uuid_of(&p.train) == Some(train))
+    });
+    // The state is out of the map while it ticks: then it's the railways that answer.
+    known || (!lock(&DIMS).contains_key(dimension) && world::with_railways(dimension, |r| r.trains.contains_key(&train)).unwrap_or(false))
+}
+
+fn uuid_of(tag: &[(String, Value)]) -> Option<Uuid> {
+    match tag.iter().find(|(k, _)| k == "Id") {
+        Some((_, Value::IntArray(v))) if v.len() == 4 => Some(v.iter().fold(0u128, |acc, part| (acc << 32) | u128::from(*part as u32))),
+        _ => None,
+    }
+}
+
+fn uuid_tag(id: Uuid) -> Tag {
+    Tag::IntArray(vec![(id >> 96) as i32, (id >> 64) as i32, (id >> 32) as i32, id as i32])
+}
+
+fn tag_uuid(tag: &Tag) -> Option<Uuid> {
+    match tag {
+        Tag::IntArray(v) if v.len() == 4 => Some(v.iter().fold(0u128, |acc, part| (acc << 32) | u128::from(*part as u32))),
+        _ => None,
+    }
+}
+
+// --- the tree and the tag -----------------------------------------------------------------------------------------------
+
+pub fn to_tag(value: &Value) -> Tag {
+    match value {
+        Value::Byte(v) => Tag::Byte(*v),
+        Value::Short(v) => Tag::Short(*v),
+        Value::Int(v) => Tag::Int(*v),
+        Value::Long(v) => Tag::Long(*v),
+        Value::Float(v) => Tag::Float(v.to_bits()),
+        Value::Double(v) => Tag::Double(v.to_bits()),
+        Value::Str(s) => Tag::String(s.as_str().into()),
+        Value::ByteArray(v) => Tag::ByteArray(v.iter().map(|b| *b as u8).collect()),
+        Value::IntArray(v) => Tag::IntArray(v.clone()),
+        Value::LongArray(v) => Tag::LongArray(v.clone()),
+        Value::List(items) => Tag::List(items.iter().map(to_tag).collect()),
+        Value::Compound(fields) => {
+            let mut out = Compound::new();
+            for (key, value) in fields {
+                out.insert(key.as_str().into(), to_tag(value));
+            }
+            Tag::Compound(out)
+        }
+    }
+}
+
+pub fn from_tag(tag: &Tag) -> Option<Value> {
+    Some(match tag {
+        Tag::Byte(v) => Value::Byte(*v),
+        Tag::Short(v) => Value::Short(*v),
+        Tag::Int(v) => Value::Int(*v),
+        Tag::Long(v) => Value::Long(*v),
+        Tag::Float(v) => Value::Float(f32::from_bits(*v)),
+        Tag::Double(v) => Value::Double(f64::from_bits(*v)),
+        Tag::String(s) => Value::Str(s.to_string_lossy()),
+        Tag::ByteArray(v) => Value::ByteArray(v.iter().map(|b| *b as i8).collect()),
+        Tag::IntArray(v) => Value::IntArray(v.clone()),
+        Tag::LongArray(v) => Value::LongArray(v.clone()),
+        Tag::List(items) => Value::List(items.iter().filter_map(from_tag).collect()),
+        Tag::Compound(c) => Value::Compound(c.iter().filter_map(|(k, v)| Some((k.to_string_lossy(), from_tag(v)?))).collect()),
+        Tag::End => return None,
+    })
+}
+
+fn dim_name(id: u32) -> String {
+    world::dimension_name(id)
+}
+
+fn dim_id(name: &str) -> u32 {
+    world::dimension_id(name)
+}
+
+// --- the saved form of a carriage ---------------------------------------------------------------------------------------
+
+fn dir_name(dir: Dir) -> &'static str {
+    dir.name()
+}
+
+fn write_rt(id: i32, rt: &CarriageRt) -> Tag {
+    let mut c = Compound::new();
+    c.insert("Id".into(), Tag::Int(id));
+    c.insert("Structure".into(), Tag::Compound(rt.structure.to_nbt(false)));
+    c.insert("Direction".into(), Tag::String(dir_name(rt.direction).into()));
+    c.insert("FrontControls".into(), Tag::Byte(i8::from(rt.forward_controls)));
+    c.insert("BackControls".into(), Tag::Byte(i8::from(rt.backward_controls)));
+    if let Some(a) = rt.anchor {
+        c.insert("Anchor".into(), Tag::IntArray(a.to_vec()));
+    }
+    c.insert("Wheel".into(), Tag::List(rt.wheel.iter().map(|w| Tag::Double(w.to_bits())).collect()));
+    Tag::Compound(c)
+}
+
+fn read_rt(tag: &Tag) -> Option<(i32, CarriageRt)> {
+    let Tag::Compound(c) = tag else { return None };
+    let Some(Tag::Compound(structure)) = util::get(c, "Structure") else { return None };
+    let moving = Moving::from_nbt(structure)?;
+    let direction = match util::get(c, "Direction") {
+        Some(Tag::String(s)) => Dir::from_name(&s.to_string_lossy())?,
+        _ => return None,
+    };
+    let summary = cc::Summary {
+        forward_controls: util::boolean(c, "FrontControls"),
+        backward_controls: util::boolean(c, "BackControls"),
+        ..Default::default()
+    };
+    let mut rt = CarriageRt::new(moving, direction, &summary);
+    if let Some(Tag::IntArray(a)) = util::get(c, "Anchor") {
+        rt.anchor = <Pos>::try_from(a.as_slice()).ok();
+    }
+    if let Some(Tag::List(w)) = util::get(c, "Wheel") {
+        for (i, t) in w.iter().take(2).enumerate() {
+            if let Tag::Double(bits) = t {
+                rt.wheel[i] = f64::from_bits(*bits);
+            }
+        }
+    }
+    Some((util::int(c, "Id"), rt))
+}
+
+// --- the level attachment ---------------------------------------------------------------------------------------------------
+
+static ATTACHMENT: AttachmentType<Compound> = AttachmentType {
+    namespace: "create",
+    name: "trains",
+    default: Compound::new,
+    codec: Some(AttachmentCodec { encode: |data| Ok(data.clone()), decode: |data| Ok(data.clone()) }),
+    copy_on_death: false,
+    sync: false,
+};
+
+fn save(host: &mut dyn Host, dim: &Dim, rails: &Railways) {
+    let mut trains = Vec::new();
+    for (id, train) in &rails.trains {
+        let graph = train.graph.or(train.point_graph).and_then(|g| rails.nets.graphs.get(&g));
+        let mut entry = Compound::new();
+        entry.insert("Train".into(), to_tag(&train_nbt::write_train(train, graph, &dim_name)));
+        let carriages = train.carriages.iter().filter_map(|c| dim.carriages.get(&(*id, c.id)).map(|rt| write_rt(c.id, rt))).collect();
+        entry.insert("Carriages".into(), Tag::List(carriages));
+        trains.push(Tag::Compound(entry));
+    }
+    // Trains still waiting for their track are kept as they were read.
+    for p in &dim.pending {
+        let mut entry = Compound::new();
+        entry.insert("Train".into(), to_tag(&Value::Compound(p.train.clone())));
+        entry.insert("Carriages".into(), Tag::List(p.carriages.iter().map(|(id, rt)| write_rt(*id, rt)).collect()));
+        trains.push(Tag::Compound(entry));
+    }
+    let mut out = Compound::new();
+    out.insert("Token".into(), Tag::Long(dim.token));
+    out.insert("Trains".into(), Tag::List(trains));
+    let _ = ATTACHMENT.set(host.new_server(), Holder::Level, out);
+}
+
+/// Reads the level's attachment into the dimension's pending trains, or starts a new world (another token).
+fn sync(host: &mut dyn Host, dim: &mut Dim, now: i64) {
+    let stored = ATTACHMENT.get_existing(host.new_server(), Holder::Level).ok().flatten();
+    let token = stored.as_ref().map(|c| util::long(c, "Token")).unwrap_or(0);
+    if token != 0 && token == dim.token {
+        return;
+    }
+    *dim = Dim::default();
+    dim.saved_at = now;
+    let Some(stored) = stored.filter(|_| token != 0) else {
+        dim.token = (util::random() as i64) | 1;
+        dim.dirty = true;
+        return;
+    };
+    dim.token = token;
+    let Some(Tag::List(trains)) = util::get(&stored, "Trains") else { return };
+    for entry in trains {
+        let Tag::Compound(entry) = entry else { continue };
+        let Some(Tag::Compound(train)) = util::get(entry, "Train") else { continue };
+        let Some(Value::Compound(train)) = from_tag(&Tag::Compound(train.clone())) else { continue };
+        let mut carriages = BTreeMap::new();
+        if let Some(Tag::List(list)) = util::get(entry, "Carriages") {
+            for c in list {
+                if let Some((id, rt)) = read_rt(c) {
+                    carriages.insert(id, rt);
+                }
+            }
+        }
+        dim.pending.push(Pending { train, carriages, next_try: now + SETTLE });
+    }
+}
+
+// --- what the trains ask of the world ---------------------------------------------------------------------------------------
+
+struct World {
+    day_time: i64,
+    dimension: u32,
+    conductors: BTreeMap<Key, [bool; 2]>,
+    powered: std::collections::BTreeSet<Uuid>,
+    unloaded: std::collections::BTreeSet<Uuid>,
+}
+
+impl TrainWorld for World {
+    fn day_time(&self) -> i64 {
+        self.day_time
+    }
+    fn redstone_power_version(&self) -> i32 {
+        0
+    }
+    fn has_any_loaded_power(&self, _: &[String; 2]) -> bool {
+        false
+    }
+    fn station_powered(&self, station: Uuid) -> bool {
+        self.powered.contains(&station)
+    }
+    fn station_unloaded(&self, station: Uuid) -> bool {
+        self.unloaded.contains(&station)
+    }
+    fn dimension_loaded(&self, dimension: u32) -> bool {
+        dimension == self.dimension
+    }
+    fn port_packages(&self, _: Pos, _: u32) -> Vec<String> {
+        Vec::new()
+    }
+    fn count_player_passengers(&self, _: Uuid) -> i32 {
+        0
+    }
+    fn check_conductors(&self, train: Uuid, carriage: i32) -> Option<[bool; 2]> {
+        Some(self.conductors.get(&(train, carriage)).copied().unwrap_or([false, false]))
+    }
+}
+
+fn build_world(dim: &Dim, rails: &Railways, host: &dyn Host) -> World {
+    let mut conductors = BTreeMap::new();
+    for ((train, id), rt) in &dim.carriages {
+        if dim.conductors.contains(train) {
+            conductors.insert((*train, *id), rt.conductor_sides());
+        }
+    }
+    let _ = rails;
+    World {
+        day_time: host.day_time(),
+        dimension: dim_id(host.dimension()),
+        conductors,
+        powered: dim.powered.clone(),
+        unloaded: dim.unloaded.clone(),
+    }
+}
+
+/// The stations' block states, read every few ticks: whether the block has a signal and whether its chunk is loaded.
+fn read_stations(host: &mut dyn Host, dim: &mut Dim, rails: &Railways) {
+    let dimension = host.dimension();
+    let level = host.level(dimension);
+    dim.powered.clear();
+    dim.unloaded.clear();
+    for graph in rails.nets.graphs.values() {
+        for point in graph.edge_points.values(EdgePointType::Station) {
+            let Some(station) = point.station() else { continue };
+            let Some(pos) = station.block_entity_pos else { continue };
+            if !level.is_some_and(|l| host.level_is_loaded(l, pos)) {
+                dim.unloaded.insert(point.id);
+                continue;
+            }
+            if host.neighbor_signal(dimension, pos) > 0 {
+                dim.powered.insert(point.id);
+            }
+        }
+    }
+}
+
+// --- the anchors ----------------------------------------------------------------------------------------------------------------
+
+fn is_air(name: &str) -> bool {
+    matches!(name, "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air")
+}
+
+/// The anchor block's cell for a carriage at `position`: the first air cell at or above the one it is in.
+fn choose_cell(host: &dyn Host, position: [f64; 3]) -> Option<Pos> {
+    let base = draw::cell(position);
+    [1, 2, 3, 0].into_iter().map(|up| [base[0], base[1] + up, base[2]]).find(|c| is_air(&host.block(*c)))
+}
+
+fn anchor_is(host: &dyn Host, pos: Pos, train: Uuid, carriage: i32) -> bool {
+    host.block(pos) == ANCHOR
+        && host.mod_block_entity(pos).is_some_and(|e| {
+            util::get(&e.nbt, draw::TRAIN).and_then(tag_uuid) == Some(train) && util::int(&e.nbt, draw::CARRIAGE) == carriage
+        })
+}
+
+fn far_from(anchor: Pos, position: [f64; 3]) -> bool {
+    let dx = f64::from(anchor[0]) + 0.5 - position[0];
+    let dz = f64::from(anchor[2]) + 0.5 - position[2];
+    let dy = f64::from(anchor[1]) + 0.5 - position[1];
+    dx * dx + dz * dz > ANCHOR_RADIUS * ANCHOR_RADIUS || dy.abs() > 4.0
+}
+
+fn remove_anchor(host: &mut dyn Host, pos: Pos) {
+    if host.block(pos) != ANCHOR {
+        return;
+    }
+    // The structure kept for its collision goes with it.
+    super::contraption::forget_live(host.dimension(), pos);
+    if let Some(air) = host.default_state("minecraft:air") {
+        let dimension = host.dimension();
+        host.set_block(dimension, pos, air, ANCHOR_FLAGS);
+    }
+}
+
+fn bogey_data(carriage: &Carriage, graph: &TrackGraph, pose: &CarriagePose, derailed: bool, rt: &CarriageRt, diff: [f64; 3]) -> Vec<BogeyData> {
+    let mut out = Vec::new();
+    let leading_ud = carriage.leading_bogey().is_upside_down();
+    let _ = leading_ud;
+    let list: Vec<(usize, &CarriageBogey)> = [Some(&carriage.bogeys.0), carriage.bogeys.1.as_ref()].into_iter().flatten().enumerate().collect();
+    for (i, bogey) in list {
+        let positions = [bogey.points[0].get_position(Some(graph), false), bogey.points[1].get_position(Some(graph), false)];
+        let (yaw, pitch) = match (positions, derailed) {
+            ([Some(a), Some(b)], false) if bogey.points[0].edge(graph).is_some() => pose::bogey_angles(a, b),
+            _ => pose::bogey_angles_derailed(pose.yaw, Some(bogey.derail_angle)),
+        };
+        out.push(BogeyData {
+            large: bogey.ty.id == "create:large_bogey",
+            upside_down: bogey.is_upside_down(),
+            leading: i == 0,
+            yaw,
+            pitch,
+            wheel: rt.wheel[i.min(1)],
+            wheel_rate: pose::wheel_rate(diff, pose.yaw, bogey.ty.wheel_radius),
+        });
+    }
+    out
+}
+
+/// The whole data of an anchor: the structure for the client, whose train and carriage, and the pose.
+fn anchor_data(train: Uuid, carriage: i32, rt: &CarriageRt, motion: &Motion, initial_yaw: f32, spacing: i32, bogeys: &[BogeyData], derailed: bool) -> Compound {
+    let mut c = Compound::new();
+    c.insert("Running".into(), Tag::Byte(1));
+    c.insert("Contraption".into(), Tag::Compound(rt.structure.to_nbt(false)));
+    c.insert(draw::TRAIN.into(), uuid_tag(train));
+    c.insert(draw::CARRIAGE.into(), Tag::Int(carriage));
+    draw::write_pose(&mut c, motion, initial_yaw, spacing, bogeys, derailed);
+    c
+}
+
+/// A carriage's anchor follows it: placed where there is none, moved when the carriage has got far from it, and
+/// told the pose.
+#[allow(clippy::too_many_arguments)]
+fn update_anchor(
+    host: &mut dyn Host,
+    dimension: &'static str,
+    train_id: Uuid,
+    carriage: &Carriage,
+    graph: &TrackGraph,
+    derailed: bool,
+    spacing: i32,
+    rt: &mut CarriageRt,
+    pose_now: CarriagePose,
+    now: i64,
+) {
+    let before = rt.last_pose;
+    rt.prev_pose = before;
+    rt.last_pose = Some(pose_now);
+    let moved = before.is_none_or(|b| b != pose_now);
+    let initial_yaw = pose::initial_yaw(horizontal_step(rt.direction));
+    // The wheels turn with the distance moved this tick.
+    let diff = before.map_or([0.0; 3], |b| [0, 1, 2].map(|i| pose_now.position[i] - b.position[i]));
+    if let Some(b) = before {
+        let (moved_by, _) = pose::distance_moved(diff, pose_now.yaw);
+        let _ = b;
+        let leading_radius = carriage.bogeys.0.ty.wheel_radius;
+        rt.wheel[0] = pose::next_wheel_angle(rt.wheel[0], moved_by, leading_radius);
+        if let Some(second) = &carriage.bogeys.1 {
+            rt.wheel[1] = pose::next_wheel_angle(rt.wheel[1], moved_by, second.ty.wheel_radius);
+        }
+    }
+
+    // Where the anchor should be.
+    // The block is looked at every tick, whose block entity it holds (a copy of the structure) every two seconds.
+    let valid = rt.anchor.is_some_and(|a| {
+        host.block(a) == ANCHOR && !far_from(a, pose_now.position) && (now % 40 != 0 || anchor_is(&*host, a, train_id, carriage.id))
+    });
+    // What clicks changed in the structure (a door, a lever: `structure_click.rs` writes the anchor's copy) is taken back.
+    if valid && now % 40 == 0 {
+        if let Some(a) = rt.anchor {
+            adopt_clicked_structure(&*host, a, rt);
+        }
+    }
+    if !valid {
+        let Some(cell) = choose_cell(&*host, pose_now.position) else { return };
+        let Some(state) = host.default_state(ANCHOR) else { return };
+        // The chunk must be there.
+        let loaded = host.level(dimension).is_some_and(|l| host.level_is_loaded(l, cell));
+        if !loaded {
+            return;
+        }
+        super::contraption::forget_live(dimension, cell);
+        host.set_block(dimension, cell, state, ANCHOR_FLAGS);
+        let motion = Motion::new(&pose_now, &before.unwrap_or(pose_now), now);
+        let bogeys = bogey_data(carriage, graph, &pose_now, derailed, rt, diff);
+        let data = anchor_data(train_id, carriage.id, rt, &motion, initial_yaw, spacing, &bogeys, derailed);
+        host.set_block_tag(dimension, cell, Tag::Compound(data));
+        host.block_entity_sync(cell);
+        if let Some(old) = rt.anchor.replace(cell) {
+            if old != cell {
+                remove_anchor(host, old);
+            }
+        }
+        rt.news_at = now;
+        rt.news_moving = moved;
+        rt.fresh = false;
+        return;
+    }
+
+    // News of the pose: every other tick while it moves, and once more when it has stopped.
+    let due = if moved { now - rt.news_at >= NEWS_EVERY } else { rt.news_moving || rt.fresh };
+    if !due {
+        return;
+    }
+    let Some(anchor) = rt.anchor else { return };
+    let motion = if moved { Motion::new(&pose_now, &before.unwrap_or(pose_now), now) } else { Motion::new(&pose_now, &pose_now, now) };
+    let bogeys = bogey_data(carriage, graph, &pose_now, derailed, rt, if moved { diff } else { [0.0; 3] });
+    let wrote = host.change_mod_block_entity(anchor, &mut |e| {
+        draw::write_pose(&mut e.nbt, &motion, initial_yaw, spacing, &bogeys, derailed);
+    });
+    if wrote {
+        host.block_entity_sync(anchor);
+    }
+    rt.news_at = now;
+    rt.news_moving = moved;
+    rt.fresh = false;
+}
+
+/// The anchor's structure, if clicks changed the states of its blocks, becomes the carriage's.
+fn adopt_clicked_structure(host: &dyn Host, anchor: Pos, rt: &mut CarriageRt) {
+    let Some(entity) = host.mod_block_entity(anchor) else { return };
+    let Some(Tag::Compound(saved)) = util::get(&entity.nbt, "Contraption") else { return };
+    let Some(moved) = Moving::from_nbt(saved) else { return };
+    let same = moved.blocks.len() == rt.structure.blocks.len()
+        && moved.blocks.iter().zip(&rt.structure.blocks).all(|(a, b)| a.local == b.local && a.state == b.state);
+    if !same {
+        rt.structure = moved;
+    }
+}
+
+/// `(x, z)` of a horizontal direction.
+pub fn horizontal_step(dir: Dir) -> [i32; 2] {
+    let n = dir.normal();
+    [n[0], n[2]]
+}
+
+// --- the tick -----------------------------------------------------------------------------------------------------------------------
+
+fn level_tick(host: &mut dyn Host) {
+    let dimension = host.dimension();
+    let now = util::game_time(&*host);
+    let mut dim = lock(&DIMS).remove(dimension).unwrap_or_default();
+    // The orphans found by the anchors' own ticks.
+    for (d, pos) in std::mem::take(&mut *lock(&REMOVE)) {
+        if d == dimension {
+            remove_anchor(host, pos);
+        } else {
+            lock(&REMOVE).push((d, pos));
+        }
+    }
+    let had_state = world::with_railways(dimension, |_| ()).is_some();
+    if had_state {
+        sync(host, &mut dim, now);
+        run(host, dimension, &mut dim, now);
+    }
+    lock(&DIMS).insert(dimension.to_owned(), dim);
+}
+
+fn run(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, now: i64) {
+    // The railways come out of the track's state for the tick, so nothing they call can find a lock held.
+    let Some(mut rails) = world::with_railways(dimension, std::mem::take) else { return };
+    restore_pending(dim, &mut rails, now);
+    if now % 5 == 0 {
+        read_stations(host, dim, &rails);
+    }
+    let world_view = build_world(dim, &rails, &*host);
+    rails.tick(&world_view);
+    let events = std::mem::take(&mut rails.events);
+    apply_events(host, dimension, dim, &mut rails, events);
+    place_carriages(host, dimension, dim, &mut rails, now);
+    stations(host, dim, &mut rails);
+    drive_players(host, dimension, dim, &mut rails, now);
+    tell_owners(host, &mut rails);
+    if dim.dirty || (now - dim.saved_at >= SAVE_EVERY && !rails.trains.is_empty()) || now - dim.saved_at >= SAVE_EVERY * 6 {
+        save(host, dim, &rails);
+        dim.saved_at = now;
+        dim.dirty = false;
+    }
+    // Put the railways back; whatever the track code queued meanwhile is kept by its own state.
+    world::with_railways(dimension, |r| {
+        let late_events = std::mem::take(&mut r.events);
+        let _ = late_events;
+        *r = rails;
+    });
+}
+
+/// Trains saved with the world join the railways as their track comes back.
+fn restore_pending(dim: &mut Dim, rails: &mut Railways, now: i64) {
+    if dim.pending.is_empty() {
+        return;
+    }
+    let pending = std::mem::take(&mut dim.pending);
+    for mut p in pending {
+        if now < p.next_try {
+            dim.pending.push(p);
+            continue;
+        }
+        match train_nbt::read_train(&p.train, &rails.nets, &dim_id) {
+            Some(loaded) => {
+                let train = loaded.train;
+                let id = train.id;
+                for c in &train.carriages {
+                    if let Some(rt) = p.carriages.remove(&c.id) {
+                        dim.carriages.insert((id, c.id), rt);
+                    }
+                }
+                // A carriage the save has no structure for can't be drawn: the train is let go whole.
+                rails.add_loaded_train(train);
+                dim.dirty = true;
+            }
+            None => {
+                p.next_try = now + RETRY;
+                dim.pending.push(p);
+            }
+        }
+    }
+}
+
+fn apply_events(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, rails: &mut Railways, events: Vec<TrainEvent>) {
+    for event in events {
+        match event {
+            TrainEvent::Explosion { pos, power } => {
+                // `level.explode(null, .., ExplosionInteraction.NONE)`: the flash and the sound.
+                let _ = host.run_command(&format!(
+                    "execute in {dimension} run particle minecraft:explosion_emitter {:.2} {:.2} {:.2}",
+                    pos[0], pos[1], pos[2]
+                ));
+                host.play_sound("minecraft:entity.generic.explode", pos, 4, power.max(1.0), 1.0);
+            }
+            TrainEvent::TrainRemoved { train } => {
+                let gone: Vec<Key> = dim.carriages.keys().filter(|(t, _)| *t == train).copied().collect();
+                for key in gone {
+                    if let Some(rt) = dim.carriages.remove(&key) {
+                        if let Some(a) = rt.anchor {
+                            remove_anchor(host, a);
+                        }
+                    }
+                }
+                dim.drives.retain(|_, d| d.train != train);
+                dim.conductors.remove(&train);
+                dim.dirty = true;
+            }
+            _ => {}
+        }
+    }
+    let _ = rails;
+}
+
+/// Every carriage is put where its wheels are (`updateContraptionAnchors`, `alignEntity`).
+fn place_carriages(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, rails: &mut Railways, now: i64) {
+    let did = dim_id(dimension);
+    let Railways { nets, trains, .. } = rails;
+    for (id, train) in trains.iter_mut() {
+        let Some(graph_id) = train.graph.or(train.point_graph) else { continue };
+        let Some(graph) = nets.graphs.get(&graph_id) else { continue };
+        let derailed = train.derailed;
+        let spacing_of: Vec<i32> = train.carriages.iter().map(|c| c.bogey_spacing).collect();
+        for (i, carriage) in train.carriages.iter_mut().enumerate() {
+            if !derailed {
+                carriage.update_contraption_anchors(graph);
+            }
+            carriage.update_traversed_dimensions(graph);
+            let Some(rt) = dim.carriages.get_mut(&(*id, carriage.id)) else { continue };
+            let Some(dce) = carriage.dimensions.get(&did) else { continue };
+            let (Some(position), [Some(a), Some(b)]) = (dce.position_anchor, dce.rotation_anchors) else { continue };
+            let pose_now = pose::align(position, [a, b]);
+            let carriage_copy = carriage.clone();
+            update_anchor(host, dimension, *id, &carriage_copy, graph, derailed, spacing_of[i], rt, pose_now, now);
+        }
+    }
+}
+
+/// The station blocks' view of the trains: the redstone output while a train stands there, and a schedule left at the
+/// station given to the train that arrives (`StationBlockEntity.tick`).
+fn stations(host: &mut dyn Host, dim: &mut Dim, rails: &mut Railways) {
+    let entity_of = |c: &Carriage| -> Option<(f32, f32)> { dim_pose_of(dim, c) };
+    let mut present: BTreeMap<Uuid, Uuid> = BTreeMap::new();
+    let mut ready: Vec<(Uuid, Uuid)> = Vec::new();
+    let station_ids: Vec<Uuid> = rails
+        .nets
+        .graphs
+        .values()
+        .flat_map(|g| g.edge_points.values(EdgePointType::Station).into_iter().map(|p| p.id).collect::<Vec<_>>())
+        .collect();
+    for station in station_ids {
+        let state = rails.station_train_state(station, &entity_of);
+        if state.train_present {
+            if let Some(train) = state.imminent_train {
+                present.insert(station, train);
+                if dim.present.get(&station) != Some(&train) {
+                    ready.push((station, train));
+                }
+            }
+        }
+    }
+    dim.present = present;
+    let _ = (host, ready);
+}
+
+/// A carriage's `(pitch, yaw)` for `canDisassemble`, from the pose it was last put in.
+fn dim_pose_of(dim: &Dim, carriage: &Carriage) -> Option<(f32, f32)> {
+    dim.carriages
+        .iter()
+        .find(|(k, _)| k.1 == carriage.id)
+        .and_then(|(_, rt)| rt.last_pose)
+        .map(|p| (p.pitch, p.yaw))
+}
+
+/// The trains' status lines (`TrainStatus.tick`) go to their owners.
+fn tell_owners(host: &mut dyn Host, rails: &mut Railways) {
+    let online: Vec<u128> = host.server_players().iter().map(|p| p.uuid).collect();
+    for train in rails.trains.values_mut() {
+        let Some(owner) = train.owner.filter(|o| online.contains(o)) else { continue };
+        if train.status.queued.is_empty() {
+            continue;
+        }
+        for message in train.status.take_messages() {
+            let line = format!("[{}] {}", train.name, drive::status_text(&message, &dim_name));
+            let good = matches!(&message, StatusMessage::Info { good: true, .. });
+            let _ = good;
+            host.tell(owner, Text::literal(line));
+        }
+    }
+}
+
+// --- driving ----------------------------------------------------------------------------------------------------------------------
+
+/// What a client of a driving player sends (`ControlsInputPacket`): the keys and whether they are pressed.
+pub const CONTROLS_CHANNEL: &str = "create:train_controls";
+
+/// The keys a player sent, to be taken in the next tick.
+pub static INBOX: LazyLock<Mutex<HashMap<u128, Vec<(Vec<i32>, bool)>>>> = LazyLock::new(Mutex::default);
+
+fn drive_players(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, rails: &mut Railways, now: i64) {
+    let _ = now;
+    let players = host.server_players();
+    let inbox = std::mem::take(&mut *lock(&INBOX));
+    let mut stops: Vec<u128> = Vec::new();
+    let uuids: Vec<u128> = dim.drives.keys().copied().collect();
+    for uuid in uuids {
+        let Some(d) = dim.drives.get_mut(&uuid) else { continue };
+        for (keys, pressed) in inbox.get(&uuid).into_iter().flatten() {
+            d.keys.receive(keys, *pressed);
+        }
+        let held = d.keys.tick();
+        let Some(player) = players.iter().find(|p| p.uuid == uuid && p.dimension == dimension) else {
+            stops.push(uuid);
+            continue;
+        };
+        if player.game_mode == util::SPECTATOR {
+            stops.push(uuid);
+            continue;
+        }
+        let Some(rt) = dim.carriages.get(&(d.train, d.carriage)) else {
+            stops.push(uuid);
+            continue;
+        };
+        // `canInteractWithBlock(player, controls, 8)`: near the carriage's middle, allowing for its length.
+        let near = rt.last_pose.is_some_and(|p| {
+            let dx = p.position[0] - player.position[0];
+            let dy = p.position[1] - player.position[1];
+            let dz = p.position[2] - player.position[2];
+            (dx * dx + dy * dy + dz * dz).sqrt() <= drive::RANGE + 6.0
+        });
+        if !near {
+            stops.push(uuid);
+            continue;
+        }
+        let facing = rt.controls.iter().find(|(p, _)| *p == d.controls).map(|(_, f)| *f);
+        let side = drive::controls_side(facing.map_or([0, 0], horizontal_step), horizontal_step(rt.direction));
+        let Railways { nets, trains, .. } = &mut *rails;
+        let Some(mut train) = trains.remove(&d.train) else {
+            stops.push(uuid);
+            continue;
+        };
+        let index = train.carriages.iter().position(|c| c.id == d.carriage).unwrap_or(0);
+        let on_turn = drive::on_turn(&train, index, nets);
+        let outcome = drive::control(&mut train, nets, trains, &held, side, &mut d.driver, on_turn);
+        trains.insert(d.train, train);
+        if let Some(prompt) = &outcome.prompt {
+            host.action_bar(uuid, Text::literal(prompt_text(prompt)));
+        } else if outcome.clear_prompt {
+            host.action_bar(uuid, Text::literal(String::new()));
+        }
+        if !outcome.keep {
+            stops.push(uuid);
+        }
+    }
+    for uuid in stops {
+        stop_driving(host, dim, uuid);
+    }
+}
+
+fn prompt_text(prompt: &drive::Prompt) -> String {
+    match prompt {
+        drive::Prompt::ArrivedAt(name) => format!("Arrived at {name}"),
+        drive::Prompt::DepartingFrom(name) => format!("Departing from {name}"),
+        drive::Prompt::ApproachStation(name) => format!("Hold [Space] to approach {name}"),
+        drive::Prompt::Progress { progress, .. } => {
+            let progress = (*progress).clamp(0, drive::PROGRESS_BARS) as usize;
+            format!("{}{}", "|".repeat(drive::PROGRESS_BARS as usize - progress), "|".repeat(progress))
+        }
+    }
+}
+
+fn stop_driving(host: &mut dyn Host, dim: &mut Dim, uuid: u128) {
+    if dim.drives.remove(&uuid).is_some() {
+        let _ = host.net_send_to_player(uuid, CONTROLS_CHANNEL, &[0]);
+        host.action_bar(uuid, Text::literal("Stopped controlling contraption".to_owned()));
+    }
+}
+
+/// A player starts driving the nearest carriage with controls (`ControlsInteractionBehaviour`, `startControlling`).
+pub fn start_driving(host: &mut dyn Host, uuid: u128) -> Result<String, String> {
+    let dimension = host.dimension();
+    let player = host.server_players().into_iter().find(|p| p.uuid == uuid).ok_or("No player")?;
+    let mut dim = lock(&DIMS).remove(dimension).ok_or("No trains here")?;
+    let result = (|| -> Result<String, String> {
+        // The carriage nearest to the player that has controls, within a few blocks.
+        let best = dim
+            .carriages
+            .iter()
+            .filter(|(_, rt)| !rt.controls.is_empty())
+            .filter_map(|(key, rt)| {
+                let p = rt.last_pose?;
+                let d = (0..3).map(|i| (p.position[i] - player.position[i]).powi(2)).sum::<f64>().sqrt();
+                (d <= drive::RANGE + 4.0).then_some((d, *key))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .ok_or_else(|| "Stand within a few blocks of a carriage with Train Controls".to_owned())?;
+        let key = best.1;
+        let rt = dim.carriages.get(&key).ok_or("Carriage lost")?;
+        let controls = rt.controls.first().map(|(p, _)| *p).ok_or("No controls")?;
+        let name = world::with_railways(dimension, |rails| {
+            let Railways { nets, trains, .. } = rails;
+            let train = trains.get_mut(&key.0)?;
+            if !drive::start_controlling(train, nets) {
+                return None;
+            }
+            Some(train.name.clone())
+        })
+        .flatten()
+        .ok_or_else(|| "The train can't be driven (it's derailed)".to_owned())?;
+        dim.drives.retain(|_, d| d.train != key.0);
+        dim.drives.insert(uuid, Drive { train: key.0, carriage: key.1, controls, keys: drive::HeldKeys::default(), driver: drive::Driver::default() });
+        Ok(name)
+    })();
+    lock(&DIMS).insert(dimension.to_owned(), dim);
+    let name = result?;
+    let _ = host.net_send_to_player(uuid, CONTROLS_CHANNEL, &[1]);
+    Ok(format!("Now controlling: {name}"))
+}
+
+/// A click on a carriage's Train Controls (`ControlsInteractionBehaviour`): the player starts driving it, or stops.
+/// `controller` is the anchor's position.
+pub fn click_controls(host: &mut dyn Host, dimension: &str, controller: Pos, uuid: u128) -> bool {
+    let train = host.mod_block_entity(controller).and_then(|e| util::get(&e.nbt, draw::TRAIN).and_then(tag_uuid));
+    let Some(train) = train else { return false };
+    if is_driving(dimension, uuid) {
+        if let Some(d) = lock(&DIMS).get_mut(dimension) {
+            d.drives.remove(&uuid);
+        }
+        let _ = host.net_send_to_player(uuid, CONTROLS_CHANNEL, &[0]);
+        host.action_bar(uuid, Text::literal("Stopped controlling contraption".to_owned()));
+        return true;
+    }
+    let _ = train;
+    match start_driving(host, uuid) {
+        Ok(line) => host.action_bar(uuid, Text::literal(line)),
+        Err(line) => host.action_bar(uuid, Text::literal(line)),
+    };
+    true
+}
+
+/// Whether the player is driving (the server's view).
+pub fn is_driving(dimension: &str, uuid: u128) -> bool {
+    lock(&DIMS).get(dimension).is_some_and(|d| d.drives.contains_key(&uuid))
+}
+
+// --- the anchors' own tick ------------------------------------------------------------------------------------------------------------
+
+/// An anchor block entity ticks on the server: one whose carriage the server doesn't know is removed after a while.
+pub fn anchor_tick(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
+    let now = util::game_time(&*host);
+    if now % 20 != 0 {
+        return;
+    }
+    let dimension = host.dimension();
+    let train = util::get(&event.entity.nbt, draw::TRAIN).and_then(tag_uuid);
+    let carriage = util::int(&event.entity.nbt, draw::CARRIAGE);
+    let key = (dimension.to_owned(), event.pos);
+    let alive = train.is_some_and(|t| knows(dimension, t, carriage));
+    let mut orphans = lock(&ORPHANS);
+    if alive {
+        orphans.remove(&key);
+        return;
+    }
+    let since = *orphans.entry(key.clone()).or_insert(now);
+    if now - since >= ORPHAN_TICKS {
+        orphans.remove(&key);
+        drop(orphans);
+        lock(&REMOVE).push((dimension.to_owned(), event.pos));
+    }
+}
+
+/// `(pitch, yaw)` of each carriage of a train as it was last put (what `canDisassemble` reads of the entity).
+pub fn carriage_poses(dimension: &str, train: Uuid) -> BTreeMap<i32, (f32, f32)> {
+    lock(&DIMS)
+        .get(dimension)
+        .map(|d| d.carriages.iter().filter(|((t, _), _)| *t == train).filter_map(|((_, c), rt)| rt.last_pose.map(|p| (*c, (p.pitch, p.yaw)))).collect())
+        .unwrap_or_default()
+}
+
+/// Takes an anchor block out of the world.
+pub fn remove_anchor_block(host: &mut dyn Host, pos: Pos) {
+    remove_anchor(host, pos);
+}
+
+/// A train that was disassembled is forgotten by everything that kept something of it.
+pub fn forget_train(dimension: &str, train: Uuid) {
+    if let Some(d) = lock(&DIMS).get_mut(dimension) {
+        d.carriages.retain(|(t, _), _| *t != train);
+        d.drives.retain(|_, drive| drive.train != train);
+        d.conductors.remove(&train);
+        d.present.retain(|_, t| *t != train);
+        d.dirty = true;
+    }
+}
+
+// --- the stations' questions -----------------------------------------------------------------------------------------------------------
+
+
+/// The train standing at a station, if any.
+pub fn train_at(dimension: &str, station: Uuid) -> Option<Uuid> {
+    lock(&DIMS).get(dimension).and_then(|d| d.present.get(&station).copied())
+}
+
+// --- /train ---------------------------------------------------------------------------------------------------------------------------------
+
+/// The train nearest to a point, within `range` blocks of one of its carriages.
+fn nearest_train(dimension: &str, at: [f64; 3], range: f64) -> Option<Uuid> {
+    let map = lock(&DIMS);
+    let dim = map.get(dimension)?;
+    dim.carriages
+        .iter()
+        .filter_map(|((train, _), rt)| {
+            let p = rt.last_pose?;
+            let d = (0..3).map(|i| (p.position[i] - at[i]).powi(2)).sum::<f64>().sqrt();
+            (d <= range).then_some((d, *train))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, t)| t)
+}
+
+/// `ScheduleItem.handScheduleTo`: the train takes the schedule (`runtime.setSchedule`), automatically running it.
+pub fn give_schedule(host: &mut dyn Host, train_id: Uuid, schedule: Schedule, auto: bool) -> bool {
+    let dimension = host.dimension();
+    let day_time = host.day_time();
+    let Some(dim_world) = ({
+        let map = lock(&DIMS);
+        map.get(dimension).map(|d| (d.conductors.clone(), d.carriages.iter().map(|(k, rt)| (*k, rt.conductor_sides())).collect::<BTreeMap<Key, [bool; 2]>>()))
+    }) else {
+        return false;
+    };
+    let world_view = World {
+        day_time,
+        dimension: dim_id(dimension),
+        conductors: dim_world.1.into_iter().filter(|(k, _)| dim_world.0.contains(&k.0)).collect(),
+        powered: Default::default(),
+        unloaded: Default::default(),
+    };
+    world::with_railways(dimension, |rails| {
+        let Railways { nets, trains, .. } = rails;
+        let Some(mut train) = trains.remove(&train_id) else { return false };
+        train.set_schedule(nets, trains, &world_view, schedule, auto);
+        trains.insert(train_id, train);
+        true
+    })
+    .unwrap_or(false)
+}
+
+/// `Train.runtime.returnSchedule()`: the train lets go of its schedule, for the station's `dropSchedule`.
+pub fn take_schedule(host: &mut dyn Host, train_id: Uuid) -> Option<Schedule> {
+    let dimension = host.dimension();
+    let day_time = host.day_time();
+    let conductors = lock(&DIMS).get(dimension).map(|d| d.conductors.clone()).unwrap_or_default();
+    let world_view = World { day_time, dimension: dim_id(dimension), conductors: BTreeMap::new(), powered: Default::default(), unloaded: Default::default() };
+    let _ = conductors;
+    world::with_railways(dimension, |rails| {
+        let Railways { nets, trains, .. } = rails;
+        let mut train = trains.remove(&train_id)?;
+        let schedule = train.return_schedule(nets, trains, &world_view);
+        trains.insert(train_id, train);
+        schedule
+    })
+    .flatten()
+}
+
+fn say(host: &mut dyn Host, uuid: u128, line: impl Into<String>) {
+    host.tell(uuid, Text::literal(line.into()));
+}
+
+fn command(host: &mut dyn Host, uuid: u128, rest: &str) {
+    let dimension = host.dimension();
+    let Some(player) = host.server_players().into_iter().find(|p| p.uuid == uuid) else { return };
+    let mut words = rest.split_whitespace();
+    match words.next().unwrap_or("info") {
+        "drive" => match start_driving(host, uuid) {
+            Ok(line) => say(host, uuid, line),
+            Err(line) => say(host, uuid, line),
+        },
+        "info" => {
+            let Some(id) = nearest_train(dimension, player.position, 24.0) else {
+                say(host, uuid, "No train within 24 blocks");
+                return;
+            };
+            let line = world::with_railways(dimension, |r| {
+                r.trains.get(&id).map(|t| {
+                    format!(
+                        "{}: {} carriage{}, speed {:.1} blocks/s{}{}",
+                        t.name,
+                        t.carriages.len(),
+                        if t.carriages.len() == 1 { "" } else { "s" },
+                        t.speed * 20.0,
+                        if t.derailed { ", derailed" } else { "" },
+                        t.current_station_in(&r.nets).and_then(|p| p.station()).map_or(String::new(), |s| format!(", at {}", s.name))
+                    )
+                })
+            })
+            .flatten();
+            say(host, uuid, line.unwrap_or_else(|| "The train is gone".to_owned()));
+        }
+        "conductor" => {
+            let Some(id) = nearest_train(dimension, player.position, 24.0) else {
+                say(host, uuid, "No train within 24 blocks");
+                return;
+            };
+            let on = with_dim(dimension, |d| {
+                if !d.dim.conductors.remove(&id) {
+                    d.dim.conductors.insert(id);
+                    true
+                } else {
+                    false
+                }
+            })
+            .unwrap_or(false);
+            say(host, uuid, if on { "A driver is aboard the train" } else { "The driver left the train" });
+        }
+        "name" => {
+            let name: Vec<&str> = words.collect();
+            let Some(id) = nearest_train(dimension, player.position, 24.0) else {
+                say(host, uuid, "No train within 24 blocks");
+                return;
+            };
+            if name.is_empty() {
+                say(host, uuid, "/train name <text>");
+                return;
+            }
+            let name = name.join(" ");
+            world::with_railways(dimension, |r| {
+                if let Some(t) = r.trains.get_mut(&id) {
+                    t.name = name.clone();
+                }
+            });
+            with_dim(dimension, |d| d.dirty());
+            say(host, uuid, format!("The train is now called '{name}'"));
+        }
+        "schedule" => {
+            let Some(id) = nearest_train(dimension, player.position, 24.0) else {
+                say(host, uuid, "No train within 24 blocks");
+                return;
+            };
+            match super::schedule::held_schedule(&*host, uuid) {
+                Some(schedule) if !schedule.entries.is_empty() => {
+                    if give_schedule(host, id, schedule, false) {
+                        say(host, uuid, "Train is now following this Schedule");
+                    } else {
+                        say(host, uuid, "The train didn't take the Schedule");
+                    }
+                }
+                Some(_) => say(host, uuid, "This Schedule does not have any Stops yet"),
+                None => say(host, uuid, "Hold a Schedule"),
+            }
+        }
+        _ => say(host, uuid, "/train [info | drive | conductor | name <text> | schedule]"),
+    }
+}
+
+impl Hooks for Trains {
+    fn level_tick_post(&self, host: &mut dyn Host, _: &mut LevelTickPostEvent<'_>) {
+        if host.window() {
+            return;
+        }
+        level_tick(host);
+    }
+
+    fn register_commands(&self, _: &mut dyn Host, event: &mut RegisterCommandsEvent<'_>) {
+        event.commands.push(NativeCommand::new("train"));
+        event.commands.push(NativeCommand::new("train <text:text>"));
+    }
+
+    fn perform_command(&self, host: &mut dyn Host, event: &mut PerformCommandEvent<'_>) -> Flow {
+        let line = event.command.trim();
+        let Some(rest) = (if line == "train" { Some("") } else { line.strip_prefix("train ") }) else {
+            return Flow::Continue;
+        };
+        command(host, event.player.uuid, rest);
+        Flow::Cancel
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tree_survives_the_tag() {
+        let tree = Value::Compound(vec![
+            ("Id".into(), Value::IntArray(vec![1, 2, 3, 4])),
+            ("Speed".into(), Value::Double(0.25)),
+            ("Name".into(), Value::Str("Express".into())),
+            ("Data".into(), Value::ByteArray(vec![1, -2, 3])),
+            ("List".into(), Value::List(vec![Value::Int(1), Value::Int(2)])),
+        ]);
+        assert_eq!(from_tag(&to_tag(&tree)), Some(tree));
+    }
+
+    #[test]
+    fn a_uuid_survives_the_tag() {
+        let id: Uuid = 0x0123_4567_89ab_cdef_0011_2233_4455_6677;
+        assert_eq!(tag_uuid(&uuid_tag(id)), Some(id));
+    }
+
+    #[test]
+    fn the_horizontal_step_drops_the_height() {
+        assert_eq!(horizontal_step(Dir::East), [1, 0]);
+        assert_eq!(horizontal_step(Dir::North), [0, -1]);
+    }
+
+    #[test]
+    fn a_carriage_survives_its_saved_form() {
+        let mut moving = Moving::default();
+        moving.anchor = [3, 4, 5];
+        moving.blocks.push(MovedBlock { local: [0, 0, 0], state: State::parse("create:small_bogey[axis=x]"), data: None });
+        moving.blocks.push(MovedBlock { local: [0, 1, 0], state: State::parse("create:controls[facing=east]"), data: None });
+        let summary = cc::summarize(&moving.blocks.iter().map(|b| (b.local, b.state.clone())).collect::<Vec<_>>(), Dir::East);
+        let mut rt = CarriageRt::new(moving, Dir::East, &summary);
+        rt.anchor = Some([9, 9, 9]);
+        rt.wheel = [12.5, -3.0];
+        let (id, back) = read_rt(&write_rt(7, &rt)).expect("reads");
+        assert_eq!(id, 7);
+        assert_eq!(back.structure.blocks.len(), 2);
+        assert_eq!(back.direction, Dir::East);
+        assert!(back.forward_controls && !back.backward_controls);
+        assert_eq!(back.controls, vec![([0, 1, 0], Dir::East)]);
+        assert_eq!(back.anchor, Some([9, 9, 9]));
+        assert_eq!(back.wheel, [12.5, -3.0]);
+    }
+
+    #[test]
+    fn the_status_text_is_listed_for_the_trains_messages() {
+        let m = StatusMessage::Info { key: "no_path".into(), good: false, args: vec![] };
+        assert!(drive::status_text(&m, &dim_name).contains("No suitable path"));
+    }
+}

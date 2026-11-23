@@ -420,6 +420,7 @@ pub fn message_text(key: &str) -> Option<&'static str> {
         "create.train_assembly.nothing_attached" => "No structure attached to Bogey %1$s",
         "create.train_assembly.requires_casing" => "Use Train Casing to create bogeys on tracks",
         "create.train_assembly.single_bogey_carriage" => "This Bogey type cannot support a carriage on its own",
+        "create.train_assembly.structure" => "The structure can't be assembled",
         "create.train_assembly.too_many_bogeys" => "Too many Bogeys attached: %1$s",
         // Create 6.0.10 throws this key with no lang entry (the player sees the key); this is a plain line.
         "create.train_assembly.sideways_controls" => "Train Controls must face along the track",

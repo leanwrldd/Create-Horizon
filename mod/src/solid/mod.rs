@@ -46,6 +46,9 @@ pub enum Sample {
     /// A structure that turns (bearing): right-handed about `axis` through the centre of the anchor
     /// cell by `now` degrees, `prev` a tick ago.
     Turn { axis: Axis, now: f32, prev: f32 },
+    /// A carriage of a train (`OrientedContraptionEntity`): the entity's position (the bogey's block's bottom middle)
+    /// and its yaw and pitch (`yaw`, `pitch` as the entity keeps them), now and a tick ago.
+    Oriented { now: [f64; 3], prev: [f64; 3], initial_yaw: f32, yaw: f32, prev_yaw: f32, pitch: f32, prev_pitch: f32 },
 }
 
 /// The block entities that are controllers of a structure, by id.
@@ -59,6 +62,7 @@ pub fn is_controller(id: &str) -> bool {
             | "create:gantry_shaft"
             | "create:mechanical_bearing"
             | "create:windmill_bearing"
+            | "create:carriage_anchor"
     )
 }
 
@@ -83,6 +87,7 @@ pub(crate) fn sample_of(
         .or_else(|| gantry::solid_sample(host, pos, entity, anchor, t))
         .or_else(|| bearing::solid_sample(host, pos, entity, anchor, t))
         .or_else(|| elevator::solid_sample(host, pos, entity, anchor, t))
+        .or_else(|| crate::machines::train_draw::solid_sample(entity, t))
 }
 
 /// The entity's data without the structure (`Contraption`, the blocks): what a `solid_sample` reads.
@@ -118,7 +123,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_controller_ids_are_the_five_machines() {
+    fn the_controller_ids_are_the_machines_and_the_carriage_anchor() {
         for id in [
             "create:mechanical_piston",
             "create:sticky_mechanical_piston",
@@ -130,6 +135,7 @@ mod tests {
         ] {
             assert!(is_controller(id), "{id}");
         }
+        assert!(is_controller("create:carriage_anchor"));
         assert!(!is_controller("create:shaft"));
         assert!(!is_controller("create:clockwork_bearing"));
     }

@@ -489,6 +489,8 @@ struct Found {
     name: String,
     /// The controller's saved data when it is an elevator pulley (the cabin's floors are read from it).
     elevator: Option<Compound>,
+    /// The controller is a train's carriage anchor (`trains.rs`).
+    carriage: bool,
 }
 
 /// `rayTraceContraption` for every structure of the level: the nearest hit within `limit` (the distance to
@@ -521,7 +523,8 @@ fn find(host: &mut dyn mod_api::ServerHost, who: u128, limit: Option<f64>, game_
         if best.as_ref().is_none_or(|(b, _)| d < b.distance) {
             let name = live.moving.blocks.iter().find(|b| b.local == hit.local).map(|b| b.state.name.clone()).unwrap_or_default();
             let elevator = (entity.id == ELEVATOR_PULLEY).then(|| entity.nbt.clone());
-            best = Some((Found { controller, entry, pose, hit, world, distance: d, name, elevator }, live.moving.clone()));
+            let carriage = entity.id == super::train_draw::ANCHOR;
+            best = Some((Found { controller, entry, pose, hit, world, distance: d, name, elevator, carriage }, live.moving.clone()));
         }
     }
     best
@@ -552,7 +555,8 @@ fn handle(host: &mut dyn mod_api::ServerHost, who: u128, limit: Option<f64>) -> 
     // (stone, a chest) still takes it.
     let _acted = match rules::route(&block.state.name, wrench) {
         Route::Storage => open_storage(host, &dimension, &found, moving, who),
-        Route::Sit => sit(host, &dimension, &found, who),
+        // A seat on a carriage holds no rider yet: nothing carries the marker along (`trains.rs`).
+        Route::Sit => !found.carriage && sit(host, &dimension, &found, who),
         Route::Behaviour(kind) => behave(host, &dimension, &found, moving, kind, who, held, wrench),
     };
     true
@@ -601,6 +605,8 @@ fn behave(
         }
         Interaction::Deployer => deployer(host, dimension, found, moving, who, held, wrench),
         Interaction::Controls => controls(host, dimension, found, moving, who),
+        // `ControlsInteractionBehaviour.handlePlayerInteraction` (a wrench click is the Wrench's).
+        Interaction::TrainControls => !wrench && super::trains::click_controls(&mut Adapter::Server(host), dimension, found.controller, who),
     }
 }
 

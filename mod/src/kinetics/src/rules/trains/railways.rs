@@ -33,6 +33,8 @@ pub struct DisassemblyPlan {
     pub station: Option<Uuid>,
     pub train_name: String,
     pub map_color_index: i32,
+    /// The schedule the train gives back (`runtime.returnSchedule()`: none for an automatic one, which goes with the train).
+    pub schedule: Option<super::schedule::Schedule>,
 }
 
 /// The train half of `GlobalRailwayManager`.
@@ -224,7 +226,8 @@ impl Railways {
         }
         let placements = train.disassembly_positions(direction, pos).into_iter().map(|(i, p)| (i, train.carriages[i].id, p)).collect();
         let station = train.current_station_in(&self.nets).map(|p| p.id);
-        let plan = DisassemblyPlan { placements, station, train_name: train.name.clone(), map_color_index: train.map_color_index };
+        let schedule = if train.runtime.is_auto_schedule { None } else { train.runtime.schedule.clone() };
+        let plan = DisassemblyPlan { placements, station, train_name: train.name.clone(), map_color_index: train.map_color_index, schedule };
         if let (Some(s), Some(g)) = (station, train.graph) {
             if let Some(st) = self.nets.graphs.get_mut(&g).and_then(|g| g.edge_points.get_mut(super::graph::EdgePointType::Station, s)).and_then(|p| p.station_mut()) {
                 st.cancel_reservation(id);
