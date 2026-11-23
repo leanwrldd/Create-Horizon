@@ -275,6 +275,7 @@
     "create:track_observer",
     "create:track_signal",
     "create:track_station",
+    "create:controls",
     "create:tree_fertilizer",
     "create:andesite_tunnel",
     "create:brass_tunnel",

@@ -480,6 +480,7 @@
             "create:track_observer",
             "create:track_signal",
             "create:track_station",
+            "create:controls",
             "create:andesite_tunnel",
             "create:brass_tunnel",
             "create:weighted_ejector",

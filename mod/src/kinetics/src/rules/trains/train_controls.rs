@@ -268,6 +268,43 @@ pub fn control(
     out
 }
 
+/// The English of a train's status line (`create.train.status.*`), as `TrainStatus` shows it to the owner.
+pub fn status_text(message: &super::train::StatusMessage, dimension_name: &dyn Fn(u32) -> String) -> String {
+    use super::train::StatusMessage;
+    match message {
+        StatusMessage::Info { key, args, .. } => {
+            let text = match key.as_str() {
+                "back_on_track" => "Train is back on Track",
+                "coupling_stress" => "Forced stop due to Stress on Couplings",
+                "double_portal" => "A Carriage cannot enter a portal whilst leaving another",
+                "end_of_track" => "A Carriage has reached the end of its Track",
+                "found_driver" => "A new driver has been found",
+                "missing_driver" => "Driver has gone missing",
+                "navigation_success" => "Navigation succeeded",
+                "no_match" => "No station on graph matches '%1$s'",
+                "no_package_target" => "A package in cargo has no postbox that matches its address",
+                "no_path" => "No suitable path to the next Scheduled destination could be found",
+                "opposite_driver" => "Path requires a driver facing the opposite direction",
+                "paused_for_manual" => "Schedule paused for manual controls",
+                "track_missing" => "Tracks are missing beneath the Train",
+                other => other,
+            };
+            let mut text = text.to_owned();
+            for (i, arg) in args.iter().enumerate() {
+                text = text.replace(&format!("%{}$s", i + 1), arg);
+            }
+            text
+        }
+        StatusMessage::Crash { locations } => {
+            let mut text = "Collision with other Train".to_owned();
+            for (dimension, pos) in locations {
+                text.push_str(&format!("; In {} near [{}, {}, {}]", dimension_name(*dimension), pos[0], pos[1], pos[2]));
+            }
+            text
+        }
+    }
+}
+
 /// Whether the carriage's leading or trailing wheel is on a curve (`getLeadingPoint().edge.isTurn()`).
 pub fn on_turn(train: &Train, carriage: usize, nets: &RailNetworks) -> bool {
     let Some(graph) = train.graph.and_then(|g| nets.graphs.get(&g)) else { return false };
@@ -388,6 +425,16 @@ mod tests {
         keys.receive(&[BACK, 9], false);
         keys.receive(&[9], true);
         assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn status_lines_are_in_english() {
+        use super::super::train::StatusMessage;
+        let info = |key: &str, args: Vec<String>| StatusMessage::Info { key: key.to_owned(), good: false, args };
+        assert_eq!(status_text(&info("no_path", vec![]), &|d| d.to_string()), "No suitable path to the next Scheduled destination could be found");
+        assert_eq!(status_text(&info("no_match", vec!["Home".into()]), &|d| d.to_string()), "No station on graph matches 'Home'");
+        let crash = StatusMessage::Crash { locations: vec![(0, [1, 2, 3])] };
+        assert_eq!(status_text(&crash, &|_| "overworld".into()), "Collision with other Train; In overworld near [1, 2, 3]");
     }
 
     #[test]

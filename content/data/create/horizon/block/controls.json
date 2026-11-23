@@ -1,0 +1,160 @@
+{
+  "template": "minecraft:glass",
+  "item": true,
+  "properties": {
+    "hardness": 3.0,
+    "explosion_resistance": 6.0,
+    "requires_tool": true,
+    "sounds": "minecraft:netherite_block",
+    "map_color": 48,
+    "render_shape": "MODEL"
+  },
+  "state_properties": {
+    "facing": {
+      "type": "enum",
+      "values": [
+        "north",
+        "south",
+        "west",
+        "east"
+      ]
+    },
+    "open": {
+      "type": "boolean"
+    },
+    "virtual": {
+      "type": "boolean"
+    }
+  },
+  "default_state": {
+    "facing": "north",
+    "open": "false",
+    "virtual": "false"
+  },
+  "shapes": {
+    "properties": [
+      "facing"
+    ],
+    "values": {
+      "north": [
+        [
+          0.0,
+          0.0,
+          0.375,
+          1.0,
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.25,
+          1.0,
+          0.125,
+          1.0
+        ]
+      ],
+      "east": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.625,
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.75,
+          0.125,
+          1.0
+        ]
+      ],
+      "south": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          0.625
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.125,
+          0.75
+        ]
+      ],
+      "west": [
+        [
+          0.375,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        [
+          0.25,
+          0.0,
+          0.0,
+          1.0,
+          0.125,
+          1.0
+        ]
+      ]
+    }
+  },
+  "collision_shapes": {
+    "properties": [
+      "facing"
+    ],
+    "values": {
+      "north": [
+        [
+          0.0,
+          0.0,
+          0.375,
+          1.0,
+          1.0,
+          1.0
+        ]
+      ],
+      "east": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          0.625,
+          1.0,
+          1.0
+        ]
+      ],
+      "south": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          0.625
+        ]
+      ],
+      "west": [
+        [
+          0.375,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0
+        ]
+      ]
+    }
+  }
+}
