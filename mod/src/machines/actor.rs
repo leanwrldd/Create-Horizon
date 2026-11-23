@@ -72,6 +72,8 @@ pub(super) struct Actor {
 
 struct Run {
     actors: Vec<Actor>,
+    /// `Contraption.disabledActors`: the filters (a block name, "" for all) the Controls switched off.
+    disabled: Vec<String>,
     blocks: usize,
     seen: i64,
 }
@@ -151,7 +153,7 @@ impl Run {
                 extra: tools::Extra::default(),
             });
         }
-        Run { actors, blocks: moving.blocks.len(), seen: now }
+        Run { actors, disabled, blocks: moving.blocks.len(), seen: now }
     }
 }
 
@@ -458,4 +460,35 @@ fn stop_moving(host: &mut dyn Host, controller: Pos, nbt: &Compound, keep: bool)
 /// structure.
 pub(super) fn nearest(v: Vec3) -> Dir {
     create_kinetics::rules::portable_interface::nearest_direction(v)
+}
+
+// --- clicks on the structure's blocks (`MovingInteractionBehaviour`) -------------------------------------
+
+/// The actor at `local` of the structure of `controller`, for a click on it (`Contraption.getActorAt`).
+pub(super) fn with_actor<R>(dimension: &str, controller: Pos, local: Pos, f: impl FnOnce(&mut Actor) -> R) -> Option<R> {
+    with_runs(|runs| {
+        let run = runs.get_mut(&(dimension.to_owned(), controller))?;
+        run.actors.iter_mut().find(|a| a.local == local).map(f)
+    })
+}
+
+/// `ContraptionControlsMovingInteraction`'s change of `Contraption.disabledActors` and
+/// `setActorsActive`: the Controls' `filter` (a block name, "" for none) clicked. Returns whether the
+/// click disabled the filter; `None` when no actor runs (the structure has no actors).
+pub(super) fn toggle_controls(dimension: &str, controller: Pos, filter: &str) -> Option<bool> {
+    with_runs(|runs| {
+        let run = runs.get_mut(&(dimension.to_owned(), controller))?;
+        let names: Vec<String> = run
+            .actors
+            .iter()
+            .filter(|a| a.state.name != rules::CONTROLS)
+            .map(|a| a.state.name.clone())
+            .collect();
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let disable = create_kinetics::rules::contraption_click::toggle_controls(&mut run.disabled, filter, &refs);
+        for actor in &mut run.actors {
+            actor.ctx.disabled = actor.state.name != rules::CONTROLS && rules::is_disabled(&run.disabled, &actor.state.name);
+        }
+        Some(disable)
+    })
 }

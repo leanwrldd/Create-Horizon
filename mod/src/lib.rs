@@ -680,6 +680,7 @@ impl mod_api::Hooks for Mod {
         // Create's `ContraptionHandler.tick`: the entities near each moving structure, at the end of the level tick.
         if let mod_api::HostSide::Server(server) = &mut host {
             solid::server::level_tick(&mut **server, event.level);
+            machines::structure_click::level_tick(&mut **server);
         }
         compat::events::level_tick_post(host)
     }
@@ -693,7 +694,18 @@ impl mod_api::Hooks for Mod {
         if let mod_api::Flow::Cancel = machines::cog_placement::right_click_block(&mut host, event) {
             return mod_api::Flow::Cancel;
         }
+        if let mod_api::Flow::Cancel = machines::structure_click::right_click_block(&mut host, event) {
+            return mod_api::Flow::Cancel;
+        }
         compat::events::right_click_block(host, event)
+    }
+
+    fn right_click_item(&self, mut host: mod_api::HostSide<'_>, event: &mut mod_api::RightClickItemEvent<'_>) -> mod_api::Flow {
+        machines::structure_click::right_click_item(&mut host, event)
+    }
+
+    fn right_click_empty(&self, host: &mut dyn mod_api::ClientHost, event: &mut mod_api::RightClickEmptyEvent) {
+        machines::structure_click::right_click_empty(host, event)
     }
 
     fn left_click_block(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::LeftClickBlockEvent) -> mod_api::Flow {
