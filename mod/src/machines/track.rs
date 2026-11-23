@@ -266,6 +266,7 @@ static STATE: LazyLock<Mutex<HashMap<String, DimState>>> = LazyLock::new(Mutex::
 
 /// Runs `f` on a dimension's track graphs (`GlobalRailwayManager.sided(level)` for it), `None` before the dimension has
 /// been ticked.
+#[allow(dead_code)]
 pub fn with_networks<R>(dimension: &str, f: impl FnOnce(&mut RailNetworks) -> R) -> Option<R> {
     lock(&STATE).get_mut(dimension).map(|st| f(&mut st.nets))
 }
