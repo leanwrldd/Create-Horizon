@@ -18,7 +18,9 @@
 //!   sound, nothing else.
 //! - The Deployer's fake player is the hand the stationary Deployer has (`deployer_use.rs`): see
 //!   there. Its hand (`HeldItem`, the overflow) is saved in the block's data when the structure
-//!   stops. It can't use a Schematic as a printer on a structure.
+//!   stops. With a Schematic in its filter slot it prints it (`activateAsSchematicPrinter`, rules in
+//!   `create_kinetics::rules::deployer_print`): no `onBlockPlace` event, no track advancement, and no
+//!   Universal Creative Crate on a structure, so every block takes its items.
 
 use create_kinetics::rules::actor::{self as rules, Kind, Target};
 use create_kinetics::rules::deployer::{self as deployer_rules, Mode};
@@ -33,6 +35,11 @@ use super::actor::{Actor, Cx};
 use super::chute_inv;
 use super::contraption as engine;
 use super::deployer_use::{self as hand, Crack, Items};
+use super::schematic as schematic_item;
+use super::schematic_files;
+use super::schematic_world;
+use create_kinetics::rules::deployer_print;
+use create_kinetics::rules::schematic_printer::Layout;
 use super::saw;
 use crate::util;
 
@@ -67,6 +74,8 @@ pub(super) struct Hand {
     items: Items,
     crack: Option<Crack>,
     timer: i32,
+    /// The deployed Schematic's blocks, with what they were loaded for (file, turn, mirror).
+    print: Option<(String, Layout)>,
 }
 
 // --- reading the world ------------------------------------------------------------------------------------
@@ -479,7 +488,7 @@ pub(super) fn write_hand(data: &mut Compound, items: &Items) {
 
 fn hand_mut(actor: &mut Actor) -> &mut Hand {
     if !matches!(actor.extra, Extra::Deployer(_)) {
-        actor.extra = Extra::Deployer(Box::new(Hand { items: hand_of(&actor.data), crack: None, timer: 0 }));
+        actor.extra = Extra::Deployer(Box::new(Hand { items: hand_of(&actor.data), crack: None, timer: 0, print: None }));
     }
     match &mut actor.extra {
         Extra::Deployer(hand) => hand,
@@ -504,6 +513,10 @@ fn virtual_deployer(cell: Pos, facing: Dir) -> Pos {
 /// `tryGrabbingItem`: an empty hand takes one item the filter passes out of the structure's storage.
 fn grab(cx: &mut Cx<'_>, actor: &mut Actor) {
     let filter = chute_inv::filter_of(&actor.data);
+    // `AllItems.SCHEMATIC.isIn(filter.item())`: the filter slot holds a printer's Schematic, not a stack to fetch.
+    if filter.item.as_ref().is_some_and(|item| &*item.item == schematic_item::SCHEMATIC) {
+        return;
+    }
     let hand = hand_mut(actor);
     if hand.items.first().is_some_and(Option::is_some) {
         return;
@@ -536,6 +549,10 @@ fn dispose_excess(cx: &mut Cx<'_>, actor: &mut Actor) {
 
 /// `DeployerHandler.activate` on the visited cell, as the stationary Deployer does it.
 fn activate(cx: &mut Cx<'_>, actor: &mut Actor, cell: Pos) {
+    if let Some(data) = chute_inv::filter_of(&actor.data).item.as_ref().and_then(schematic_item::data_of) {
+        print_schematic(cx, actor, cell, &data);
+        return;
+    }
     let Some(facing) = actor.state.dir("facing") else { return };
     // The facing turned by the structure, to the nearest block direction.
     let turned = super::actor::nearest(cx.rotated(facing.normal().map(f64::from)));
@@ -543,6 +560,46 @@ fn activate(cx: &mut Cx<'_>, actor: &mut Actor, cell: Pos) {
     let at = virtual_deployer(cell, turned);
     let hand = hand_mut(actor);
     hand::activate(cx.host, at, turned, mode, &mut hand.items, &mut hand.crack);
+}
+
+/// `DeployerMovementBehaviour.activateAsSchematicPrinter`: the block the deployed Schematic has at
+/// `cell` goes there if the cell can be built over and the structure's storage holds what it costs.
+fn print_schematic(cx: &mut Cx<'_>, actor: &mut Actor, cell: Pos, data: &schematic_item::Data) {
+    if !data.deployed {
+        return;
+    }
+    let existing = state_at(&*cx.host, cell);
+    if !create_kinetics::rules::contraption::replaceable(&existing) {
+        return;
+    }
+    // `SchematicInstances.get`: the blocks of the file, laid out about the anchor.
+    let key = format!("{}|{}|{}", data.file, data.rotation.name(), data.mirror.name());
+    let hand = hand_mut(actor);
+    if hand.print.as_ref().is_none_or(|(have, _)| *have != key) {
+        let Ok(template) = schematic_files::load(&*cx.host, &data.file) else { return };
+        if template.size == [0, 0, 0] {
+            return;
+        }
+        hand.print = Some((key, Layout::new(&template, data.rotation, data.mirror)));
+    }
+    let Some((_, layout)) = &hand.print else { return };
+    let host: &dyn Host = &*cx.host;
+    let item_exists = |item: &str| host.max_stack_size(item).is_some();
+    let Some(print) = deployer_print::plan(layout, data.deployed, data.anchor, cell, &existing, &item_exists) else {
+        return;
+    };
+    // Every item must be there before any is taken (the simulated pass, then the real one).
+    for (item, count) in &print.items {
+        let test = |stack: &ItemStack| &*stack.item == item.as_str();
+        if cx.store.available(host, &test) < i32::try_from(*count).unwrap_or(i32::MAX) {
+            return;
+        }
+    }
+    for (item, count) in &print.items {
+        let test = |stack: &ItemStack| &*stack.item == item.as_str();
+        cx.store.extract(&*cx.host, &test, i32::try_from(*count).unwrap_or(i32::MAX), true);
+    }
+    schematic_world::place_schematic_block(cx.host, cell, &print.state, print.data.as_ref());
 }
 
 /// `DeployerMovementBehaviour.visitNewPosition`.

@@ -49,6 +49,7 @@ pub mod crushing_wheel;
 pub mod cuckoo_clock;
 pub mod deployer;
 pub mod deployer_items;
+pub mod deployer_print;
 pub mod desk_bell;
 pub mod diodes;
 pub mod display_link;
