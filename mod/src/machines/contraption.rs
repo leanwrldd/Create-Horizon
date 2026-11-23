@@ -243,6 +243,9 @@ pub struct Moving {
     pub glue: Vec<GlueBox>,
     /// The sail-like blocks in it (`BearingContraption.sailBlocks`, saved as `Sails`).
     pub sails: i32,
+    /// `Contraption.disabledActors`: the filters (a block name, "" for all) the Contraption Controls switched
+    /// off, saved with the structure. `None` before any click: the Controls' own `Disabled` decide at the start.
+    pub disabled: Option<Vec<String>>,
 }
 
 fn string(value: &str) -> Tag {
@@ -288,6 +291,10 @@ impl Moving {
                     if let Some(boxes) = crate::solid::shapes::lookup(state) {
                         entry.insert("Shape".into(), crate::solid::shapes::to_tag(&boxes));
                     }
+                    // The selection outline, for the client's click ray (`rayTraceContraption`).
+                    if let Some(boxes) = crate::solid::shapes::outline_lookup(state) {
+                        entry.insert("Outline".into(), crate::solid::shapes::to_tag(&boxes));
+                    }
                 }
                 if !state.props.is_empty() {
                     let mut props = Compound::new();
@@ -318,6 +325,10 @@ impl Moving {
             .collect();
         out.insert("Superglue".into(), Tag::List(glue));
         out.insert("Sails".into(), Tag::Int(self.sails));
+        // `Contraption.writeNBT`'s `DisabledActors` (Create saves each filter as an item stack).
+        if let (false, Some(disabled)) = (for_client, &self.disabled) {
+            out.insert("DisabledActors".into(), Tag::List(disabled.iter().map(|f| string(f)).collect()));
+        }
         out
     }
 
@@ -376,7 +387,15 @@ impl Moving {
                 }
             }
         }
-        Some(Moving { anchor, blocks: out, glue, sails: util::int(nbt, "Sails") })
+        let disabled = match util::get(nbt, "DisabledActors") {
+            Some(Tag::List(list)) => Some(
+                list.iter()
+                    .filter_map(|t| if let Tag::String(s) = t { Some(s.to_string_lossy()) } else { None })
+                    .collect(),
+            ),
+            _ => None,
+        };
+        Some(Moving { anchor, blocks: out, glue, sails: util::int(nbt, "Sails"), disabled })
     }
 
     /// The block states by position, for the collision check.
@@ -451,7 +470,7 @@ pub fn capture(
         .into_iter()
         .map(|g| GlueBox::span(local_of(g.min), local_of(g.max)))
         .collect();
-    Moving { anchor, blocks, glue, sails: 0 }
+    Moving { anchor, blocks, glue, sails: 0, disabled: None }
 }
 
 /// `Contraption.moveBlock`'s handling of a multi-block's controller (a Fluid Tank's, an Item Vault's):
@@ -973,7 +992,21 @@ mod tests {
             ],
             glue: vec![GlueBox { min: [0, 0, 0], max: [2, 0, 0] }],
             sails: 9,
+            disabled: Some(vec!["create:mechanical_saw".to_owned(), String::new()]),
         }
+    }
+
+    #[test]
+    fn the_disabled_actors_survive_the_nbt_and_never_go_to_a_client() {
+        let back = Moving::from_nbt(&sample().to_nbt(false)).expect("reads back");
+        assert_eq!(back.disabled, Some(vec!["create:mechanical_saw".to_owned(), String::new()]));
+        // Nothing clicked yet: no key, so the Controls' `Disabled` decide.
+        let none = Moving { disabled: None, ..sample() };
+        assert_eq!(Moving::from_nbt(&none.to_nbt(false)).expect("reads back").disabled, None);
+        // An empty list is a click that switched everything back on.
+        let empty = Moving { disabled: Some(Vec::new()), ..sample() };
+        assert_eq!(Moving::from_nbt(&empty.to_nbt(false)).expect("reads back").disabled, Some(Vec::new()));
+        assert_eq!(Moving::from_nbt(&sample().to_nbt(true)).expect("reads back").disabled, None);
     }
 
     #[test]

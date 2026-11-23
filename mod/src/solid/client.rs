@@ -71,7 +71,8 @@ pub fn observe(host: &mut dyn ClientHost, event: &BlockEntityClientTickEvent<'_>
         Some((known, solid)) if known == token => solid,
         _ => {
             let Some(moving) = Moving::from_nbt(contraption) else { return };
-            let shapes = palette_shapes(contraption);
+            let shapes = palette_shapes(contraption, "Shape");
+            remember_blocks(dimension, pos, id == "create:elevator_pulley", &moving, &palette_shapes(contraption, "Outline"));
             let turn_axis = match sample {
                 Sample::Turn { axis, .. } => Some(axis),
                 Sample::Slide { .. } => None,
@@ -103,15 +104,97 @@ fn anchor_of(contraption: &Compound) -> Option<Pos> {
     }
 }
 
-/// The `Shape` each palette entry of the structure carries, by the state's text.
-fn palette_shapes(contraption: &Compound) -> HashMap<String, Arc<[Aabb]>> {
+/// What a click's ray meets of a structure, by its dimension and controller: each block's name and
+/// outline (`Contraption.getBlocks()` and `BlockState.getShape`, as the update tag carries them).
+type ClickBlocks = Arc<Vec<(Pos, String, Arc<[Aabb]>)>>;
+
+static CLICK_BLOCKS: Mutex<Option<HashMap<(String, Pos), (bool, ClickBlocks)>>> = Mutex::new(None);
+
+fn remember_blocks(dimension: &str, controller: Pos, elevator: bool, moving: &Moving, outlines: &HashMap<String, Arc<[Aabb]>>) {
+    let blocks: Vec<_> = moving
+        .blocks
+        .iter()
+        .map(|block| {
+            let boxes = match outlines.get(&shapes::text(&block.state)) {
+                Some(boxes) => boxes.clone(),
+                // The server hadn't asked yet: the collision boxes, or a cube.
+                None => {
+                    let collision = shapes::boxes_of(&block.state);
+                    if collision.is_empty() && !block.state.is_air() {
+                        Arc::from(vec![Aabb::new([0.0; 3], [1.0; 3])])
+                    } else {
+                        collision
+                    }
+                }
+            };
+            (block.local, block.state.name.clone(), boxes)
+        })
+        .collect();
+    CLICK_BLOCKS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get_or_insert_with(HashMap::new)
+        .insert((dimension.to_owned(), controller), (elevator, Arc::new(blocks)));
+}
+
+/// The block of a structure a client ray met.
+#[derive(Clone, Debug)]
+pub struct ClientHit {
+    /// How far from the eye, in blocks.
+    pub distance: f64,
+    pub controller: Pos,
+    pub local: Pos,
+    pub name: String,
+    /// The structure is an elevator's cabin.
+    pub elevator: bool,
+}
+
+/// `ContraptionHandlerClient.rayTraceContraption` for every structure of the client: the nearest block the
+/// ray from `eye` along `look` meets within `reach` (the player's reach, or the distance to the real block
+/// aimed at when that is nearer: `getRayInputs`).
+pub fn click_ray(eye: [f64; 3], look: [f64; 3], reach: f64) -> Option<ClientHit> {
+    use create_kinetics::rules::contraption_click::{ClickBlock, ray_trace};
+    let now = registry::client_now()?;
+    let dimension = DIMENSION.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    let target = [0, 1, 2].map(|i| eye[i] + look[i] * reach);
+    let mut best: Option<ClientHit> = None;
+    for (controller, entry) in registry::active(Side::Client, &dimension, now) {
+        let bounds = entry.solid.world_bounds(&entry.pose(now));
+        if (0..3).any(|i| eye[i].max(target[i]) + 1.0 < bounds.min[i] || eye[i].min(target[i]) - 1.0 > bounds.max[i]) {
+            continue;
+        }
+        let Some((elevator, blocks)) = CLICK_BLOCKS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .and_then(|map| map.get(&(dimension.clone(), controller)).cloned())
+        else {
+            continue;
+        };
+        let pose = entry.pose(now);
+        let from = pose.to_local_vector(eye, 1.0, false);
+        let to = pose.to_local_vector(target, 1.0, false);
+        let clicks = blocks.iter().map(|(local, _, boxes)| ClickBlock { local: *local, boxes });
+        let Some(hit) = ray_trace(clicks, from, to) else { continue };
+        let world = pose.to_global_vector(hit.point, 1.0, false);
+        let distance = (0..3).map(|i| (eye[i] - world[i]).powi(2)).sum::<f64>().sqrt();
+        if best.as_ref().is_none_or(|b| distance < b.distance) {
+            let name = blocks.iter().find(|(local, ..)| *local == hit.local).map(|(_, n, _)| n.clone()).unwrap_or_default();
+            best = Some(ClientHit { distance, controller, local: hit.local, name, elevator });
+        }
+    }
+    best
+}
+
+/// The palette's `key` shape (`Shape` or `Outline`) of each entry of the structure, by the state's text.
+fn palette_shapes(contraption: &Compound, key: &str) -> HashMap<String, Arc<[Aabb]>> {
     let mut out = HashMap::new();
     let Some(Tag::Compound(blocks)) = util::get(contraption, "Blocks") else { return out };
     let Some(Tag::List(palette)) = util::get(blocks, "Palette") else { return out };
     for entry in palette {
         let Tag::Compound(entry) = entry else { continue };
         let Some(Tag::String(name)) = util::get(entry, "Name") else { continue };
-        let Some(shape) = util::get(entry, "Shape").and_then(shapes::from_tag) else { continue };
+        let Some(shape) = util::get(entry, key).and_then(shapes::from_tag) else { continue };
         let mut state = State::new(&name.to_string_lossy());
         if let Some(Tag::Compound(props)) = util::get(entry, "Properties") {
             for (key, value) in props {

@@ -333,6 +333,60 @@ fn type_disabled(disabled: &[String], name: &str) -> bool {
     !name.is_empty() && disabled.iter().any(|d| !d.is_empty() && d == name)
 }
 
+// --- the client's cancel (ContraptionHandlerClient) ------------------------------------------------------------
+
+/// `getRayInputs`'s reach: the player's `blockInteractionRange`, cut short at the real block the crosshair is
+/// on (`mc.hitResult`'s distance), if there is one.
+pub fn ray_reach(reach: f64, aimed: Option<f64>) -> f64 {
+    aimed.map_or(reach, |a| a.min(reach))
+}
+
+/// Whether a structure's block the ray met at `structure` blocks from the eye takes the click, with the real
+/// block aimed at `aimed` blocks away (none when it is the air). The ray is cut at the real block, so a
+/// structure block at the same distance takes it. A little slack for the float error of the two frames.
+pub fn structure_takes_click(structure: f64, aimed: Option<f64>) -> bool {
+    aimed.is_none_or(|a| structure <= a + 1.0e-4)
+}
+
+// --- the elevator's Controls (ContraptionControlsMovingInteraction.elevatorInteraction) -----------------------------
+
+/// `ElevatorControlsHandler.onScroll` and `ContraptionControlsMovement.tickFloorSelection`: the index of the
+/// floor chosen after the wheel turned by `delta` (rounded away from zero, as the wheel's ~0.9 is not
+/// floored to nothing), kept inside the list. `count` is the number of floors; none selects 0.
+pub fn scroll_floor(index: usize, delta: f64, count: usize) -> usize {
+    if count == 0 {
+        return 0;
+    }
+    let step = if delta > 0.0 { delta.ceil() } else { delta.floor() } as i64;
+    (index as i64 + step).clamp(0, count as i64 - 1) as usize
+}
+
+/// What a click on an elevator's Controls does with the chosen floor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FloorClick {
+    /// The cabin has no floors to choose from (`ec.namesList.isEmpty()`): only the sounds.
+    NoFloors,
+    /// The chosen floor already is the column's target (`currentTargetY == clientYTarget`).
+    AlreadyTarget,
+    /// `isTargetUnreachable`: the cabin's contact can't get that far.
+    Unreachable,
+    /// `ElevatorTargetFloorPacket`: the floor at this height is called.
+    Call(i32),
+}
+
+/// The click, with `floors` the heights of the column's contacts from the lowest, `index` the chosen one,
+/// `target` the column's target and `min`/`max` the heights the cabin can reach (`ElevatorTargetFloorPacket.handle`).
+pub fn floor_click(floors: &[i32], index: usize, target: Option<i32>, min: i32, max: i32) -> FloorClick {
+    let Some(&y) = floors.get(index.min(floors.len().saturating_sub(1))) else { return FloorClick::NoFloors };
+    if target == Some(y) {
+        FloorClick::AlreadyTarget
+    } else if y < min || y > max {
+        FloorClick::Unreachable
+    } else {
+        FloorClick::Call(y)
+    }
+}
+
 // --- DeployerMovingInteraction ---------------------------------------------------------------------------------
 
 /// What a click on a Deployer on a structure does.
@@ -501,6 +555,42 @@ mod tests {
         // Empty Controls while one is off: everything off (Create clears the list and adds the empty filter).
         assert!(toggle_controls(&mut list, "", &actors));
         assert_eq!(list, [""]);
+    }
+
+    #[test]
+    fn the_client_ray_stops_at_the_real_block_and_the_nearer_one_wins() {
+        assert_eq!(ray_reach(4.5, None), 4.5);
+        assert_eq!(ray_reach(4.5, Some(2.0)), 2.0);
+        assert_eq!(ray_reach(4.5, Some(9.0)), 4.5);
+        // A longer reach (the Extendo Grip) is the attribute's, not 4.5.
+        assert_eq!(ray_reach(7.0, None), 7.0);
+        assert!(structure_takes_click(2.0, Some(3.0)));
+        assert!(structure_takes_click(3.0, Some(3.0)));
+        assert!(!structure_takes_click(3.5, Some(3.0)));
+        assert!(structure_takes_click(4.0, None));
+    }
+
+    #[test]
+    fn the_wheel_moves_the_chosen_floor_and_keeps_it_in_the_list() {
+        assert_eq!(scroll_floor(0, 1.0, 4), 1);
+        // A touchpad's 0.9 is a step, not nothing.
+        assert_eq!(scroll_floor(1, 0.9, 4), 2);
+        assert_eq!(scroll_floor(2, -0.2, 4), 1);
+        assert_eq!(scroll_floor(3, 5.0, 4), 3);
+        assert_eq!(scroll_floor(0, -3.0, 4), 0);
+        assert_eq!(scroll_floor(2, 1.0, 0), 0);
+    }
+
+    #[test]
+    fn a_click_on_the_elevators_controls_calls_the_chosen_floor() {
+        let floors = [64, 70, 80];
+        assert_eq!(floor_click(&floors, 1, Some(64), 64, 80), FloorClick::Call(70));
+        assert_eq!(floor_click(&floors, 1, Some(70), 64, 80), FloorClick::AlreadyTarget);
+        assert_eq!(floor_click(&floors, 2, None, 64, 75), FloorClick::Unreachable);
+        assert_eq!(floor_click(&floors, 0, None, 66, 80), FloorClick::Unreachable);
+        assert_eq!(floor_click(&[], 0, None, 0, 10), FloorClick::NoFloors);
+        // A stale index past the end takes the last floor.
+        assert_eq!(floor_click(&floors, 9, None, 64, 80), FloorClick::Call(80));
     }
 
     #[test]
