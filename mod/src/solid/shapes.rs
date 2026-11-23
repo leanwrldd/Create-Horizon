@@ -122,6 +122,24 @@ pub fn outline_of(host: &dyn Host, level: LevelRef, pos: Pos, state: &State) -> 
     boxes
 }
 
+/// The outline the game gave for the state, if it has been asked.
+pub fn outline_lookup(state: &State) -> Option<Arc<[Aabb]>> {
+    OUTLINES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&text(state)).cloned()
+}
+
+/// Asks the game for the outline of each state not known yet (the update tag carries them for the
+/// client's click ray). Whether any was new.
+pub fn fill_outlines<'a>(host: &dyn Host, level: LevelRef, pos: Pos, states: impl Iterator<Item = &'a State>) -> bool {
+    let mut added = false;
+    for state in states {
+        if outline_lookup(state).is_none() {
+            outline_of(host, level, pos, state);
+            added = true;
+        }
+    }
+    added
+}
+
 /// A shape as the palette carries it: six doubles a box.
 pub fn to_tag(boxes: &[Aabb]) -> Tag {
     let mut out = Vec::with_capacity(boxes.len() * 6);

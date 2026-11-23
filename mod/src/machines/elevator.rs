@@ -134,6 +134,73 @@ fn contact_state(host: &dyn Host, pos: Pos) -> Option<(Dir, bool, bool, bool)> {
     Some((facing, is("powered"), is("calling"), is("powering")))
 }
 
+/// `ElevatorContactBlock.callToContactAndUpdate`: the cabin of the column is called to the contact at `pos`.
+fn call_contact(host: &mut dyn Host, dimension: &str, coords: ColumnCoords, pos: Pos) {
+    let key = (dimension.to_owned(), coords);
+    let (others, snapshot) = {
+        let mut columns = lock(&COLUMNS);
+        let column = columns.entry(key).or_default();
+        (elevator::call(column, pos[1]), column.clone())
+    };
+    for y in others {
+        let other = coords.contact_at(y);
+        if host.block(other) == CONTACT {
+            host.set_block_property(other, "calling", "false");
+        }
+    }
+    host.set_block_property(pos, "calling", "true");
+    host.update_signal_neighbors(dimension, pos);
+    save_column(host, coords, &snapshot);
+}
+
+/// A cabin's column as its Controls see it (`ElevatorContraption.namesList`, `clientYTarget`, the reachable range).
+pub(super) struct Floors {
+    pub coords: ColumnCoords,
+    /// The contacts' heights, lowest first.
+    pub heights: Vec<i32>,
+    /// What each is called: the short name (numbered as `ElevatorColumn.initNames` does) and the long one.
+    pub names: Vec<(String, String)>,
+    pub target: Option<i32>,
+    pub min: i32,
+    pub max: i32,
+}
+
+/// The floors of the cabin whose pulley saved `nbt`; `None` when it is not a running elevator.
+pub(super) fn floors_of(host: &dyn Host, dimension: &str, nbt: &Compound) -> Option<Floors> {
+    let state = saved_nbt(nbt);
+    if !state.running {
+        return None;
+    }
+    let (heights, target) = {
+        let columns = lock(&COLUMNS);
+        let column = columns.get(&(dimension.to_owned(), state.column))?;
+        (column.floors(), column.targeted())
+    };
+    let given: Vec<(String, String)> = heights
+        .iter()
+        .map(|y| {
+            let entity = host.mod_block_entity(state.column.contact_at(*y));
+            let name = |key: &str| entity.as_ref().and_then(|e| util::get(&e.nbt, key).map(|t| match t {
+                Tag::String(s) => s.to_string_lossy(),
+                _ => String::new(),
+            }));
+            (name(SHORT_NAME).unwrap_or_default(), name(LONG_NAME).unwrap_or_default())
+        })
+        .collect();
+    let shorts: Vec<String> = given.iter().map(|(short, _)| short.clone()).collect();
+    let numbered = elevator::number_floors(&shorts);
+    let names = numbered.into_iter().zip(given).map(|(short, (_, long))| (short, long)).collect();
+    Some(Floors { coords: state.column, heights, names, target, min: state.min_contact_y, max: state.max_contact_y })
+}
+
+/// `ElevatorTargetFloorPacket.handle` once it is allowed: calls the contact at `y` if it is still one.
+pub(super) fn call_floor(host: &mut dyn Host, dimension: &str, coords: ColumnCoords, y: i32) {
+    let pos = coords.contact_at(y);
+    if host.block(pos) == CONTACT {
+        call_contact(host, dimension, coords, pos);
+    }
+}
+
 fn tick_contact(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     let pos = event.pos;
     let Some((facing, powered, calling, powering)) = contact_state(&*host, pos) else {
@@ -188,21 +255,7 @@ fn tick_contact(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         host.set_block_property(pos, "powered", if on { "true" } else { "false" });
     }
     if reaction.call {
-        // `callToContactAndUpdate`.
-        let (others, snapshot) = {
-            let mut columns = lock(&COLUMNS);
-            let column = columns.entry(key.clone()).or_default();
-            (elevator::call(column, pos[1]), column.clone())
-        };
-        for y in others {
-            let other = coords.contact_at(y);
-            if host.block(other) == CONTACT {
-                host.set_block_property(other, "calling", "false");
-            }
-        }
-        host.set_block_property(pos, "calling", "true");
-        host.update_signal_neighbors(&dimension, pos);
-        save_column(host, coords, &snapshot);
+        call_contact(host, &dimension, coords, pos);
     }
 
     // The contact the cabin stands at powers (`RedstoneContactBlock.hasValidContact`).
@@ -270,7 +323,11 @@ pub(crate) fn solid_sample(
 }
 
 fn saved(entity: &ModBlockEntity) -> Saved {
-    let column = match util::get(&entity.nbt, COLUMN) {
+    saved_nbt(&entity.nbt)
+}
+
+fn saved_nbt(nbt: &Compound) -> Saved {
+    let column = match util::get(nbt, COLUMN) {
         Some(Tag::Compound(c)) => ColumnCoords {
             x: util::int(c, "X"),
             z: util::int(c, "Z"),
@@ -279,19 +336,19 @@ fn saved(entity: &ModBlockEntity) -> Saved {
         _ => ColumnCoords { x: 0, z: 0, side: Dir::North },
     };
     Saved {
-        running: util::boolean(&entity.nbt, RUNNING),
+        running: util::boolean(nbt, RUNNING),
         snapshot: Snapshot {
-            offset: util::float(&entity.nbt, OFFSET).unwrap_or(0.0),
-            speed: util::float(&entity.nbt, SPEED).unwrap_or(0.0),
-            time: util::long(&entity.nbt, SYNC_TIME),
-            target: util::int(&entity.nbt, TARGET),
+            offset: util::float(nbt, OFFSET).unwrap_or(0.0),
+            speed: util::float(nbt, SPEED).unwrap_or(0.0),
+            time: util::long(nbt, SYNC_TIME),
+            target: util::int(nbt, TARGET),
         },
-        initial: util::int(&entity.nbt, INITIAL_OFFSET),
-        contact_y: util::int(&entity.nbt, CONTACT_Y),
-        max_contact_y: util::int(&entity.nbt, MAX_CONTACT_Y),
-        min_contact_y: util::int(&entity.nbt, MIN_CONTACT_Y),
+        initial: util::int(nbt, INITIAL_OFFSET),
+        contact_y: util::int(nbt, CONTACT_Y),
+        max_contact_y: util::int(nbt, MAX_CONTACT_Y),
+        min_contact_y: util::int(nbt, MIN_CONTACT_Y),
         column,
-        assemble: util::int(&entity.nbt, ASSEMBLE),
+        assemble: util::int(nbt, ASSEMBLE),
     }
 }
 

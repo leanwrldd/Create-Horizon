@@ -708,6 +708,10 @@ impl mod_api::Hooks for Mod {
         machines::structure_click::right_click_empty(host, event)
     }
 
+    fn mouse_scrolling(&self, host: &mut dyn mod_api::ClientHost, event: &mut mod_api::MouseScrollingEvent) -> mod_api::Flow {
+        machines::structure_click::mouse_scrolling(host, event)
+    }
+
     fn left_click_block(&self, host: &mut dyn mod_api::ServerHost, event: &mut mod_api::LeftClickBlockEvent) -> mod_api::Flow {
         compat::events::left_click_block(host, event)
     }

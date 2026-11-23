@@ -127,7 +127,10 @@ impl Run {
         let controls = controls_of(moving);
         let refs: Vec<(bool, Option<&str>)> = controls.iter().map(|(d, f)| (*d, f.as_deref())).collect();
         // `ElevatorContraption.disableActorOnStart` does nothing.
-        let disabled = if structure.controls_disable_on_start() {
+        // A list the structure saved (a click on the Controls, `Contraption.disabledActors`) wins.
+        let disabled = if let Some(saved) = &moving.disabled {
+            saved.clone()
+        } else if structure.controls_disable_on_start() {
             rules::disabled_filters(&refs)
         } else {
             Vec::new()
@@ -499,7 +502,7 @@ pub(super) fn with_actor<R>(dimension: &str, controller: Pos, local: Pos, f: imp
 /// `ContraptionControlsMovingInteraction`'s change of `Contraption.disabledActors` and
 /// `setActorsActive`: the Controls' `filter` (a block name, "" for none) clicked. Returns whether the
 /// click disabled the filter; `None` when no actor runs (the structure has no actors).
-pub(super) fn toggle_controls(dimension: &str, controller: Pos, filter: &str) -> Option<bool> {
+pub(super) fn toggle_controls(dimension: &str, controller: Pos, filter: &str) -> Option<(bool, Vec<String>)> {
     with_runs(|runs| {
         let run = runs.get_mut(&(dimension.to_owned(), controller))?;
         let names: Vec<String> = run
@@ -513,6 +516,6 @@ pub(super) fn toggle_controls(dimension: &str, controller: Pos, filter: &str) ->
         for actor in &mut run.actors {
             actor.ctx.disabled = actor.state.name != rules::CONTROLS && rules::is_disabled(&run.disabled, &actor.state.name);
         }
-        Some(disable)
+        Some((disable, run.disabled.clone()))
     })
 }
