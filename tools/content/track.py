@@ -79,6 +79,26 @@ PICKAXE_ONLY = {"track"}
 
 NAMES = {
     "block.create.track": "Train Track",
+    # `create.track.*` and `create.portal_track.*` of Create's `en_us.json`: what the item tells the player.
+    "create.track.ascending_s_curve": "Cannot create sloped S-Bends",
+    "create.track.hold_for_smooth_curve": "Hold %1$s for maximized turn",
+    "create.track.junction_start": "Cannot start connection from a Junction",
+    "create.track.leave_slope_ascending": "Cannot leave this slope while ascending",
+    "create.track.leave_slope_descending": "Cannot leave this slope while descending",
+    "create.track.not_enough_pavement": "Not holding enough pavement blocks",
+    "create.track.not_enough_tracks": "Not holding enough tracks",
+    "create.track.opposing_slopes": "Cannot connect opposing slopes",
+    "create.track.original_missing": "Original block removed, Sneak-click to reset",
+    "create.track.perpendicular": "Cannot connect perpendicularly",
+    "create.track.second_point": "Place track or select a second point",
+    "create.track.selection_cleared": "Selection Cleared",
+    "create.track.slope_turn": "Cannot enter or leave slope on a turn",
+    "create.track.too_far": "Too far away",
+    "create.track.too_sharp": "Turn too sharp",
+    "create.track.too_steep": "Slope too steep",
+    "create.track.turn_90": "Can only turn up to 90 Degrees",
+    "create.track.turn_start": "Cannot start connection from a Turn",
+    "create.track.valid_connection": "Can Connect ✔",
 }
 
 TAGS = {
