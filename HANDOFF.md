@@ -85,8 +85,11 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   assembly, navigation, schedules, trains, carriages, bogeys, observers, the railway manager's tick). Next is the glue:
   track blocks and placement, station and signal blocks, drawing trains, controls, the schedule item, content. Catnip's
   `intersect_ranged` and `intersect_sphere` are reconstructed, unverified (see its README). Glue part 1 is merged
-  (`a1e4d19`: `create:track`, curved placement, graphs kept and saved, curves drawn); part 2 (station, signal,
-  observer, bogeys, schedule item) is next, and a ready prompt for it was written on 2026-11-23;
+  (`a1e4d19`: `create:track`, curved placement, graphs kept and saved, curves drawn). Glue part 2 is merged
+  (`4c953e7`: station, signal, observer, bogeys, Train Casing, schedule item; edge points on the graph, signal states,
+  `/station` and `/schedule` stand-ins). Assembly stops after checking bogeys: no carriages or train yet. Part 3 is
+  next: making the train, drawing carriages, controls; `train_net.rs` should hand its point ticking to
+  `Railways::tick` then (see `rules/trains/README.md`);
 - merged 2026-11-23, unplayed: Deployer schematic printing on structures (`fc27597`), Factory Gauge links to
   Redstone and Display Links (`42abf2c`), structure clicks cancelled on the client, real reach, saved disabled
   actors and elevator floor choice (`22f24bd`); chest storage clicks on structures still open nothing;
