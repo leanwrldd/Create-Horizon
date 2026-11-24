@@ -33,6 +33,15 @@ trains, minecart contraptions (blocked on Horizon) and a few list fields.
 `0b14f8a` on 2026-11-24 when the 2026-11-18 nightly was re-published as `dd67b76` and `0b14f8a` stopped being
 downloadable) and its published SDK. The pin is exact: move `[native] horizon`, the installers, the README and
 `tools/native_build.ps1` together, and check out `horizon-latest` at the same commit.
+
+**Blocked, 2026-11-24:** the mod type-checks on `f1bb66f`, but the launcher's native build fails in `horizon_patched`
+(the crate built from the `local_player_solid` game patch): E0603 on `TryIntoApi`, copied from the `game` module's own
+imports, so every `horizon_client::game` patch target fails on this nightly. Horizon's fix (#18713) was closed
+unmerged; reported as horizon-rust/horizon#21119. The user chose to keep the patch and wait for a nightly with the fix
+rather than drop it. Until then no new install works (test1 and test2 pin `0b14f8a`, no longer downloadable), and
+`v0.1.0-test3` isn't published. When a fixed nightly is out: move the pin there, run a native build, publish test3.
+(Dropping the patch would free the mod from the exact-build pin, at the cost of the local player standing on moving
+structures; seats still ride.)
 - **Parts:** 607 block Parts, 181 block entity Parts and 655 ItemParts.
 - **Hooks:** 70 of the 75 old hooks are wired through `mod/src/compat`.
 - **Old game calls:** 3 of 148 still return a neutral value (`block_states`, `data`, `held`), and no module calls
