@@ -37,7 +37,7 @@ downloadable) and its published SDK. The pin is exact: move `[native] horizon`, 
 **The launcher must be 0.2.82 or newer.** Older launchers fail the game patch's crate (`horizon_patched`) with
 E0603 on `TryIntoApi` (fixed in horizon-rust/horizon#18509; the report this session filed, #21119, was a false alarm
 from launcher 0.2.71 and is closed). With launcher 0.2.108 the mod built on `f1bb66f` on 2026-11-24, patch applied, and
-`v0.1.0-test3` (mod 0.1.2) is published; test1 and test2 are marked as no longer installing.
+`v0.1.0-test3` (mod 0.1.2) was published. test3 fails to install (`unexpected package path: src/.../trains/README.md`: the packager takes only `.rs` and `.toml` under `src/`), so `v0.1.0-test4` (mod 0.1.3, 2026-11-25) replaces it, with the trains notes moved to `docs/`. There is no signed `sdk-f1bb66f...` release, so `horizon-mod build` is run on a copy of `target/package/` inside `horizon-latest/target/` with `.horizon/sdk/api` a junction to the checkout (it builds against the game checkout, no uses table). test1 and test2 are marked as no longer installing.
 - **Parts:** 607 block Parts, 181 block entity Parts and 655 ItemParts.
 - **Hooks:** 70 of the 75 old hooks are wired through `mod/src/compat`.
 - **Old game calls:** 3 of 148 still return a neutral value (`block_states`, `data`, `held`), and no module calls
@@ -129,7 +129,7 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   other mods' tank block entities (`b67432a`; cauldrons stay unconnected, as in Create 6.0.10);
 - the Boiler's particle flood (Port Board `boiler-particles`): needs an in-game look first.
 
-Testers get Create's art in the release files (`v0.1.0-test3`), with the permission of Create's developers, so the
+Testers get Create's art in the release files (`v0.1.0-test4`), with the permission of Create's developers, so the
 old plan of a pack built from each tester's own jar is dropped.
 
 ## Building and testing

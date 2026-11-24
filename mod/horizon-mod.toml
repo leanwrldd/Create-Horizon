@@ -1,6 +1,6 @@
 id = "create"
 name = "Create (Rust)"
-version = "0.1.2"
+version = "0.1.3"
 description = "Create's rotating machines, rewritten in Rust for Horizon."
 authors = ["leanwrldd"]
 api = "0.2"
