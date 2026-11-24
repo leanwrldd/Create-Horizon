@@ -3,7 +3,7 @@
 # install.ps1 is the Windows one).
 #
 #   sh install.sh
-#   sh install.sh --instance my-create --release v0.1.0-test2
+#   sh install.sh --instance my-create --release v0.1.0-test3
 #   sh install.sh --file /path/to/create.hmod                 (a local copy instead; needs python3)
 #   sh install.sh --launcher "/Applications/Horizon Launcher.app/Contents/MacOS/horizon-launcher"
 #
@@ -13,13 +13,13 @@
 set -eu
 
 INSTANCE="create-test"
-RELEASE="v0.1.0-test2"
+RELEASE="v0.1.0-test3"
 FILE=""
 LAUNCHER="${HORIZON_LAUNCHER:-}"
 REPO="https://github.com/leanwrldd/Create-Horizon"
 # The Horizon this build is made for. The mod pins the exact game build (horizon-mod.toml [native]); this nightly
 # provides the game files the build reuses.
-HORIZON="nightly-2026-11-18"
+HORIZON="nightly-2026-11-22-f1bb66f"
 
 while [ $# -gt 0 ]; do
     case "$1" in

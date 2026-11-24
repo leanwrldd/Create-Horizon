@@ -29,8 +29,10 @@ trains, minecart contraptions (blocked on Horizon) and a few list fields.
   mod API. Older glue goes through the compatibility layer in `mod/src/compat`; new code is written on the new API
   directly.
 
-**The mod API migration is done.** The mod builds on the official Nightly 2026-11-18 (Horizon `0b14f8a`) and its
-published SDK.
+**The mod API migration is done.** The mod builds on the official `nightly-2026-11-22-f1bb66f` (Horizon `f1bb66f`, moved from
+`0b14f8a` on 2026-11-24 when the 2026-11-18 nightly was re-published as `dd67b76` and `0b14f8a` stopped being
+downloadable) and its published SDK. The pin is exact: move `[native] horizon`, the installers, the README and
+`tools/native_build.ps1` together, and check out `horizon-latest` at the same commit.
 - **Parts:** 607 block Parts, 181 block entity Parts and 655 ItemParts.
 - **Hooks:** 70 of the 75 old hooks are wired through `mod/src/compat`.
 - **Old game calls:** 3 of 148 still return a neutral value (`block_states`, `data`, `held`), and no module calls
@@ -121,7 +123,7 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   - The old home-built developer version and SDK (`developer-6888…`, `C:\Users\latif\Claude\Projects\horizon-sdk`,
     rebuilt by `tools/dev_horizon_build.ps1`) are a fallback through `-Version` and `-Sdk`.
 - **Check:** `bash tools/check_module.sh all` runs the rules tests and type-checks the whole mod against
-  `C:\Users\latif\Claude\Projects\horizon-latest` (checked out at `0b14f8a`). It takes about 20 seconds when warm.
+  `C:\Users\latif\Claude\Projects\horizon-latest` (checked out at `f1bb66f`). It takes about 20 seconds when warm.
 - **Lock file:** `mod/Cargo.lock` is committed. Remake it with the launcher's `native-lock`, then
   `python tools/pin_lock.py`.
 - **Game patches:** `[[native.mixin]]` rows in `mod/horizon-mod.toml`, with helpers in `mod/src/mixins/`. Today's
@@ -138,7 +140,7 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
 | This project | `C:\Projects\Create-Horizon` (moved here 2026-11-22; `origin`: `github.com/leanwrldd/Create-Horizon`, branch `main`) |
 | Create's Java source (sparse, `mc1.21.1/dev`) | `C:\Users\latif\Claude\Projects\create-java-src` |
 | Create's jar (models, textures, lang; never committed) | `%APPDATA%\horizon\horizon-mods\create-resources\create-1.21.1-6.0.10.jar` |
-| Horizon source we build against (`0b14f8a`, read-only) | `C:\Users\latif\Claude\Projects\horizon-latest` |
+| Horizon source we build against (`f1bb66f`, read-only) | `C:\Users\latif\Claude\Projects\horizon-latest` |
 | Ola's port (MIT, design ideas; uses Parts) | `C:\Users\latif\Claude\Projects\create-horizon-ola` |
 | Delete228's port (MIT, reference) | `C:\Users\latif\Claude\Projects\create-horizon-ref` |
 | Launcher (not on PATH) | `%LOCALAPPDATA%\Programs\Horizon Launcher\horizon-launcher.exe` |

@@ -1,7 +1,7 @@
 # Installs a test build of Create for Horizon into an instance of its own, then builds it.
 #
 #   powershell -ExecutionPolicy Bypass -File install.ps1
-#   powershell -ExecutionPolicy Bypass -File install.ps1 -Instance my-create -Release v0.1.0-test2
+#   powershell -ExecutionPolicy Bypass -File install.ps1 -Instance my-create -Release v0.1.0-test3
 #   powershell -ExecutionPolicy Bypass -File install.ps1 -File C:\path\to\create.hmod     (a local copy instead)
 #
 # Needs the Horizon Launcher (https://playhorizon.dev), signed in with an account that owns Minecraft: Java Edition.
@@ -9,7 +9,7 @@
 # 20 to 30 minutes and a few GB; later ones are quicker.
 param(
     [string]$Instance = "create-test",
-    [string]$Release = "v0.1.0-test2",
+    [string]$Release = "v0.1.0-test3",
     [string]$File = ""
 )
 
@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 $Repo = "https://github.com/leanwrldd/Create-Horizon"
 # The Horizon this build is made for. The mod pins the exact game build (horizon-mod.toml [native]); this nightly
 # provides the game files the build reuses.
-$Horizon = "nightly-2026-11-18"
+$Horizon = "nightly-2026-11-22-f1bb66f"
 
 $launcher = Join-Path $env:LOCALAPPDATA "Programs\Horizon Launcher\horizon-launcher.exe"
 if (-not (Test-Path $launcher)) {

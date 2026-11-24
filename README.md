@@ -32,16 +32,16 @@ takes about 20 to 30 minutes. It's a native mod, unsandboxed and not reviewed by
 this repository.
 
 Or by hand. The mod changes some of the game's own code, so it builds only on the exact Horizon it was made for
-(`nightly-2026-11-18` for the current test builds): an instance on another version leaves it out ("works on another
+(`nightly-2026-11-22-f1bb66f` for the current test builds): an instance on another version leaves it out ("works on another
 version only"). Put an instance on that nightly first:
 
 ```sh
-horizon-launcher install nightly-2026-11-18
-horizon-launcher prepare --version nightly-2026-11-18
+horizon-launcher install nightly-2026-11-22-f1bb66f
+horizon-launcher prepare --version nightly-2026-11-22-f1bb66f
 horizon-launcher instance create create-test
-horizon-launcher instance version create-test nightly-2026-11-18
+horizon-launcher instance version create-test nightly-2026-11-22-f1bb66f
 horizon-launcher mods add-github https://github.com/leanwrldd/Create-Horizon/releases/tag/<tag> --instance create-test --trust-native-code
-horizon-launcher native-build --instance create-test --version nightly-2026-11-18 --trust-native-code
+horizon-launcher native-build --instance create-test --version nightly-2026-11-22-f1bb66f --trust-native-code
 ```
 
 Keep it away from worlds you care about: a world opened without the mod loses its Create blocks. Report bugs with

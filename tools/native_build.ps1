@@ -6,7 +6,7 @@
 #   Start-Process powershell -ArgumentList '-NoExit','-File','tools\native_build.ps1' -PassThru
 param(
     [string]$Instance = "create-new",
-    [string]$Version = "nightly-2026-11-18-0b14f8a",
+    [string]$Version = "nightly-2026-11-22-f1bb66f",
     [string]$Sdk = ""
 )
 
