@@ -56,13 +56,13 @@ the [bug form](https://github.com/leanwrldd/Create-Horizon/issues/new/choose); e
 |---|---:|---:|---:|
 | Kinetics | 52 | 57 | 91% |
 | Materials | 19 | 20 | 95% |
-| Logistics | 41 | 52 | 79% |
+| Logistics | 50 | 52 | 96% |
 | Fluids | 18 | 18 | 100% |
 | Contraptions | 39 | 42 | 93% |
 | Schematics | 5 | 5 | 100% |
 | Curiosities | 12 | 13 | 92% |
 | Palettes | 39 | 39 | 100% |
-| **All** | **225** | **246** | **91.5%** |
+| **All** | **234** | **246** | **95.1%** |
 <!-- progress:end -->
 
 Every block and item registered in Create's `AllBlocks.java` and `AllItems.java` counts once, under the section
