@@ -3,7 +3,7 @@
 # install.ps1 is the Windows one).
 #
 #   sh install.sh
-#   sh install.sh --instance my-create --release v0.1.0-test1
+#   sh install.sh --instance my-create --release v0.1.0-test2
 #   sh install.sh --file /path/to/create.hmod                 (a local copy instead; needs python3)
 #   sh install.sh --launcher "/Applications/Horizon Launcher.app/Contents/MacOS/horizon-launcher"
 #
@@ -13,7 +13,7 @@
 set -eu
 
 INSTANCE="create-test"
-RELEASE="v0.1.0-test1"
+RELEASE="v0.1.0-test2"
 FILE=""
 LAUNCHER="${HORIZON_LAUNCHER:-}"
 REPO="https://github.com/leanwrldd/Create-Horizon"

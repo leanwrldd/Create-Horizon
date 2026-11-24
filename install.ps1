@@ -1,7 +1,7 @@
 # Installs a test build of Create for Horizon into an instance of its own, then builds it.
 #
 #   powershell -ExecutionPolicy Bypass -File install.ps1
-#   powershell -ExecutionPolicy Bypass -File install.ps1 -Instance my-create -Release v0.1.0-test1
+#   powershell -ExecutionPolicy Bypass -File install.ps1 -Instance my-create -Release v0.1.0-test2
 #   powershell -ExecutionPolicy Bypass -File install.ps1 -File C:\path\to\create.hmod     (a local copy instead)
 #
 # Needs the Horizon Launcher (https://playhorizon.dev), signed in with an account that owns Minecraft: Java Edition.
@@ -9,7 +9,7 @@
 # 20 to 30 minutes and a few GB; later ones are quicker.
 param(
     [string]$Instance = "create-test",
-    [string]$Release = "v0.1.0-test1",
+    [string]$Release = "v0.1.0-test2",
     [string]$File = ""
 )
 
