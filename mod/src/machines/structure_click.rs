@@ -577,7 +577,9 @@ fn sit(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, who: 
     let lift = create_kinetics::rules::seat::carried_lift();
     let at = [centre[0] + lift[0], centre[1] + lift[1], centre[2] + lift[2]];
     let adapter = Adapter::Server(host);
-    super::seat::sit_on_structure(&adapter, dimension, found.controller, local, cell, who, at)
+    // A carriage's seats are kept by its train and carriage, not by the anchor block that moves with it.
+    let controller = super::trains::seat_key_of_anchor(&adapter, found.controller).unwrap_or(found.controller);
+    super::seat::sit_on_structure(&adapter, dimension, controller, local, cell, who, at)
 }
 
 #[allow(clippy::too_many_arguments)]

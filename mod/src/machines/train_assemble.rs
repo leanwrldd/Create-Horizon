@@ -210,6 +210,8 @@ pub(super) fn disassemble(host: &mut dyn Host, uuid: Option<u128>, station_pos: 
         if let Some(anchor) = rt.anchor {
             trains::remove_anchor_block(host, anchor);
         }
+        // The riders' markers look for the seat blocks this places (`Contraption.removePassengers` / `addPassengers`).
+        super::seat::release(&*host, trains::seat_key(train_id, *carriage_id));
         engine::place_in_world(host, &rt.structure, &transform, &mut |_, _, _| false);
     }
     trains::forget_train(dimension, train_id);

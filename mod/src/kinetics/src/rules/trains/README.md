@@ -195,8 +195,9 @@ Content (`tools/content/train_controls.py`): the Train Controls (`create:control
   belt, piston and pin), under `translateBogey`'s operations; the bogey blocks themselves are part of the structure.
 - **Solid**: a carriage's anchor is a controller of `solid/` (`Sample::Oriented`, `Rotation::Oriented` of the collider): entities are pushed,
   carried and held up by it, and the local player's mixin collides with it. Clicks on a carriage's blocks work through the structure click
-  (`structure_click.rs`: levers, doors, deployers, storage): a click on the Train Controls starts a drive. A click on a seat does nothing:
-  nothing carries a seated rider's marker along with a carriage yet (`seat::carry` is called by the actors' tick).
+  (`structure_click.rs`: levers, doors, deployers, storage): a click on the Train Controls starts a drive. A click on a seat seats the
+  player: the carriage's tick moves the rider's marker with the seat (`trains::carry_riders`, the same `StructurePose` the solid module
+  uses; seats keyed by `trains::seat_key`, not the moving anchor), and disassembly puts riders back on the seat blocks it places.
 - **Controls**: a click on the Train Controls of a carriage, or `/train drive` near it, starts driving; the client takes the movement keys and
   sends the six keys (`create:train_controls`, a keepalive every 5 ticks), the server holds each key 30 ticks (`HeldKeys`) and runs
   `train_controls::control` each tick; sneaking stops it. Prompts (`Arrived at`, `Departing from`, the approach bar) are the action bar.

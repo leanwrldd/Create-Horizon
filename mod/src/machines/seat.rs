@@ -307,23 +307,36 @@ fn update(id: u32, f: impl FnOnce(&mut Seat)) {
 /// A structure's tick (`AbstractContraptionEntity.positionRider`): the seats among its blocks
 /// (`seats`, local positions) have their riders' markers put where the blocks are at game time `now`.
 pub(super) fn carry(host: &mut dyn Host, controller: Pos, anchor: Pos, seats: &[Pos], pose: &Pose<'_>, now: i64) {
+    let points: Vec<(Pos, [f64; 3])> = seats
+        .iter()
+        .map(|local| {
+            let centre = pose.centre(now as f64, *local);
+            let lift = pose.rotate(now as f64, rules::carried_lift());
+            (*local, [centre[0] + lift[0], centre[1] + lift[1], centre[2] + lift[2]])
+        })
+        .collect();
+    carry_points(host, controller, Some(anchor), &points);
+}
+
+/// Puts the riders' markers of the seats of the structure known as `controller` (`points`: each seat's local position
+/// and where its marker goes). A seat a player sat on before the structure was assembled is found by its cell
+/// (`anchor` plus local) when `anchor` is given. Trains key their carriages by `trains::seat_key`, not a block.
+pub(super) fn carry_points(host: &mut dyn Host, controller: Pos, anchor: Option<Pos>, points: &[(Pos, [f64; 3])]) {
     let dimension = host.dimension().to_owned();
-    for local in seats {
-        let cell = [anchor[0] + local[0], anchor[1] + local[1], anchor[2] + local[2]];
+    for (local, at) in points {
+        let cell = anchor.map(|a| [a[0] + local[0], a[1] + local[1], a[2] + local[2]]);
         let found = BOOK.lock().ok().and_then(|book| {
             book.seats
                 .iter()
                 .find(|s| {
                     s.dimension == dimension
                         && (s.carry == Carry::Moving { controller, local: *local }
-                            || (s.carry == Carry::No && s.pos == cell))
+                            || (s.carry == Carry::No && Some(s.pos) == cell))
                 })
                 .map(|s| s.id)
         });
         let Some(id) = found else { continue };
-        let centre = pose.centre(now as f64, *local);
-        let lift = pose.rotate(now as f64, rules::carried_lift());
-        let at = [centre[0] + lift[0], centre[1] + lift[1], centre[2] + lift[2]];
+        let at = *at;
         update(id, |s| {
             s.carry = Carry::Moving { controller, local: *local };
             s.last = at;

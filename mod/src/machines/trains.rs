@@ -37,6 +37,7 @@ use create_kinetics::rules::contraption::State;
 use create_kinetics::rules::snbt::Value;
 use create_kinetics::rules::trains::carriage::{Carriage, CarriageBogey};
 use create_kinetics::rules::trains::carriage_contraption as cc;
+use create_kinetics::rules::collider::{Rotation, StructurePose};
 use create_kinetics::rules::trains::carriage_pose::{self as pose, CarriagePose, Motion};
 use create_kinetics::rules::trains::graph::{EdgePointType, Uuid};
 use create_kinetics::rules::trains::network::TrackGraph;
@@ -578,6 +579,7 @@ fn update_anchor(
     rt.last_pose = Some(pose_now);
     let moved = before.is_none_or(|b| b != pose_now);
     let initial_yaw = pose::initial_yaw(horizontal_step(rt.direction));
+    carry_riders(host, train_id, carriage.id, rt, &pose_now, initial_yaw);
     // The wheels turn with the distance moved this tick.
     let diff = before.map_or([0.0; 3], |b| [0, 1, 2].map(|i| pose_now.position[i] - b.position[i]));
     if let Some(b) = before {
@@ -651,6 +653,55 @@ fn update_anchor(
     rt.news_at = now;
     rt.news_moving = moved;
     rt.fresh = false;
+}
+
+/// What `seat.rs` knows a carriage's seats by, as a structure's are known by its controller block (a carriage's anchor
+/// moves as it runs): a position no block can have.
+pub fn seat_key(train: Uuid, carriage: i32) -> Pos {
+    let folded = (train as u32) ^ ((train >> 32) as u32) ^ ((train >> 64) as u32) ^ ((train >> 96) as u32);
+    [i32::MIN, folded as i32, carriage]
+}
+
+/// The seat key of the carriage an anchor block draws, if `anchor` is one.
+pub fn seat_key_of_anchor(host: &dyn Host, anchor: Pos) -> Option<Pos> {
+    if host.block(anchor) != ANCHOR {
+        return None;
+    }
+    let entity = host.mod_block_entity(anchor)?;
+    let train = util::get(&entity.nbt, draw::TRAIN).and_then(tag_uuid)?;
+    Some(seat_key(train, util::int(&entity.nbt, draw::CARRIAGE)))
+}
+
+/// `AbstractContraptionEntity.positionRider` for a carriage: the markers of its seats' riders go where the seat
+/// blocks are now, turned with the carriage as the solid module turns it (`OrientedContraptionEntity`).
+fn carry_riders(host: &mut dyn Host, train: Uuid, carriage: i32, rt: &CarriageRt, at: &CarriagePose, initial_yaw: f32) {
+    let seats: Vec<Pos> = rt
+        .structure
+        .blocks
+        .iter()
+        .filter(|b| create_kinetics::rules::seat::colour_of_block(&b.state.name).is_some())
+        .map(|b| b.local)
+        .collect();
+    if seats.is_empty() {
+        return;
+    }
+    let structure = StructurePose {
+        position: at.position,
+        prev_position: at.position,
+        prev_pos_invalid: false,
+        delta_movement: [0.0; 3],
+        rotation: Rotation::Oriented { initial_yaw, pitch: at.pitch, yaw: at.yaw, prev_pitch: at.pitch, prev_yaw: at.yaw },
+        translating: false,
+    };
+    let lift = create_kinetics::rules::seat::carried_lift();
+    let points: Vec<(Pos, [f64; 3])> = seats
+        .iter()
+        .map(|l| {
+            let up = [f64::from(l[0]) + 0.5 + lift[0], f64::from(l[1]) + 0.5 + lift[1], f64::from(l[2]) + 0.5 + lift[2]];
+            (*l, structure.to_global_vector(up, 1.0, false))
+        })
+        .collect();
+    super::seat::carry_points(host, seat_key(train, carriage), None, &points);
 }
 
 /// The anchor's structure, if clicks changed the states of its blocks, becomes the carriage's.
