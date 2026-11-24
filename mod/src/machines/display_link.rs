@@ -20,6 +20,8 @@
 //!
 //! Known differences from Create, for the README:
 //! - Besides the screen, the Wrench doesn't turn the link (Create's `WrenchableDirectionalBlock`).
+//! - A train station's summary takes its station filter from a name tag (the text input of its screen) and its two column
+//!   scroll inputs are one list the Wrench steps through (`trains::display::LAYOUTS`).
 //! - The sources that are in this port only (see the rules' header); a link reading a redstone
 //!   power or a nixie tube notices a change on the tick after, not at once.
 //! - The remembered first lines of sign and lectern runs are kept in memory, not saved.
@@ -46,7 +48,7 @@ use create_kinetics::rules::factory_gauge::PanelPosition;
 use create_kinetics::rules::display_link::Reading;
 
 use super::diodes_signal as signal;
-use super::{factory_gauge, panel_support};
+use super::{factory_gauge, panel_support, train_display};
 use super::{display_link_source as sources, display_link_target as targets};
 use crate::util;
 
@@ -111,6 +113,9 @@ fn read_source(tag: &Compound) -> Option<(Source, Config)> {
     if let Some((key, _)) = source.option() {
         config.option = util::int(tag, key);
     }
+    if let Some(Tag::String(filter)) = util::get(tag, "Filter") {
+        config.filter = Some(filter.to_string_lossy());
+    }
     if util::has(tag, "StartTime") {
         config.start_time = Some(util::long(tag, "StartTime"));
     }
@@ -123,6 +128,9 @@ fn source_tag(source: Source, config: &Config) -> Tag {
     tag.insert("Label".into(), Tag::String(config.label.as_str().into()));
     if let Some((key, _)) = source.option() {
         tag.insert(key.into(), Tag::Int(config.option));
+    }
+    if let Some(filter) = &config.filter {
+        tag.insert("Filter".into(), Tag::String(filter.as_str().into()));
     }
     if let Some(start) = config.start_time {
         tag.insert("StartTime".into(), Tag::Long(start));
@@ -173,6 +181,32 @@ fn read_source_at(host: &mut dyn Host, link: &Link, source: Source, src: Pos, fa
 /// shows (`FactoryPanelSupportBehaviour.notifyLink`).
 pub(super) fn refresh(host: &mut dyn Host, pos: Pos) {
     gather_now(host, pos);
+}
+
+/// `DisplayLinkBlock.notifyGatherers`: every link attached to the block at `source` that reads it writes its target now
+/// (`tickSource`: the refresh count starts again, and a powered link stays still).
+pub(super) fn notify_gatherers(host: &mut dyn Host, source: Pos) {
+    for side in Dir::ALL {
+        let pos = step(source, side);
+        if host.block(pos) != ID {
+            continue;
+        }
+        let Some(entity) = host.mod_block_entity(pos) else {
+            continue;
+        };
+        let Some(facing) = util::facing(&*host, pos, "facing") else {
+            continue;
+        };
+        if facing != side.opposite() || load(&entity.nbt).source.is_none() {
+            continue;
+        }
+        let key = (host.dimension().to_owned(), pos);
+        memory(|m| m.refresh.insert(key, 0));
+        // `getOptionalValue(POWERED).orElse(true)`: a link without the property counts as powered.
+        if host.block_property(pos, "powered").as_deref() == Some("false") {
+            gather_now(host, pos);
+        }
+    }
 }
 
 /// Whether the chunk of `pos` is loaded (`level.isLoaded`).
@@ -289,6 +323,9 @@ fn describe(host: &dyn Host, pos: Pos, facing: Dir, link: &Link) -> String {
             }
             if !config.label.is_empty() {
                 text.push_str(&format!(", label \"{}\"", config.label));
+            }
+            if let Some(filter) = &config.filter {
+                text.push_str(&format!(", stations \"{filter}\""));
             }
             text
         }
@@ -519,12 +556,20 @@ impl Hooks for DisplayLink {
             if !util::first_click(host, player.uuid, pos) {
                 return Flow::Cancel;
             }
+            let summary = host
+                .mod_block_entity(pos)
+                .is_some_and(|e| load(&e.nbt).source.is_some_and(|(source, _)| source == Source::StationSummary));
             edit(host, pos, |link| {
                 if let Some((_, config)) = &mut link.source {
-                    config.label = name.clone();
+                    // A station summary has no label: the name is its station filter (`Filter`).
+                    if summary {
+                        config.filter = Some(name.clone());
+                    } else {
+                        config.label = name.clone();
+                    }
                 }
             });
-            say(host, format!("Label: {name}"));
+            say(host, format!("{}: {name}", if summary { "Station filter" } else { "Label" }));
             return Flow::Cancel;
         }
         Flow::Continue
@@ -565,7 +610,13 @@ fn cycle_source(host: &mut dyn Host, pos: Pos) {
         Some((active, _)) => offered.iter().position(|s| s == active).map_or(0, |i| (i + 1) % offered.len()),
         None => 0,
     };
-    edit(host, pos, |link| link.source = Some((offered[next], Config::default())));
+    // `populateData`: a station summary starts with the name of the station it reads.
+    let station = train_display::station_name(&*host, source_of(&link, pos, facing));
+    edit(host, pos, |link| {
+        let mut config = Config::default();
+        config.populate(offered[next], station.as_deref());
+        link.source = Some((offered[next], config));
+    });
     let Some(entity) = host.mod_block_entity(pos) else {
         return;
     };

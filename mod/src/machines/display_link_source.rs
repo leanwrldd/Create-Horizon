@@ -5,7 +5,8 @@
 //! A source reads the block entities this port has: the speedometer's and stressometer's speed and
 //! network, the cuckoo clock's turning, a Smart Observer's block's items and tanks (through the
 //! observer's filter), a Threshold Switch's levels, the items on belts, depots and weighted
-//! ejectors, a seat's rider, a target block's power and a nixie tube's text.
+//! ejectors, a seat's rider, a target block's power, a nixie tube's text and, for trains, the departures, the status of the
+//! train at a station and the name of the train at an observer (`train_display.rs`).
 
 use create_kinetics::rules::arm_points::block_title;
 use create_kinetics::rules::display_link::{Reading, Source};
@@ -14,7 +15,7 @@ use crate::compat::{Hooks, Host, ItemStack};
 
 use super::chute_inv as inv;
 use super::content_observer_target as observed;
-use super::{nixie_tube, seat, weighted_ejector};
+use super::{nixie_tube, seat, train_display, weighted_ejector};
 use crate::{belt, depot, kinetic, util};
 
 /// A module of shared code: no hooks of its own.
@@ -100,6 +101,10 @@ pub fn read(host: &mut dyn Host, source: Source, source_pos: Pos, facing: Dir) -
         Source::NixieTube => nixie_tube::text_at(&*host, source_pos).map_or(Reading::Missing, Reading::Text),
         // Read from the link's attached panels (`display_link::read_source_at`), not from a block.
         Source::GaugeStatus => Reading::Missing,
+        // `GlobalTrainDisplayData.prepare` is the rules': the reading is the dimension's whole table.
+        Source::StationSummary => Reading::Departures(train_display::departures(host.dimension())),
+        Source::TrainStatus => Reading::Name(train_display::train_status(&*host, source_pos)),
+        Source::ObservedTrainName => Reading::Name(train_display::observed_train_name(&*host, source_pos)),
     }
 }
 

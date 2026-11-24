@@ -273,7 +273,7 @@ pub fn deliver(
         link,
         &exists,
         now,
-        &|layout, _| link_rules::load_flap_layout(source, &cfg, reading, layout, &|gaps| max_char_count(x_size, gaps)),
+        &|layout, _| link_rules::load_flap_layout(source, &cfg, reading, layout, x_size, &|gaps| max_char_count(x_size, gaps)),
     );
     host.change_mod_block_entity(controller, &mut |e| write_board(&mut e.nbt, &board));
     host.block_entity_sync(controller);

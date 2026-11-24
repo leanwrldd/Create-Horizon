@@ -6,8 +6,9 @@
 //! `rules::value_box_blocks`) and powers the block (`powered`) while the point is activated, 15 on every side.
 //!
 //! Known differences from Create, for the README:
-//! - The computer behaviour isn't there (`TrainPassEvent`), nor the display source (`OBSERVED_TRAIN_NAME`):
-//!   `DisplayLinkBlock.notifyGatherers` isn't called.
+//! - The computer behaviour isn't there (`TrainPassEvent`). The display source (`OBSERVED_TRAIN_NAME`) is in
+//!   `rules::display_link`, read through `train_display.rs`, and a change of power writes the links attached
+//!   (`DisplayLinkBlock.notifyGatherers`).
 //! - The filter is matched as an item id (a Filter item as its own id): the matching of trains' cargo is part 3's
 //!   (`TrainWorld::item_matches`).
 //! - The overlay on the track (`TRACK_OBSERVER_OVERLAY`) isn't drawn (see `track_signal.rs`).
@@ -22,6 +23,7 @@ use crate::compat::{
 
 use super::chute_inv;
 use super::diodes_signal as signal;
+use super::display_link;
 use super::train_net as net;
 
 pub const OBSERVER: &str = "create:track_observer";
@@ -65,6 +67,7 @@ fn tick(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         host.set_block_property(pos, "powered", if now { "true" } else { "false" });
         let dimension = host.dimension();
         host.update_signal_neighbors(dimension, pos);
+        display_link::notify_gatherers(host, pos);
     }
     let powered = host.block_property(pos, "powered").as_deref() == Some("true");
     net::set_source(level, pos, rules::observer_signal(powered));
