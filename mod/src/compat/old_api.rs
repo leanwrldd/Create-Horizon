@@ -507,6 +507,8 @@ pub struct InteractEntityEvent<'a> {
     pub entity: i32,
     pub kind: &'a str,
     pub stack: Option<&'a ItemStack>,
+    /// The click is the main hand's (the hook is heard once for each hand, main first).
+    pub main_hand: bool,
 }
 
 pub struct StateForPlacementEvent<'a> {

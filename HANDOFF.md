@@ -98,7 +98,7 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   straight station track (`/station assembly`, Train Casing on the track, Super Glue, `/station assemble`), watch the carriage appear on
   the next tick, `/train drive`, drive, `/train info`, stop at a station and `/station disassemble`, save and reload with a train standing
   still and one moving, ride a slope or a curve (pose and bogey angles), a Schedule in the station slot, and the frame time with a long
-  train (the anchor's update tag carries the structure every other tick while moving). Left for later: `rules/trains/README.md`'s "Next".
+  train (the anchor's update tag carries the structure every other tick while moving). **Part 4 (branch `worktree-agent-a285f9aef99a726ef`, unmerged, unplayed):** carriage cargo and fuel (`train_cargo.rs`), mobs seated on carriage seats as conductors, handing a Schedule to one or to a Blaze Burner (`train_riders.rs`), the Train Doors opening at a station by its door control (`train_doors.rs`, `/station doors`); the test list is in `rules/trains/README.md` ("Glue part 4"). Left for later: `rules/trains/README.md`'s "Next".
   Catnip's `intersect_ranged` and `intersect_sphere` are reconstructed, unverified (see its README);
 - merged 2026-11-23, unplayed: Deployer schematic printing on structures (`fc27597`), Factory Gauge links to
   Redstone and Display Links (`42abf2c`), structure clicks cancelled on the client, real reach, saved disabled

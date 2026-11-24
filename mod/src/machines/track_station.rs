@@ -19,7 +19,8 @@
 //!   sneaking hand takes it out) is the auto-schedule slot (`depotBehaviour`, `applyAutoSchedule`).
 //! - Not drawn: the flag (`StationRenderer`), the overlay on the track and the assembly outlines (`TRACK_ASSEMBLING_OVERLAY`,
 //!   the green and red bogey spots): `/station` tells the bogey offsets instead.
-//! - No door controls (`DoorControlBehaviour`), no real depot behaviour (the slot holds one Schedule), no map markers (`StationMarker`), no computer
+//! - The door control (`DoorControlBehaviour`) is `/station doors <all|north|east|south|west|none>` (saved as `DoorControl`; the
+//!   carriages' doors read it, `train_doors.rs`). No real depot behaviour (the slot holds one Schedule), no map markers (`StationMarker`), no computer
 //!   behaviour, no display sources, no package ports (`attachPackagePort`).
 //! - Waterlogging is left out, as elsewhere.
 
@@ -31,6 +32,7 @@ use create_kinetics::rules::trains::edge_blocks::{
     self as rules, AssemblyArea, EditStep, StationCommand, StationEdit, TrackClick,
 };
 use create_kinetics::rules::trains::graph::{EdgePointType, TrackNodeLocation};
+use create_kinetics::rules::trains::train_doors::DoorControl;
 use create_kinetics::rules::trains::graph_helper::TrackQuery;
 use create_kinetics::rules::trains::propagator::TrackWorld;
 use create_kinetics::rules::trains::station::{
@@ -55,6 +57,8 @@ use crate::util;
 pub const STATION: &str = "create:track_station";
 const RAILWAY_CASING: &str = "create:railway_casing";
 const NAME: &str = "StationName";
+/// `DoorControlBehaviour.write`: `NBTHelper.writeEnum(nbt, "DoorControl", mode)`.
+const DOOR_CONTROL: &str = "DoorControl";
 /// The Schedule item left in the station's slot (`depotBehaviour`, `getAutoSchedule`).
 const AUTO_SCHEDULE: &str = "AutoSchedule";
 const SMALL_BOGEY: &str = "create:small_bogey";
@@ -239,6 +243,8 @@ fn station_name(host: &dyn Host, pos: Pos) -> String {
 fn describe(host: &dyn Host, pos: Pos) -> Vec<String> {
     let name = station_name(host, pos);
     let mut lines = vec![format!("Train Station '{name}'")];
+    // The Onboard Door Control (`DoorControlBehaviour`): which doors the train's carriages open here.
+    lines.push(format!("Onboard Door Control: {} (/station doors <all | north | east | south | west | none>)", door_control(host, pos).long()));
     if !assembling(host, pos) {
         lines.push("Not assembling. /station assembly enters assembly mode; /station name <text> renames it.".to_owned());
         return lines;
@@ -261,6 +267,15 @@ fn describe(host: &dyn Host, pos: Pos) -> Vec<String> {
         }
     }
     lines
+}
+
+/// The station's `doorControls.mode` (all, until one is set).
+fn door_control(host: &dyn Host, pos: Pos) -> DoorControl {
+    let saved = host.mod_block_entity(pos).and_then(|e| match util::get(&e.nbt, DOOR_CONTROL) {
+        Some(Tag::String(s)) => Some(s.to_string_lossy()),
+        _ => None,
+    });
+    DoorControl::read(saved.as_deref())
 }
 
 fn say_error(host: &mut dyn Host, uuid: u128, error: &AssemblyError) {
@@ -430,6 +445,16 @@ fn apply_edit(host: &mut dyn Host, uuid: u128, pos: Pos, edit: &StationEdit) {
     for step in steps {
         match step {
             EditStep::DropSchedule => drop_schedule(host, uuid, pos),
+            // `be.doorControls.set(doorControl)`: the mode is saved only when it changes (`notifyUpdate`).
+            EditStep::DoorControl(mode) => {
+                if door_control(&*host, pos) != mode {
+                    host.change_mod_block_entity(pos, &mut |e| {
+                        e.nbt.insert(DOOR_CONTROL.into(), Tag::String(mode.constant().into()));
+                    });
+                    host.block_entity_sync(pos);
+                }
+                net::tell(host, uuid, format!("Onboard Door Control: {}", mode.long()));
+            }
             EditStep::Rename(name) => {
                 host.change_mod_block_entity(pos, &mut |e| {
                     e.nbt.insert(NAME.into(), Tag::String(name.as_str().into()));
