@@ -89,7 +89,8 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
 **Left:**
 - play-testing everything above (test plans are in the merge commits' agents' notes and on the board rows);
 - trains: the rules are merged in three parts (`rules/trains/`) and the glue in three: part 1 (`a1e4d19`, track), part 2 (`4c953e7`,
-  station, signal, observer, bogeys, Train Casing, schedule item). **Part 3 (branch `trains-glue-3`, unmerged, unplayed):** assembly and
+  station, signal, observer, bogeys, Train Casing, schedule item). **Part 3 (merged `d46b3b5`, unplayed; a moving carriage sends only its
+  pose, `d4a15f4`; seats on a carriage carry riders, `ab1473a`):** assembly and
   disassembly at the station, `Railways::tick` from the level tick, trains saved in the level attachment `create:trains`, each carriage
   drawn by an anchor block entity in an invisible block that follows it (`create:carriage_anchor`, why in `rules/trains/README.md`),
   bogeys with turning wheels, carriages solid (`solid::Sample::Oriented`), driving with W/S/A/D/Space/Sneak (a click on `create:controls` or
@@ -101,7 +102,8 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   Catnip's `intersect_ranged` and `intersect_sphere` are reconstructed, unverified (see its README);
 - merged 2026-11-23, unplayed: Deployer schematic printing on structures (`fc27597`), Factory Gauge links to
   Redstone and Display Links (`42abf2c`), structure clicks cancelled on the client, real reach, saved disabled
-  actors and elevator floor choice (`22f24bd`); chest storage clicks on structures still open nothing;
+  actors and elevator floor choice (`22f24bd`); a chest, barrel or shulker box on a structure opens a chest view of
+  its slots (`0c1b52c`);
 - Ponder: bearings, glue, belt items, pulleys, deployers, arms and particles animate (0d8653f). Then: `modifyBlockEntityNBT`
   (the `put*`/`writeEnum`/`saveOptional` calls become an `nbt` op the player merges into the drawn block entity, so
   every renderer that reads the key Create saves shows it), `setFilterData`, Harvester/Roller `setAnimatedSpeed`,
@@ -111,13 +113,14 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   inventories, recipes and display text (`ponder_storyboards.py` prints what it skips), `modifyBlock` that reads the
   old state, parrots, carts, `showFilterSlotInput`, `toggleControls`, `hideElement`, `propagatePipeChange`, trains;
 - minecart contraptions (blocked: nothing can draw a structure on a vanilla minecart);
-- Deployer schematic printing on a structure (clicking levers, doors, trapdoors, gates, seats, Deployers and Controls
-  on a moving structure is merged, `006778e`; client-side click cancelling and the elevator Controls branch are not);
-- Factory Gauge links to Redstone and Display Links (items now carry frequencies and orders, the click picks the panel,
-  arrows draw, `/gauge move` relocates: `01b5a40`);
-- merged 2026-11-23, unplayed: Mixer brewing (`507bcfc`; the brewing recipe JSON field names are a guess), pumps and
-  pipes joining other mods' tank block entities (`b67432a`; cauldrons stay unconnected, as in Create 6.0.10);
-- a route for other testers to get Create's art: a pack built from each tester's own Create jar.
+- merged 2026-11-23, unplayed: clicking levers, doors, trapdoors, gates, seats, Deployers and Controls on a moving
+  structure (`006778e`); items carrying frequencies and orders, the gauge click picking the panel, arrows, `/gauge move`
+  (`01b5a40`); Mixer brewing (`507bcfc`; the brewing recipe JSON field names are a guess), pumps and pipes joining
+  other mods' tank block entities (`b67432a`; cauldrons stay unconnected, as in Create 6.0.10);
+- the Boiler's particle flood (Port Board `boiler-particles`): needs an in-game look first.
+
+Testers get Create's art in the release files (`v0.1.0-test3`), with the permission of Create's developers, so the
+old plan of a pack built from each tester's own jar is dropped.
 
 ## Building and testing
 
