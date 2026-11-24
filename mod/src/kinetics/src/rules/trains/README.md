@@ -1,4 +1,4 @@
-# Trains, parts 1 to 3: the rules foundation, stations, navigation, schedules, the train itself
+# Trains, parts 1 to 4: the rules foundation, stations, navigation, schedules, the train itself, the display data and the relocator
 
 Pure rules (no game types) for Create 6.0.10's train system, ported from
 `create-java-src/src/main/java/com/simibubi/create/content/trains/`. Tests sit beside each file.
@@ -37,6 +37,8 @@ Registered through `tools/gen_modules.py`, which now also lists a rules folder w
 | `carriage_contraption.rs` | `entity/CarriageContraption.java`, `AbstractBogeyBlock.getStickySurfaces` (in `contraption::search`) | what a carriage's blocks are: bogeys, the second bogey, Train Controls facing, conductor seats, `assemble`'s verdict and errors |
 | `train_nbt.rs` | `Train`, `Carriage`, `CarriageBogey`, `TravellingPoint`, `Navigation`, `ScheduleRuntime` (`write` / `read`), `TrackNodeLocation.write` | a train as an NBT tree and back against the rebuilt graph |
 | `train_controls.rs` | `CarriageContraptionEntity.startControlling` / `control`, `ControlsServerHandler`, `ControlsHandler`, `ControlsUtil`, `TrainStatus` | driving by hand: the held keys with their 30-tick keepalive, `control` (target speed, steering, approaching a station, the prompts), the train status lines |
+| `display.rs` | `display/GlobalTrainDisplayData`, `displayLink/source/{StationSummary,TrainStatus}DisplaySource`, `ObservedTrainNameSource`, `ScheduleRuntime.getWaitingStatus` and each condition's `getWaitingStatus` | the departure board's table (`refresh` from every train's `submitPredictions`, `prepare` by glob filter and sort), the station summary's rows and flap layout, the train status line (only while the train waits at the station), the observed train's name, the English of every waiting status |
+| `relocator.rs` | `entity/TrainRelocator`, `TrainRelocationPacket` | `relocate` (the probe walking the wheels back from the clicked spot, blocked by the end of the track, a portal or another train; then the train takes its places, forgets its signals and destination, and stops), the session's checks and messages |
 
 Design: Java object references become ids (`NodeId`, edge = `(from, to)`, point = `(type, uuid)`).
 `RailNetworks` is `GlobalRailwayManager`'s graphs + signal edge groups; whatever Java does to trains
@@ -117,8 +119,7 @@ NBT/packets for trains and carriages, `Carriage` entity handling (`manageEntitie
 passengers, `alignEntity`, `createEntity`), `CarriageBogey.updateAngles`/`updateCouplingAnchor` (rendering), honking and
 steam, advancements except the red-signal event, `CarriageContraption` (blocks, actors, storage, seats), bogey styles,
 the station block's states and `StationEditPacket`, `TrackGraphHelper.getGraphLocationAt` (reads track blocks),
-`TrackTargetingBehaviour`'s rendering and `transform`'s structure transform, `RailwaySavedData`, `TrainRelocator`,
-`GlobalTrainDisplayData`.
+`TrackTargetingBehaviour`'s rendering and `transform`'s structure transform, `RailwaySavedData`.
 
 ## Glue part 1: the track (merged with this folder's rules; not played)
 
@@ -215,12 +216,54 @@ Differences and gaps (what is *not* Create):
   whose track never comes back stays as the saved anchors draw it. The graphs are still rebuilt from the track blocks.
 - The first full run of trains in game has not been done: see HANDOFF.md for what to check.
 
+## Glue part 4: what the trains tell the world, and putting a train back (not played)
+
+Rules in `display.rs` and `relocator.rs`; the glue, in `mod/src/machines/`: `train_display.rs` (the table of predictions refreshed
+every 100 ticks per dimension, the stations that ask their Display Links to write, the three readers), `train_relocate.rs` (the
+Wrench session), and the changes in `display_link.rs`, `display_link_source.rs`, `flap_display.rs` and `track_observer.rs`.
+
+**Display sources** (`AllDisplaySources`: `station_summary`, `train_status` on `create:track_station`, `observed_train_name` on
+`create:track_observer`): `rules::display_link::Source` has three more variants, found by `sources_for`, with the saved ids
+`create:station_summary`, `create:train_status` and `create:observed_train_name`.
+- **Station summary**: a flap-display-only source (`provideText` is `EMPTY`, so a sign or lectern gets one empty line). Its rows are
+  `display::station_summary_rows` (minutes, unit, train, title and, when the filter has a `*`, the platform) and its layout
+  `station_summary_layout` (`StationSummary<name column><has platform><platform column>`), which needed the board's width: `load_flap_layout`
+  now takes `x_size`. The filter starts as the station's name (`populateData`, taken when the source is chosen) and is set with a
+  **name tag**; the two column scroll inputs (`NameColumn` 0 to 73, `PlatformColumn` 0 to 16) are one option the Wrench steps through
+  (`display::LAYOUTS`: 50/3, 25/3, 73/3, 50/0, 50/6, 0/3).
+- **Train status**: the waiting status of the train standing at the station (`getPresentTrain`), empty unless it has a running schedule
+  waiting at a stop that isn't the last of a non-cyclic one. "Players Seated" shows 0 passengers (no carriage entities).
+- **Observed train name**: the train the observer's edge point is activated by (`TrackObserver.getCurrentTrain`), refreshed every 400
+  ticks (and when the observer's power changes: `track_observer.rs` now calls `display_link::notify_gatherers`, `DisplayLinkBlock.notifyGatherers`).
+- A station whose train's runtime has `displayLinkUpdateRequested` writes its links the same tick (`StationBlockEntity.tick`).
+
+**GlobalTrainDisplayData**: `refresh` runs for every train with an unpaused schedule that isn't derailed and has a graph, through a
+`ScheduleCtx` on the train itself. One table per dimension's `Railways` (Create has one for the manager); the HashMap's order between
+predictions that tie is the destination's order here.
+
+**TrainRelocator**: `/train relocate` with a Wrench in hand starts it on the nearest train (Create: a Wrench click on one of its carriages,
+`handleSpecialInteractions`, which would be an edit of `structure_click.rs`); the next Wrench click on a piece of straight track puts the
+train there (`getNearestTrackAxis` from the look, `getGraphLocationAt`), a sneak-click or putting the Wrench away ends it. The client's
+preview (green and red line, "Can relocate to here") isn't there; a failed click says "Cannot relocate Train to here". Curves can't be
+clicked (a client ray in Create). The session ends when the train moves (`cannot_relocate_moving`). A derailed train's graph is none, so
+(as in Create) only other derailed trains count as in its way.
+
+**Map markers** (`StationMarker`, `StationMapData`, `MapItemSavedDataMixin`, `StationMapDecorationRenderer`) are **not ported**. Horizon does
+have map decorations: the client hook `map_decorations` (`MapInfo` with the map's id, centre, scale and dimension, and a `MapDecoration` of a
+sprite, half-pixel position and rotation, drawn every frame), `map_decoration_types` (a registered type is drawn from an item's
+`minecraft:map_decorations` entries) and `level_map_data` (read only). What it can't do: (1) a decoration has no text, and Create draws the
+station's name under the icon; (2) "nothing is saved in the map", where Create toggles the marker in the shared `MapItemSavedData` (every copy
+of the map sees it) and prunes it when the station changes (`checkStations`), so the markers would live in a mod attachment keyed by the map id
+and be sent to every client, or in each stack's component (per copy); (3) the icon is `assets/create/textures/map/decorations/station.png`
+of the jar, which would have to be imported at build time as an atlas sprite whose name couldn't be checked without the game. The maths
+(`addStationMarker`'s 63 pixel window and `(int)(local * 2 + 0.5)`, `toggleStation`) is small once those are decided.
+
 ## Next
 
 1. Play-test glue part 3 (HANDOFF.md lists what to watch).
-2. Train doors (`TrainDoorBlock`, `DoorControlBehaviour`), the station's door controls, display sources (`StationSummary`, `TrainStatus`
-   sources, `TrainDisplay`), map markers (`StationMarker`, `StationMapData`), portals (`AllPortalTracks`, the carriage cutoffs), the
-   station screens, `TrainRelocator`, `GlobalTrainDisplayData`.
+2. Train doors (`TrainDoorBlock`, `DoorControlBehaviour`), the station's door controls, `TrainDisplay`, map markers (see glue part 4),
+   portals (`AllPortalTracks`, the carriage cutoffs), the station screens, the Wrench click on a carriage that starts a relocation, and
+   the relocation preview.
 3. The track overlays of edge points, the station's flag and assembly outlines, and edge points on curved track (picking a point on a
    curve with the cursor), the girder and tilt of a curve.
 4. Cargo: `TrainCargoManager` over the carriages' chests, barrels and vaults (fuel, cargo conditions), passengers and seated conductors,

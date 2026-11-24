@@ -9,15 +9,19 @@
 //! Known differences from Create, for the README:
 //! - Only the sources of blocks this port has: speedometers, stressometers, cuckoo clocks (time
 //!   and stopwatch), smart observers (items and fluids), threshold switches, belts, depots and
-//!   weighted ejectors (item names), seats, a target block (redstone power) and nixie tubes. The
-//!   boiler, scoreboard, death count, enchanting power, tunnel, train, elevator, package and
-//!   factory gauge sources are not here (their blocks aren't, or Horizon gives no way to read them).
+//!   weighted ejectors (item names), seats, a target block (redstone power), nixie tubes, factory
+//!   gauges and, for trains, the station (departure board and schedule status) and the observer
+//!   (train name). The boiler, scoreboard, death count, enchanting power, tunnel, elevator and package
+//!   sources are not here (their blocks aren't, or Horizon gives no way to read them).
+//! - A station summary's two column scroll inputs are a short list of pairs the Wrench steps through
+//!   (`trains::display::LAYOUTS`), and its station filter is set with a name tag.
 //! - Text is plain: Create's styled components (colours in the boiler's lines, translatable
 //!   names) become plain strings, and a name is the item's id's last part where the game's own
 //!   name for it can't be asked.
 //! - The configuration screen is replaced by clicks (see the glue's header).
 
 use super::flap_display::{Layout, MONOSPACE, Section, WIDE_MONOSPACE};
+use super::trains::display::{self as train_display, GlobalTrainDisplayData};
 
 /// `CLogistics.displayLinkRange` (`displayLinkRange`, 64): blocks the target may be away.
 pub const RANGE: i32 = 64;
@@ -46,6 +50,12 @@ pub enum Source {
     NixieTube,
     /// `FactoryGaugeDisplaySource` (`gauge_status`): the panels a Display Link is attached to, one row each.
     GaugeStatus,
+    /// `StationSummaryDisplaySource` (`station_summary`): the departure board of a station, for a Display Board only.
+    StationSummary,
+    /// `TrainStatusDisplaySource` (`train_status`): what the train at the station waits for.
+    TrainStatus,
+    /// `ObservedTrainNameSource` (`observed_train_name`): the name of the train a Train Observer sees.
+    ObservedTrainName,
 }
 
 /// How a source builds its flap display layout (`loadFlapDisplayLayout`).
@@ -65,10 +75,12 @@ enum Shape {
     Nixie,
     ValueList,
     FluidList,
+    /// `StationSummaryDisplaySource`: rows of sections for a board, nothing for any other target.
+    Stations,
 }
 
 impl Source {
-    pub const ALL: [Source; 14] = [
+    pub const ALL: [Source; 17] = [
         Source::KineticSpeed,
         Source::KineticStress,
         Source::TimeOfDay,
@@ -83,6 +95,9 @@ impl Source {
         Source::RedstonePower,
         Source::NixieTube,
         Source::GaugeStatus,
+        Source::StationSummary,
+        Source::TrainStatus,
+        Source::ObservedTrainName,
     ];
 
     /// The id Create registers it under (`AllDisplaySources`).
@@ -102,6 +117,9 @@ impl Source {
             Source::RedstonePower => "create:redstone_power",
             Source::NixieTube => "create:nixie_tube",
             Source::GaugeStatus => "create:gauge_status",
+            Source::StationSummary => "create:station_summary",
+            Source::TrainStatus => "create:train_status",
+            Source::ObservedTrainName => "create:observed_train_name",
         }
     }
 
@@ -126,6 +144,9 @@ impl Source {
             Source::RedstonePower => "Redstone Power",
             Source::NixieTube => "Copy Nixie Tubes",
             Source::GaugeStatus => "Factory Gauge Status",
+            Source::StationSummary => "Train Station Summary",
+            Source::TrainStatus => "Train Schedule Status",
+            Source::ObservedTrainName => "Detected Train Name",
         }
     }
 
@@ -134,7 +155,8 @@ impl Source {
             Source::KineticSpeed | Source::CountItems => Shape::Numeric,
             Source::KineticStress | Source::FillLevel | Source::RedstonePower => Shape::Percent,
             Source::TimeOfDay | Source::Stopwatch => Shape::Instant,
-            Source::CountFluids | Source::EntityName => Shape::Line,
+            Source::CountFluids | Source::EntityName | Source::TrainStatus | Source::ObservedTrainName => Shape::Line,
+            Source::StationSummary => Shape::Stations,
             Source::ItemNames => Shape::Names,
             Source::NixieTube => Shape::Nixie,
             Source::ListItems | Source::GaugeStatus => Shape::ValueList,
@@ -144,13 +166,15 @@ impl Source {
 
     /// Whether it makes a single line (`SingleLineDisplaySource`).
     pub fn is_single_line(self) -> bool {
-        !matches!(self.shape(), Shape::ValueList | Shape::FluidList)
+        !matches!(self.shape(), Shape::ValueList | Shape::FluidList | Shape::Stations)
     }
 
     /// `getPassiveRefreshTicks`.
     pub const fn refresh_ticks(self) -> i32 {
         match self {
             Source::Stopwatch => 20,
+            // `ObservedTrainNameSource.getPassiveRefreshTicks`.
+            Source::ObservedTrainName => 400,
             _ => PASSIVE_REFRESH,
         }
     }
@@ -158,7 +182,9 @@ impl Source {
     /// `allowsLabeling` for a link writing to `target`.
     pub fn allows_labeling(self, target: Target) -> bool {
         match self {
-            Source::ListItems | Source::ListFluids | Source::GaugeStatus => false,
+            Source::ListItems | Source::ListFluids | Source::GaugeStatus | Source::StationSummary => false,
+            // `TrainStatusDisplaySource.allowsLabeling`.
+            Source::TrainStatus => false,
             Source::NixieTube => target != Target::NixieTube,
             _ => true,
         }
@@ -177,10 +203,21 @@ impl Source {
             Source::FillLevel => ("Mode", &["Percent", "Progress Bar"]),
             Source::RedstonePower => ("Mode", &["Number", "Progress Bar"]),
             Source::ListItems | Source::ListFluids | Source::GaugeStatus => ("Format", &["Shortened", "Full Number"]),
+            Source::StationSummary => ("Layout", &STATION_LAYOUT_NAMES),
             _ => return None,
         })
     }
 }
+
+/// The names of `trains::display::LAYOUTS`, in the same order.
+pub const STATION_LAYOUT_NAMES: [&str; 6] = [
+    "Train column 50%, platform column 3",
+    "Train column 25%, platform column 3",
+    "Train column 73%, platform column 3",
+    "Train column 50%, platform column 0",
+    "Train column 50%, platform column 6",
+    "Train column 0%, platform column 3",
+];
 
 /// `DisplaySource.BY_BLOCK` and `BY_BLOCK_ENTITY`: the sources that read the block `block`, in
 /// the order Create registers them (the order the screen lists them in).
@@ -197,6 +234,9 @@ pub fn sources_for(block: &str) -> Vec<Source> {
         "minecraft:target" => vec![Source::RedstonePower],
         // `AllDisplaySources`: `factory_gauge_source_gauge_status`.
         "create:factory_gauge" => vec![Source::GaugeStatus],
+        // `track_station_source_station_summary`, `track_station_source_train_status`, `track_observer_source_observed_train_name`.
+        "create:track_station" => vec![Source::StationSummary, Source::TrainStatus],
+        "create:track_observer" => vec![Source::ObservedTrainName],
         b if b.starts_with("create:") && b.ends_with("_seat") => vec![Source::EntityName],
         b if super::nixie_tube::dye_of_block(b).is_some() => vec![Source::NixieTube],
         _ => Vec::new(),
@@ -262,12 +302,14 @@ impl Stats {
 // --- configuration -------------------------------------------------------------------------------
 
 /// The source's saved configuration (`DisplayLinkBlockEntity.sourceConfig`): the label, the one
-/// option and the stopwatch's start.
+/// option, the stopwatch's start and the station summary's filter.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Config {
     pub label: String,
     pub option: i32,
     pub start_time: Option<i64>,
+    /// `Filter` of a station summary: a glob of station names; absent until `populateData` (or a name tag) sets it.
+    pub filter: Option<String>,
 }
 
 impl Config {
@@ -279,6 +321,14 @@ impl Config {
                 true
             }
             None => false,
+        }
+    }
+
+    /// `StationSummaryDisplaySource.populateData` (the columns are the option's defaults already): the filter is the name of
+    /// the station the source block is, when it has none.
+    pub fn populate(&mut self, source: Source, station_name: Option<&str>) {
+        if source == Source::StationSummary && self.filter.is_none() {
+            self.filter = train_display::default_filter(station_name);
         }
     }
 
@@ -312,6 +362,8 @@ pub enum Reading {
     Name(Option<String>),
     Power(i32),
     Text(String),
+    /// What the trains of the dimension have predicted (`GlobalTrainDisplayData.statusByDestination`).
+    Departures(GlobalTrainDisplayData),
 }
 
 /// What a source makes of a reading, for a line of text. `None` is Create's `EMPTY_LINE`.
@@ -516,7 +568,7 @@ fn line_of(source: Source, config: &mut Config, reading: &Reading, stats: &Stats
             Reading::Names(names) if !names.is_empty() => Some(names.concat()),
             _ => None,
         },
-        Source::EntityName => match reading {
+        Source::EntityName | Source::TrainStatus | Source::ObservedTrainName => match reading {
             Reading::Name(Some(name)) => Some(name.clone()),
             _ => None,
         },
@@ -524,7 +576,7 @@ fn line_of(source: Source, config: &mut Config, reading: &Reading, stats: &Stats
             Reading::Text(text) => Some(text.clone()),
             _ => None,
         },
-        Source::ListItems | Source::ListFluids | Source::GaugeStatus => None,
+        Source::ListItems | Source::ListFluids | Source::GaugeStatus | Source::StationSummary => None,
     }
 }
 
@@ -628,6 +680,12 @@ pub fn provide_text(
 
 /// `provideFlapDisplayText`: the rows of a board, each the texts of its line's sections.
 pub fn provide_flap_text(source: Source, config: &mut Config, reading: &Reading, stats: &Stats) -> Vec<Vec<String>> {
+    if source == Source::StationSummary {
+        let Reading::Departures(data) = reading else {
+            return Vec::new();
+        };
+        return train_display::station_summary_rows(data, config.filter.as_deref().unwrap_or(""), stats.rows);
+    }
     if !source.is_single_line() {
         let Reading::List(entries) = reading else {
             return Vec::new();
@@ -660,19 +718,30 @@ fn value_section(shape: Shape, bar: bool, numeric_text: bool, size: i32) -> Sect
 }
 
 /// `loadFlapDisplayLayout` of a source: configures `layout` for the row `row` it is about to get,
-/// for a board that holds `max_chars(gaps)` characters a line. `reading` is what the rows are
+/// for a board that holds `max_chars(gaps)` characters a line and is `x_size` blocks wide. `reading` is what the rows are
 /// made from (a list source sizes its columns by the largest value).
 pub fn load_flap_layout(
     source: Source,
     config: &Config,
     reading: &Reading,
     layout: &mut Layout,
+    x_size: i32,
     max_chars: &dyn Fn(i32) -> i32,
 ) {
     let shape = source.shape();
     let bar = progress_of(source, config, reading).bar;
     let numeric_text = matches!(reading, Reading::Text(t) if t.parse::<i32>().is_ok());
     match shape {
+        Shape::Stations => {
+            let (name_column, platform_column) = train_display::layout_columns(config.option);
+            train_display::station_summary_layout(
+                layout,
+                config.filter.as_deref().unwrap_or(""),
+                name_column,
+                platform_column,
+                x_size,
+            );
+        }
         Shape::ValueList => {
             let value_first = true;
             let shorten = config.option == 0;
@@ -1126,37 +1195,37 @@ mod tests {
         let max: &dyn Fn(i32) -> i32 = &|gaps| 12 - gaps;
         let mut layout = Layout::new(12);
         let mut cfg = Config::default();
-        load_flap_layout(Source::KineticSpeed, &cfg, &Reading::Speed(1.0), &mut layout, max);
+        load_flap_layout(Source::KineticSpeed, &cfg, &Reading::Speed(1.0), &mut layout, 4, max);
         assert!(layout.is_layout("Number"));
         assert_eq!(layout.sections[0].cycle, "numeric");
         assert_eq!(layout.sections[0].flaps(), 12);
         cfg.label = "Speed".to_owned();
-        load_flap_layout(Source::KineticSpeed, &cfg, &Reading::Speed(1.0), &mut layout, max);
+        load_flap_layout(Source::KineticSpeed, &cfg, &Reading::Speed(1.0), &mut layout, 4, max);
         assert!(layout.is_layout("5_Labeled_Number"));
         assert_eq!(layout.sections.len(), 2);
         assert_eq!(layout.sections[0].flaps(), 6);
         assert_eq!(layout.sections[1].flaps(), 6);
         // A label that fills the line leaves no room for the value.
         cfg.label = "A very long label".to_owned();
-        load_flap_layout(Source::KineticSpeed, &cfg, &Reading::Speed(1.0), &mut layout, max);
+        load_flap_layout(Source::KineticSpeed, &cfg, &Reading::Speed(1.0), &mut layout, 4, max);
         assert_eq!(layout.sections.len(), 1);
         // A bar uses the wide pixel flaps.
         let bar = Config { option: 0, ..Config::default() };
-        load_flap_layout(Source::KineticStress, &bar, &Reading::Stress { stress: 1.0, capacity: 2.0 }, &mut layout, max);
+        load_flap_layout(Source::KineticStress, &bar, &Reading::Stress { stress: 1.0, capacity: 2.0 }, &mut layout, 4, max);
         assert!(layout.is_layout("Progress"));
         assert!(layout.sections[0].wide);
         // Lists size their number column by the largest number.
         let list = Reading::List(vec![("Iron".into(), 123_456)]);
         let full = Config { option: 1, ..Config::default() };
-        load_flap_layout(Source::ListItems, &full, &list, &mut layout, max);
+        load_flap_layout(Source::ListItems, &full, &list, &mut layout, 4, max);
         assert!(layout.is_layout("ValueList_true_6"));
         assert_eq!(layout.sections.len(), 2);
         assert!(layout.sections[0].right_aligned);
         let short = Config { option: 0, ..Config::default() };
-        load_flap_layout(Source::ListItems, &short, &list, &mut layout, max);
+        load_flap_layout(Source::ListItems, &short, &list, &mut layout, 4, max);
         assert!(layout.is_layout("ValueList_true_0"));
         assert_eq!(layout.sections.len(), 3);
-        load_flap_layout(Source::ListFluids, &short, &Reading::List(vec![("Water".into(), 1500)]), &mut layout, max);
+        load_flap_layout(Source::ListFluids, &short, &Reading::List(vec![("Water".into(), 1500)]), &mut layout, 4, max);
         assert!(layout.is_layout("FluidList_5"));
         assert_eq!(layout.sections[1].cycle, "fluid_units");
         assert!(layout.sections[1].single_flap);
@@ -1173,5 +1242,93 @@ mod tests {
         let list = Reading::List(vec![("Iron".into(), 5), ("Gold".into(), 9)]);
         let rows = provide_flap_text(Source::ListItems, &mut cfg, &list, &Stats { rows: 2, columns: 12 });
         assert_eq!(rows[0], vec!["9".to_owned(), " ".to_owned(), "Gold ".to_owned()]);
+    }
+
+    fn prediction(name: &str, ticks: i32, destination: &str) -> train_display::Prediction {
+        train_display::Prediction {
+            train_name: name.to_owned(),
+            ticks,
+            schedule_title: "Line 1".to_owned(),
+            destination: destination.to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_station_and_the_observer_offer_their_train_sources() {
+        assert_eq!(sources_for("create:track_station"), vec![Source::StationSummary, Source::TrainStatus]);
+        assert_eq!(sources_for("create:track_observer"), vec![Source::ObservedTrainName]);
+        assert_eq!(Source::from_id("create:station_summary"), Some(Source::StationSummary));
+        assert_eq!(Source::from_id("create:train_status"), Some(Source::TrainStatus));
+        assert_eq!(Source::from_id("create:observed_train_name"), Some(Source::ObservedTrainName));
+        assert!(!Source::StationSummary.is_single_line());
+        assert!(Source::TrainStatus.is_single_line());
+        assert_eq!(Source::ObservedTrainName.refresh_ticks(), 400);
+        assert_eq!(Source::TrainStatus.refresh_ticks(), PASSIVE_REFRESH);
+        // Only the observer's name takes a label.
+        assert!(!Source::TrainStatus.allows_labeling(Target::Sign));
+        assert!(!Source::StationSummary.allows_labeling(Target::DisplayBoard));
+        assert!(Source::ObservedTrainName.allows_labeling(Target::Sign));
+        // The Wrench's layouts are the display module's list.
+        assert_eq!(STATION_LAYOUT_NAMES.len(), train_display::LAYOUTS.len());
+        assert_eq!(Source::StationSummary.option().map(|(_, values)| values.len()), Some(train_display::LAYOUTS.len()));
+    }
+
+    #[test]
+    fn a_train_status_and_a_name_are_lines() {
+        let mut cfg = Config::default();
+        let status = Reading::Name(Some("Departs in 5 Seconds".into()));
+        assert_eq!(text(Source::TrainStatus, &mut cfg, status.clone(), Target::Sign), vec!["Departs in 5 Seconds"]);
+        // A label is never put before a status.
+        cfg.label = "Next".to_owned();
+        assert_eq!(text(Source::TrainStatus, &mut cfg, status, Target::Sign), vec!["Departs in 5 Seconds"]);
+        assert_eq!(text(Source::TrainStatus, &mut cfg, Reading::Name(None), Target::Sign), vec![""]);
+        let name = Reading::Name(Some("Express".into()));
+        assert_eq!(text(Source::ObservedTrainName, &mut cfg, name, Target::Sign), vec!["Next Express"]);
+        assert_eq!(text(Source::ObservedTrainName, &mut cfg, Reading::Missing, Target::Sign), vec![""]);
+    }
+
+    #[test]
+    fn a_station_summary_is_text_for_a_board_only() {
+        let data = GlobalTrainDisplayData::from_predictions(vec![prediction("Express", 100, "Central")]);
+        let reading = Reading::Departures(data);
+        let mut cfg = Config { filter: Some("Central".to_owned()), ..Config::default() };
+        // A sign or a lectern gets the empty line, as `provideText` returns `EMPTY`.
+        assert_eq!(text(Source::StationSummary, &mut cfg, reading.clone(), Target::Sign), vec![""]);
+        let rows = provide_flap_text(Source::StationSummary, &mut cfg, &reading, &Stats { rows: 2, columns: 12 });
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec![" ", "now", "Express", "Line 1"]);
+        assert_eq!(rows[1].len(), 4);
+        // A filter that was never set matches no station.
+        cfg.filter = None;
+        let rows = provide_flap_text(Source::StationSummary, &mut cfg, &reading, &Stats { rows: 1, columns: 12 });
+        assert_eq!(rows, vec![vec![" ".to_owned(), " . ".to_owned(), " ".to_owned(), " ".to_owned()]]);
+    }
+
+    #[test]
+    fn populating_takes_the_stations_name_once() {
+        let mut cfg = Config::default();
+        cfg.populate(Source::StationSummary, Some("Central"));
+        assert_eq!(cfg.filter.as_deref(), Some("Central"));
+        cfg.populate(Source::StationSummary, Some("Harbour"));
+        assert_eq!(cfg.filter.as_deref(), Some("Central"));
+        let mut other = Config::default();
+        other.populate(Source::TrainStatus, Some("Central"));
+        assert_eq!(other.filter, None);
+    }
+
+    #[test]
+    fn the_summary_layout_follows_the_layout_option() {
+        let max: &dyn Fn(i32) -> i32 = &|gaps| 30 - gaps;
+        let mut layout = Layout::new(30);
+        let mut cfg = Config { filter: Some("Central *".to_owned()), ..Config::default() };
+        let reading = Reading::Departures(GlobalTrainDisplayData::default());
+        load_flap_layout(Source::StationSummary, &cfg, &reading, &mut layout, 4, max);
+        assert!(layout.is_layout("StationSummary50true3"));
+        assert_eq!(layout.sections.len(), 5);
+        // The fourth layout drops the platform column, which the board then has no room for.
+        cfg.option = 3;
+        load_flap_layout(Source::StationSummary, &cfg, &reading, &mut layout, 4, max);
+        assert!(layout.is_layout("StationSummary50true0"));
+        assert_eq!(layout.sections[4].flaps(), 0);
     }
 }
