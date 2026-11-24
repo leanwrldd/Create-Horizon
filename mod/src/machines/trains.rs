@@ -22,11 +22,14 @@
 //! them, so a train that can't be restored is still seen where it stood.
 //!
 //! Differences from Create, for the README:
-//! - No carriage entities: the passengers and the seats' riders aren't carried (seats on a carriage hold no one), no
-//!   entity collision (carriages aren't solid yet), no sounds, particles, honking or couplings.
-//! - The cargo (`TrainCargoManager`) is not kept: fuel isn't burnt from chests, and cargo conditions see nothing.
-//! - Conductors: a mob can't sit on a seat, so `/train conductor` says a driver stands in for the train (Create's seated
-//!   villager or blaze burner), and the schedule is given with `/train schedule` or put in the station.
+//! - No carriage entities: the seats' riders are what `seat.rs` keeps (a marker per seat, carried with the carriage by
+//!   `carry_riders`), no sounds, particles, honking or couplings.
+//! - Cargo (`TrainCargoManager`, `train_cargo.rs`): a carriage's storage is read from its structure's blocks every 20 ticks
+//!   (and after a burn): fuel is burnt from its chests, barrels and shulker boxes, and cargo conditions read what they hold.
+//! - Conductors (`train_riders.rs`): a mob that touches a seat of a carriage sits on it (`SeatInteractionBehaviour`), a mob on a
+//!   seat in front of Train Controls conducts (`checkConductors`), and so does a Blaze Burner in front of them. The Schedule is
+//!   handed to a seated mob or clicked into the burner; `/train conductor` still says a driver stands in for the train.
+//! - Doors (`train_doors.rs`): the carriage's Train Doors open at a station by its door control (`/station doors`).
 //! - A carriage in a chunk nobody loads still runs (Create stalls a train whose player rides it into unloaded chunks).
 //! - Trains are not kept moving across dimensions (portals); the nether is never ticked with the overworld's trains.
 
@@ -44,7 +47,10 @@ use create_kinetics::rules::trains::network::TrackGraph;
 use create_kinetics::rules::trains::railways::Railways;
 use create_kinetics::rules::trains::schedule::Schedule;
 use create_kinetics::rules::trains::train::{StatusMessage, TrainEvent, TrainWorld};
+use create_kinetics::rules::trains::schedule_hand::RuntimeView;
 use create_kinetics::rules::trains::train_controls as drive;
+use create_kinetics::rules::trains::train_doors::{DoorControl, DoorData};
+use create_kinetics::rules::trains::train_passengers::{self as passengers, Passenger};
 use create_kinetics::rules::trains::train_nbt;
 use create_kinetics::{Dir, Pos};
 use crate::compat::{
@@ -110,6 +116,17 @@ pub struct CarriageRt {
     pub data_at: i64,
     /// The bogeys' blocks changed or the structure is new: send everything.
     pub fresh: bool,
+    /// `conductorSeats`: each seat (local position) and the `(forward, backward)` sides it conducts for.
+    pub conductor_seats: BTreeMap<Pos, [bool; 2]>,
+    /// `blockConductors`: a Blaze Burner in front of the controls, `(forward, backward)`.
+    pub block_conductors: [bool; 2],
+    /// What the doors' actors remember (`context.data.Open`, `firstMovement`), by local position. Not saved.
+    pub doors: BTreeMap<Pos, DoorData>,
+    /// The cargo is to be read again (the structure is new or changed).
+    pub cargo_dirty: bool,
+    /// Game time of the last look at the cargo, and whether the change since is counted already (`burnFuel` counts its own).
+    pub cargo_at: i64,
+    pub cargo_silent: bool,
 }
 
 impl CarriageRt {
@@ -120,6 +137,9 @@ impl CarriageRt {
             .filter(|b| b.state.is(cc::CONTROLS))
             .filter_map(|b| b.state.dir("facing").map(|d| (b.local, d)))
             .collect();
+        // The conductors come from the blocks themselves (the positions are local, as the structure's are).
+        let local_blocks: Vec<(Pos, State)> = structure.blocks.iter().map(|b| (b.local, b.state.clone())).collect();
+        let found = cc::summarize(&local_blocks, direction);
         CarriageRt {
             structure,
             direction,
@@ -134,6 +154,12 @@ impl CarriageRt {
             news_moving: false,
             data_at: i64::MIN,
             fresh: true,
+            conductor_seats: found.conductor_seats,
+            block_conductors: found.block_conductors,
+            doors: BTreeMap::new(),
+            cargo_dirty: true,
+            cargo_at: i64::MIN / 2,
+            cargo_silent: false,
         }
     }
 
@@ -176,6 +202,8 @@ struct Dim {
     unloaded: std::collections::BTreeSet<Uuid>,
     /// Stations that had a train present at the last tick (`trainPresent`).
     present: BTreeMap<Uuid, Uuid>,
+    /// Each station's door control (`doorControls.mode`), read every few ticks.
+    doors: BTreeMap<Uuid, DoorControl>,
 }
 
 static DIMS: LazyLock<Mutex<HashMap<String, Dim>>> = LazyLock::new(Mutex::default);
@@ -413,6 +441,8 @@ struct World {
     day_time: i64,
     dimension: u32,
     conductors: BTreeMap<Key, [bool; 2]>,
+    /// The players sitting on each train's seats (`countPlayerPassengers`).
+    players: BTreeMap<Uuid, i32>,
     powered: std::collections::BTreeSet<Uuid>,
     unloaded: std::collections::BTreeSet<Uuid>,
 }
@@ -439,25 +469,43 @@ impl TrainWorld for World {
     fn port_packages(&self, _: Pos, _: u32) -> Vec<String> {
         Vec::new()
     }
-    fn count_player_passengers(&self, _: Uuid) -> i32 {
-        0
+    fn count_player_passengers(&self, train: Uuid) -> i32 {
+        self.players.get(&train).copied().unwrap_or(0)
     }
     fn check_conductors(&self, train: Uuid, carriage: i32) -> Option<[bool; 2]> {
         Some(self.conductors.get(&(train, carriage)).copied().unwrap_or([false, false]))
     }
 }
 
+/// Who sits on a carriage's seats (`seat.rs` keeps the markers and their riders).
+pub fn riders_of(host: &dyn Host, dimension: &str, train: Uuid, carriage: i32) -> Vec<Passenger> {
+    super::seat::passengers_of(host, dimension, seat_key(train, carriage))
+        .into_iter()
+        .map(|(seat, _, player)| Passenger { seat, player })
+        .collect()
+}
+
 fn build_world(dim: &Dim, rails: &Railways, host: &dyn Host) -> World {
     let mut conductors = BTreeMap::new();
+    let mut players: BTreeMap<Uuid, i32> = BTreeMap::new();
+    let dimension = host.dimension();
     for ((train, id), rt) in &dim.carriages {
+        // `checkConductors`: the burners in front of the controls and the mobs on the seats in front of them.
+        let riders = riders_of(host, dimension, *train, *id);
+        let mut sides = passengers::check_conductors(rt.block_conductors, &rt.conductor_seats, &riders);
         if dim.conductors.contains(train) {
-            conductors.insert((*train, *id), rt.conductor_sides());
+            // `/train conductor`: a driver stands in for the train.
+            let stand_in = rt.conductor_sides();
+            sides = [sides[0] || stand_in[0], sides[1] || stand_in[1]];
         }
+        conductors.insert((*train, *id), sides);
+        *players.entry(*train).or_default() += passengers::count_player_passengers(&riders);
     }
     let _ = rails;
     World {
         day_time: host.day_time(),
         dimension: dim_id(host.dimension()),
+        players,
         conductors,
         powered: dim.powered.clone(),
         unloaded: dim.unloaded.clone(),
@@ -470,6 +518,7 @@ fn read_stations(host: &mut dyn Host, dim: &mut Dim, rails: &Railways) {
     let level = host.level(dimension);
     dim.powered.clear();
     dim.unloaded.clear();
+    dim.doors.clear();
     for graph in rails.nets.graphs.values() {
         for point in graph.edge_points.values(EdgePointType::Station) {
             let Some(station) = point.station() else { continue };
@@ -481,6 +530,12 @@ fn read_stations(host: &mut dyn Host, dim: &mut Dim, rails: &Railways) {
             if host.neighbor_signal(dimension, pos) > 0 {
                 dim.powered.insert(point.id);
             }
+            // `DoorControlBehaviour`: the station block entity's `DoorControl` (all when it has none saved).
+            let saved = host.mod_block_entity(pos).and_then(|e| match util::get(&e.nbt, "DoorControl") {
+                Some(Tag::String(s)) => Some(s.to_string_lossy()),
+                _ => None,
+            });
+            dim.doors.insert(point.id, DoorControl::read(saved.as_deref()));
         }
     }
 }
@@ -685,14 +740,7 @@ fn carry_riders(host: &mut dyn Host, train: Uuid, carriage: i32, rt: &CarriageRt
     if seats.is_empty() {
         return;
     }
-    let structure = StructurePose {
-        position: at.position,
-        prev_position: at.position,
-        prev_pos_invalid: false,
-        delta_movement: [0.0; 3],
-        rotation: Rotation::Oriented { initial_yaw, pitch: at.pitch, yaw: at.yaw, prev_pitch: at.pitch, prev_yaw: at.yaw },
-        translating: false,
-    };
+    let structure = structure_pose(at, initial_yaw);
     let lift = create_kinetics::rules::seat::carried_lift();
     let points: Vec<(Pos, [f64; 3])> = seats
         .iter()
@@ -702,6 +750,31 @@ fn carry_riders(host: &mut dyn Host, train: Uuid, carriage: i32, rt: &CarriageRt
         })
         .collect();
     super::seat::carry_points(host, seat_key(train, carriage), None, &points);
+    // Mobs that touch a seat sit on it (`SeatInteractionBehaviour.handleEntityCollision`).
+    super::train_riders::sweep(host, seat_key(train, carriage), rt.structure.anchor, &points);
+}
+
+/// The carriage's pose as the solid module turns a structure (`OrientedContraptionEntity`).
+pub fn structure_pose(at: &CarriagePose, initial_yaw: f32) -> StructurePose {
+    StructurePose {
+        position: at.position,
+        prev_position: at.position,
+        prev_pos_invalid: false,
+        delta_movement: [0.0; 3],
+        rotation: Rotation::Oriented { initial_yaw, pitch: at.pitch, yaw: at.yaw, prev_pitch: at.pitch, prev_yaw: at.yaw },
+        translating: false,
+    }
+}
+
+/// The carriage's structure changed (a door, the fuel): the anchor's copy, the colliders' copy and the clients get it.
+pub fn push_structure(host: &mut dyn Host, dimension: &str, rt: &CarriageRt) {
+    let Some(anchor) = rt.anchor else { return };
+    let tag = Tag::Compound(rt.structure.to_nbt(false));
+    host.change_mod_block_entity(anchor, &mut |e| {
+        e.nbt.insert(super::contraption::CONTRAPTION.into(), tag.clone());
+    });
+    host.block_entity_sync(anchor);
+    super::contraption::set_live(dimension, anchor, rt.structure.clone());
 }
 
 /// The anchor's structure, if clicks changed the states of its blocks, becomes the carriage's.
@@ -828,6 +901,16 @@ fn apply_events(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, rai
                 dim.conductors.remove(&train);
                 dim.dirty = true;
             }
+            // `Train.burnFuel`: one item leaves the fuel slot (and what it leaves is put back).
+            TrainEvent::FuelConsumed { train, carriage, slot } => {
+                let Some(rt) = dim.carriages.get_mut(&(train, carriage)) else { continue };
+                if super::train_cargo::burn(&*host, &mut rt.structure, slot) {
+                    rt.cargo_dirty = true;
+                    rt.cargo_silent = true;
+                    push_structure(host, dimension, rt);
+                    dim.dirty = true;
+                }
+            }
             _ => {}
         }
     }
@@ -842,6 +925,9 @@ fn place_carriages(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, 
         let Some(graph_id) = train.graph.or(train.point_graph) else { continue };
         let Some(graph) = nets.graphs.get(&graph_id) else { continue };
         let derailed = train.derailed;
+        // `shouldActorTrigger` scales a carriage's motion to the train's speed; the doors read the station the train is at.
+        let speed = train.speed.abs();
+        let door_mode = train.current_station_id().and_then(|s| dim.doors.get(&s).copied());
         let spacing_of: Vec<i32> = train.carriages.iter().map(|c| c.bogey_spacing).collect();
         for (i, carriage) in train.carriages.iter_mut().enumerate() {
             if !derailed {
@@ -854,6 +940,18 @@ fn place_carriages(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, 
             let pose_now = pose::align(position, [a, b]);
             let carriage_copy = carriage.clone();
             update_anchor(host, dimension, *id, &carriage_copy, graph, derailed, spacing_of[i], rt, pose_now, now);
+            // The cargo is read from the structure, and the doors (actors of the carriage's structure) tick.
+            let force = rt.cargo_dirty;
+            let silent = std::mem::take(&mut rt.cargo_silent);
+            if super::train_cargo::sync(&*host, &rt.structure, &mut carriage.storage, &mut rt.cargo_at, now, force, silent) {
+                rt.cargo_dirty = false;
+            }
+            let moved = rt.last_pose != rt.prev_pose;
+            let initial_yaw = pose::initial_yaw(horizontal_step(rt.direction));
+            if super::train_doors::tick(host, dimension, rt, &pose_now, initial_yaw, if moved { speed } else { 0.0 }, door_mode) {
+                push_structure(host, dimension, rt);
+                dim.dirty = true;
+            }
         }
     }
 }
@@ -1115,6 +1213,65 @@ pub fn forget_train(dimension: &str, train: Uuid) {
     }
 }
 
+// --- what the riders and the doors ask of the trains ---------------------------------------------------------------------------------
+
+/// The carriage the anchor block at `anchor` draws: its train and carriage id.
+pub fn carriage_of_anchor(host: &dyn Host, anchor: Pos) -> Option<(Uuid, i32)> {
+    if host.block(anchor) != ANCHOR {
+        return None;
+    }
+    let entity = host.mod_block_entity(anchor)?;
+    Some((util::get(&entity.nbt, draw::TRAIN).and_then(tag_uuid)?, util::int(&entity.nbt, draw::CARRIAGE)))
+}
+
+/// The carriage a rider sits on (`getRootVehicle() instanceof CarriageContraptionEntity`): its train, its id, and the
+/// seat's local position.
+pub fn carriage_of_rider(host: &dyn Host, dimension: &str, rider: u128) -> Option<(Uuid, i32, Pos)> {
+    let keys: Vec<Key> = lock(&DIMS).get(dimension)?.carriages.keys().copied().collect();
+    keys.into_iter().find_map(|(train, carriage)| {
+        super::seat::passengers_of(host, dimension, seat_key(train, carriage))
+            .into_iter()
+            .find(|(_, uuid, _)| *uuid == rider)
+            .map(|(seat, _, _)| (train, carriage, seat))
+    })
+}
+
+/// What a carriage knows for a click on its seat or burner: whether the seat is in front of controls, and the blocks.
+#[derive(Clone, Debug)]
+pub struct CarriageInfo {
+    pub direction: Dir,
+    pub conductor_seat: bool,
+    pub blocks: Vec<(Pos, State)>,
+}
+
+pub fn carriage_info(dimension: &str, train: Uuid, carriage: i32, seat: Option<Pos>) -> Option<CarriageInfo> {
+    let map = lock(&DIMS);
+    let rt = map.get(dimension)?.carriages.get(&(train, carriage))?;
+    Some(CarriageInfo {
+        direction: rt.direction,
+        conductor_seat: seat.is_some_and(|s| rt.conductor_seats.contains_key(&s)),
+        blocks: rt.structure.blocks.iter().map(|b| (b.local, b.state.clone())).collect(),
+    })
+}
+
+/// `train.runtime` as the Schedule hand-over reads it.
+pub fn runtime_view(dimension: &str, train: Uuid) -> Option<RuntimeView> {
+    world::with_railways(dimension, |r| {
+        r.trains.get(&train).map(|t| RuntimeView {
+            has_schedule: t.runtime.schedule.is_some(),
+            paused: t.runtime.paused,
+            completed: t.runtime.completed,
+            auto: t.runtime.is_auto_schedule,
+        })
+    })
+    .flatten()
+}
+
+/// `train.runtime.paused = false`.
+pub fn resume_schedule(dimension: &str, train: Uuid) -> bool {
+    world::with_railways(dimension, |r| r.trains.get_mut(&train).map(|t| t.runtime.paused = false).is_some()).unwrap_or(false)
+}
+
 // --- the stations' questions -----------------------------------------------------------------------------------------------------------
 
 
@@ -1153,6 +1310,7 @@ pub fn give_schedule(host: &mut dyn Host, train_id: Uuid, schedule: Schedule, au
     let world_view = World {
         day_time,
         dimension: dim_id(dimension),
+        players: BTreeMap::new(),
         conductors: dim_world.1.into_iter().filter(|(k, _)| dim_world.0.contains(&k.0)).collect(),
         powered: Default::default(),
         unloaded: Default::default(),
@@ -1172,7 +1330,7 @@ pub fn take_schedule(host: &mut dyn Host, train_id: Uuid) -> Option<Schedule> {
     let dimension = host.dimension();
     let day_time = host.day_time();
     let conductors = lock(&DIMS).get(dimension).map(|d| d.conductors.clone()).unwrap_or_default();
-    let world_view = World { day_time, dimension: dim_id(dimension), conductors: BTreeMap::new(), powered: Default::default(), unloaded: Default::default() };
+    let world_view = World { day_time, dimension: dim_id(dimension), conductors: BTreeMap::new(), players: BTreeMap::new(), powered: Default::default(), unloaded: Default::default() };
     let _ = conductors;
     world::with_railways(dimension, |rails| {
         let Railways { nets, trains, .. } = rails;

@@ -157,6 +157,16 @@ fn remainder(item: &str) -> Option<&'static str> {
     (item == "minecraft:lava_bucket").then_some("minecraft:bucket")
 }
 
+/// `stack.getBurnTime(null)`: how long a furnace burns the item (a train's fuel slots read it, `train_cargo.rs`).
+pub(crate) fn furnace_burn_time(host: &dyn Host, stack: &ItemStack) -> Option<i32> {
+    component_burn_time(host, stack).or_else(|| vanilla_burn_time(&stack.item))
+}
+
+/// `stack.getCraftingRemainingItem()` of a fuel (`train_cargo.rs` puts it back after the train burns the fuel).
+pub(crate) fn fuel_remainder(item: &str) -> Option<&'static str> {
+    remainder(item)
+}
+
 /// `BlazeBurnerBlock.tryInsert`: a player's use of an item on a burner that has a blaze.
 fn try_insert(host: &mut dyn Host, pos: [i32; 3], stack: &ItemStack, creative_player: bool) -> bool {
     let Some(entity) = host.mod_block_entity(pos) else {

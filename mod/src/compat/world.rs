@@ -52,7 +52,7 @@ pub fn entity_interact(
         },
         None => None,
     };
-    let mut old = InteractEntityEvent { entity: event.entity, kind: event.kind, stack: stack.as_ref() };
+    let mut old = InteractEntityEvent { entity: event.entity, kind: event.kind, stack: stack.as_ref(), main_hand: matches!(event.hand, mod_api::Hand::Main) };
     match with_side(host, |adapter| create().interact_entity(adapter, &mut old)) {
         Flow::Continue => None,
         _ => Some(mod_api::InteractionResult::Success),

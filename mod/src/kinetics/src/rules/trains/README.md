@@ -1,9 +1,10 @@
-# Trains, parts 1 to 3: the rules foundation, stations, navigation, schedules, the train itself
+# Trains, parts 1 to 4: the rules foundation, stations, navigation, schedules, the train itself, cargo, passengers and doors
 
 Pure rules (no game types) for Create 6.0.10's train system, ported from
 `create-java-src/src/main/java/com/simibubi/create/content/trains/`. Tests sit beside each file.
 Part 1 is the track side; part 2 (the next three rows) is stations, navigation and schedules; part 3 (the last
-rows) is the train: carriages, ticking, the manager's train half, assembly, targeting and observers.
+rows) is the train: carriages, ticking, the manager's train half, assembly, targeting and observers. Part 4 (the last
+four rows) is what rides in it: cargo, seated passengers and conductors, handing over a Schedule, and the doors.
 Registered through `tools/gen_modules.py`, which now also lists a rules folder with a `mod.rs`.
 
 ## Ported
@@ -34,9 +35,13 @@ Registered through `tools/gen_modules.py`, which now also lists a rules folder w
 | `schedule_nbt.rs` | `schedule/Schedule`, `ScheduleEntry`, `ScheduleInstruction`, `ScheduleWaitCondition` (`write`, `fromTag`, each one's `data` keys) | a schedule as an NBT tree (`create:train_schedule`) |
 | `schedule_edit.rs` | `schedule/ScheduleScreen` (its edits), `ScheduleItem.appendHoverText` | `/schedule`: the stops and conditions as commands, a new stop's defaults, summaries and the tooltip |
 | `carriage_pose.rs` | `entity/Carriage.java` (`DimensionalCarriageEntity.alignEntity`), `CarriageContraptionEntityRenderer`, `OrientedContraptionEntity.applyLocalTransforms`, `CarriageBogey.updateAngles`, `bogey/StandardBogeyRenderer` | a carriage's yaw and pitch from its rotation anchors, the draw operations of the carriage and of each bogey, the bogey angles and wheel turn, the standard bogeys' pieces, and the pose news a client runs on (`Motion`) |
-| `carriage_contraption.rs` | `entity/CarriageContraption.java`, `AbstractBogeyBlock.getStickySurfaces` (in `contraption::search`) | what a carriage's blocks are: bogeys, the second bogey, Train Controls facing, conductor seats, `assemble`'s verdict and errors |
+| `carriage_contraption.rs` | `entity/CarriageContraption.java`, `AbstractBogeyBlock.getStickySurfaces` (in `contraption::search`) | what a carriage's blocks are: bogeys, the second bogey, Train Controls facing, conductor seats, the Blaze Burners that conduct (`blockConductors`), `assemble`'s verdict and errors |
 | `train_nbt.rs` | `Train`, `Carriage`, `CarriageBogey`, `TravellingPoint`, `Navigation`, `ScheduleRuntime` (`write` / `read`), `TrackNodeLocation.write` | a train as an NBT tree and back against the rebuilt graph |
 | `train_controls.rs` | `CarriageContraptionEntity.startControlling` / `control`, `ControlsServerHandler`, `ControlsHandler`, `ControlsUtil`, `TrainStatus` | driving by hand: the held keys with their 30-tick keepalive, `control` (target speed, steering, approaching a station, the prompts), the train status lines |
+| `train_cargo.rs` | `TrainCargoManager`, `MountedStorageManager` (`initialize`, `canUseForFuel`, `isExposed`), `Train.burnFuel` (the container item) | what a carriage's chests, barrels, shulker boxes, vaults and tanks hold, sorted into the items, fluids and fuel slots the schedule conditions and `burnFuel` read; the version / idle ticker change detection; taking one fuel item out (and putting its bucket back) |
+| `train_passengers.rs` | `CarriageContraptionEntity.checkConductors`, `Train.countPlayerPassengers`, `SeatBlock.canBePickedUp`, `SeatInteractionBehaviour.handleEntityCollision`, `AbstractContraptionEntity.addSittingPassenger` | the conductor sides from the burners and the seated mobs, the players seated, who a seat picks up, who gives way to whom, whether a mob touches a seat |
+| `schedule_hand.rs` | `ScheduleItem.handScheduleTo`, `ScheduleItemEntityInteraction`, `ConductorBlockInteractionBehavior`, `EntityHats.shouldRenderTrainHat`, `BlazeBurnerMovementBehaviour.shouldRenderHat`, `BlazeBurnerRenderer.renderShared` (the hat) | the decisions of handing a Schedule to a seated conductor or a Blaze Burner (apply, deny, resume, take back), their messages, and when the Train Hat is worn and where it sits on a burner |
+| `train_doors.rs` | `DoorControl`, `DoorControlBehaviour`, `SlidingDoorMovementBehaviour`, `DoorMovingInteraction`, `SlidingDoorBlock.isDoubleDoor`, `StationEditPacket` (door control) | the six door modes (matching, saved name, English), the five Train Doors, `getDoorFacing`, `shouldOpen` / `shouldUpdate` / `tickOpen` / `toggleDoor`, the click on a door in a carriage; `edge_blocks.rs` carries the station edit and `/station doors` |
 
 Design: Java object references become ids (`NodeId`, edge = `(from, to)`, point = `(type, uuid)`).
 `RailNetworks` is `GlobalRailwayManager`'s graphs + signal edge groups; whatever Java does to trains
@@ -94,6 +99,22 @@ as in Java.
   matched by `TrainWorld::item_matches`, `FilterItemStack`'s real matching is the glue's.
 - Part 3 tests run trains on straight lines; curves, junction selection by the navigation and signals on the track
   are covered by the earlier parts' tests, not repeated with a whole train.
+
+## Left out of part 4
+
+- **Cargo**: the Depot, Toolbox, Creative Crate and fallback (other mods') storages (`MountedItemStorageType`s other than the
+  chest / simple / vault types), the Creative Fluid Tank, `SyncedMountedStorage` packets to clients, the storage's contents
+  changing by anything but fuel burning and clicks (no Portable Storage Interface on trains, no Packager at a station), mail
+  transfer (`runMailTransfer`). `changeDetected` is a diff of the contents every 20 ticks, not a call on each move.
+- **Passengers**: seating by lead (`SeatBlock.getLeashed`), seating when a mob walks onto a seat in the world, the
+  `#c:capturing_not_supported` tag (NeoForge's, not in the data), `seatHostileMobs` (on), `TamableAnimal` sitting, a rider's
+  dismount place (`ContraptionDismountLocation`), the seat mapping packet (`ContraptionSeatMappingPacket`).
+- **Conductor hat**: drawing it. The decisions are in `schedule_hand.rs`; nothing draws on a mob (`CreateHatArmorLayer`,
+  `TrainHatInfo`), and a carriage's Blaze Burner head isn't drawn in the structure at all (its `renderInContraption`), so there
+  is no hat to put on it. `TrainHat` in a burner's data isn't read either.
+- **Doors**: `SlidingDoorBlockEntity`'s animation and `VISIBLE` (the doors here swing), the elevator contact's door control
+  (`ElevatorContactBlockEntity.doorControls`) and `getElevatorDoorControl`, the double-door neighbour of a platform's sliding door,
+  the station screen's door widget (`DoorControl.createWidget`: `/station doors` stands in), `ContraptionDisableActorPacket`.
 
 ## Left out of part 1
 
@@ -206,23 +227,52 @@ Content (`tools/content/train_controls.py`): the Train Controls (`create:control
   `/train conductor` says a driver is aboard (Create's seated villager or blaze burner: no mob can sit on a seat here).
 
 Differences and gaps (what is *not* Create):
-- No carriage entities: seats on a carriage hold no passenger the rules know, no mob conductors (`/train conductor` stands in), no
-  `countPlayerPassengers`, no sounds, steam, honking or particles, no couplings between carriages drawn.
-- The cargo is not kept (`TrainCargoManager`): fuel isn't burnt from chests, cargo conditions see nothing, no mail transfer.
+- No carriage entities: no sounds, steam, honking or particles, no couplings between carriages drawn (passengers, conductors and
+  cargo are part 4, below; `/train conductor` is still there as a stand-in driver).
+- No mail transfer (the cargo itself is part 4).
 - The anchors' light is the anchor cell's; the bogeys' belt texture doesn't scroll; the Controls' lever and cover are still.
 - A train in a chunk nobody loads still runs (Create stalls a train a player rides into unloaded chunks); trains don't cross dimensions.
 - After a load a train waits (60 ticks, then every second) for the graph its wheels name and for the stations' and signals' points; a train
   whose track never comes back stays as the saved anchors draw it. The graphs are still rebuilt from the track blocks.
 - The first full run of trains in game has not been done: see HANDOFF.md for what to check.
 
+## Glue part 4: cargo, passengers, conductors, doors (not played)
+
+Glue in `mod/src/machines/`: `train_cargo.rs`, `train_riders.rs`, `train_doors.rs`, and small additions to `trains.rs` (the tick, the
+world's questions, the queries the others ask), `seat.rs` (mobs on a carriage's seats), `structure_click.rs` (the Train Door and the
+conductor's burner), `track_station.rs` (the station's door control) and `burner.rs` (`furnace_burn_time`, `fuel_remainder`).
+
+- **Cargo**: each carriage's `CargoState` is made to match its structure's storage blocks (`portable_interface_storage`'s reading of
+  `Items` and `TankContent`) every 20 ticks and after a burn. `TrainEvent::FuelConsumed` takes one item out of the structure's fuel slot,
+  puts a bucket back for a lava bucket, and writes the structure to the anchor so what clicks changed isn't lost. Burn times come from
+  the item's `minecraft:cooking_fuel` component (or the short vanilla list `burner.rs` has).
+- **Passengers**: a click on a carriage's seat seats the player (the old guard that kept carriage seats empty is gone). Every 5 ticks a
+  living mob touching a carriage's seat sits on it (`seat.rs`'s marker and `/ride`, with the mob's entity id), unless the seat has
+  someone; a player replaces a mob. `trains::build_world` answers `checkConductors` and `countPlayerPassengers` from the riders, so
+  a mob on a seat in front of Train Controls (or a lit Blaze Burner there) lets the train run its schedule without `/train conductor`
+  (still there, as a stand-in).
+- **Handing over a Schedule**: right-click a seated mob with a Schedule (main hand): the train takes it when the seat is in front of
+  controls (else `Conductor needs to sit in front of a Controls block`); an empty hand takes it back, or resumes a paused train. Clicking
+  a Blaze Burner in front of the controls (on a carriage) does the same.
+- **Doors**: the five sliding doors (`andesite`, `brass`, `copper`, `train`, `framed_glass`) in a carriage open when the train
+  stands at a station whose door control allows that side (`/station doors <all|north|east|south|west|none>` on the station last clicked;
+  the mode is the station's `DoorControl`), and close when it leaves; the door of a platform in front of them is opened too. A click on a door
+  in a carriage toggles it (and its double-door neighbour).
+
+To check in game: seat a villager (or any mob) on a carriage's seat next to Train Controls by walking it onto the seat or pushing it,
+give it a Schedule, watch the train run; put coal in a chest of a carriage and watch the fuel go (`/train info` speed with and without
+fuel: `poweredTrainTopSpeed`); a Schedule with a "cargo threshold" condition; train doors opening at a station, only on the chosen
+side; a Blaze Burner next to Train Controls (assemble first) taking and giving back a Schedule; a player sitting on a carriage seat counting
+for a "players seated" condition.
+
 ## Next
 
-1. Play-test glue part 3 (HANDOFF.md lists what to watch).
-2. Train doors (`TrainDoorBlock`, `DoorControlBehaviour`), the station's door controls, display sources (`StationSummary`, `TrainStatus`
-   sources, `TrainDisplay`), map markers (`StationMarker`, `StationMapData`), portals (`AllPortalTracks`, the carriage cutoffs), the
-   station screens, `TrainRelocator`, `GlobalTrainDisplayData`.
+1. Play-test glue parts 3 and 4 (HANDOFF.md lists what to watch).
+2. Display sources (`StationSummary`, `TrainStatus` sources, `TrainDisplay`), map markers (`StationMarker`, `StationMapData`), portals
+   (`AllPortalTracks`, the carriage cutoffs), the station screens, `TrainRelocator`, `GlobalTrainDisplayData`, the elevator contact's door
+   control.
 3. The track overlays of edge points, the station's flag and assembly outlines, and edge points on curved track (picking a point on a
    curve with the cursor), the girder and tilt of a curve.
-4. Cargo: `TrainCargoManager` over the carriages' chests, barrels and vaults (fuel, cargo conditions), passengers and seated conductors,
-   `ScheduleItemEntityInteraction`, the Blaze Burner conductor hat.
+4. The Train Hat drawn (on seated mobs and on a carriage's Blaze Burner), seating by lead, the cargo of the Depot, Toolbox and Creative Crate
+   on a carriage, mail transfer.
 5. One-shot update fields for the pose (`set_client_update_fields`) so only the pose travels, once the compat layer exposes them.

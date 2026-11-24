@@ -59,7 +59,10 @@ pub fn hooks() -> Box<dyn Hooks> {
 struct Request {
     dimension: String,
     pos: Pos,
+    /// Who rides: a player's uuid, or a mob's (`mob` is then its entity id).
     player: u128,
+    /// A mob seated by a carriage (`SeatInteractionBehaviour.handleEntityCollision`), by entity id.
+    mob: Option<u32>,
     /// A seat of a moving structure (`controller`, `local`) and where its marker goes now.
     moving: Option<(Pos, Pos, [f64; 3])>,
 }
@@ -68,6 +71,8 @@ struct Seat {
     dimension: String,
     pos: Pos,
     player: u128,
+    /// The rider is a mob, by entity id.
+    mob: Option<u32>,
     id: u32,
     made: i64,
     carry: Carry,
@@ -105,6 +110,13 @@ static BOOK: Mutex<Book> = Mutex::new(Book { pending: Vec::new(), seats: Vec::ne
 
 /// Whether the player of `seat` still rides its marker.
 fn rider(host: &dyn Host, seat: &Seat) -> Rider {
+    if let Some(mob) = seat.mob {
+        // A mob that is gone (killed, unloaded) rides nothing.
+        return match host.vehicle_of(mob) {
+            Some(vehicle) if vehicle == seat.id => Rider::Riding,
+            _ => Rider::Off,
+        };
+    }
     let players = host.server_players();
     let Some(player) = players.iter().find(|p| p.uuid == seat.player) else {
         return Rider::Unknown;
@@ -113,6 +125,13 @@ fn rider(host: &dyn Host, seat: &Seat) -> Rider {
         Some(vehicle) if vehicle == seat.id => Rider::Riding,
         _ => Rider::Off,
     }
+}
+
+/// The rider's entity id: a mob's, or the player's.
+fn rider_entity(host: &dyn Host, seat: &Seat) -> Option<u32> {
+    seat.mob.or_else(|| {
+        host.server_players().iter().find(|p| p.uuid == seat.player).and_then(|p| u32::try_from(p.entity_id).ok())
+    })
 }
 
 impl Seat {
@@ -166,7 +185,7 @@ impl Hooks for Seats {
                 if let Ok(mut book) = BOOK.lock()
                     && !book.pending.iter().any(|r| r.player == player.uuid && r.pos == pos)
                 {
-                    book.pending.push(Request { dimension: dimension.to_owned(), pos, player: player.uuid, moving: None });
+                    book.pending.push(Request { dimension: dimension.to_owned(), pos, player: player.uuid, mob: None, moving: None });
                 }
                 Flow::Cancel
             }
@@ -223,11 +242,7 @@ impl Hooks for Seats {
                 continue;
             }
             if rider == Rider::Riding
-                && let Some(entity) = host
-                    .server_players()
-                    .iter()
-                    .find(|p| p.uuid == seat.player)
-                    .and_then(|p| u32::try_from(p.entity_id).ok())
+                && let Some(entity) = rider_entity(host, &seat)
             {
                 host.dismount(entity);
             }
@@ -287,6 +302,7 @@ fn sit(host: &mut dyn Host, dimension: &str, request: &Request, now: i64) {
             dimension: dimension.to_owned(),
             pos: request.pos,
             player: request.player,
+            mob: request.mob,
             id,
             made: now,
             carry: request.moving.map_or(Carry::No, |(controller, local, _)| Carry::Moving { controller, local }),
@@ -409,12 +425,7 @@ fn settle_released(host: &mut dyn Host, dimension: &str, now: i64) {
             }
         } else if now - since >= SETTLE_TICKS {
             // Nowhere to sit: `Contraption.removePassengers`.
-            if let Some(entity) = host
-                .server_players()
-                .iter()
-                .find(|p| p.uuid == seat.player)
-                .and_then(|p| u32::try_from(p.entity_id).ok())
-            {
+            if let Some(entity) = rider_entity(host, &seat) {
                 host.dismount(entity);
             }
             host.remove_entity(dimension, seat.id);
@@ -453,12 +464,71 @@ pub(super) fn sit_on_structure(
                 .collect()
         })
         .unwrap_or_default();
-    if seats.iter().any(|s| rider(host, s) == Rider::Riding) {
+    // A player on the seat keeps it; a mob gives way to a player (`addSittingPassenger`: `entity.stopRiding()`).
+    if seats.iter().any(|s| s.mob.is_none() && rider(host, s) == Rider::Riding) {
         return false;
     }
     if let Ok(mut book) = BOOK.lock() {
         book.pending.retain(|r| r.player != player);
-        book.pending.push(Request { dimension: dimension.to_owned(), pos: cell, player, moving: Some((controller, local, at)) });
+        book.pending.push(Request { dimension: dimension.to_owned(), pos: cell, player, mob: None, moving: Some((controller, local, at)) });
+    }
+    true
+}
+
+/// Who sits on the seats of the structure known as `controller` (a carriage: `trains::seat_key`) now: the seat's local
+/// position, the rider's uuid and whether it is a player (`AbstractContraptionEntity.getPassengers` with
+/// `getSeatOf`).
+pub(super) fn passengers_of(host: &dyn Host, dimension: &str, controller: Pos) -> Vec<(Pos, u128, bool)> {
+    let seats: Vec<Seat> = BOOK
+        .lock()
+        .map(|book| {
+            book.seats
+                .iter()
+                .filter(|s| s.dimension == dimension && matches!(s.carry, Carry::Moving { controller: c, .. } if c == controller))
+                .map(Seat::copy)
+                .collect()
+        })
+        .unwrap_or_default();
+    seats
+        .iter()
+        .filter(|s| rider(host, s) == Rider::Riding)
+        .filter_map(|s| match s.carry {
+            Carry::Moving { local, .. } => Some((local, s.player, s.mob.is_none())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `AbstractContraptionEntity.addSittingPassenger` for a mob: `mob` (entity id and uuid) sits on the seat at `local`
+/// of the structure of `controller`, whose marker goes to `at`. A mob already on that seat is not replaced, a player
+/// on it is not either (`rules::trains::train_passengers::add_sitting_passenger`); a mob that rides something is left
+/// alone. False when nothing was done.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn sit_mob_on_structure(
+    host: &dyn Host,
+    dimension: &str,
+    controller: Pos,
+    local: Pos,
+    cell: Pos,
+    mob: u32,
+    mob_uuid: u128,
+    at: [f64; 3],
+) -> bool {
+    if host.vehicle_of(mob).is_some() {
+        return false;
+    }
+    let occupant = passengers_of(host, dimension, controller).into_iter().find(|(l, _, _)| *l == local).map(|(_, _, player)| player);
+    // A mob never takes a seat from anyone: only a player replaces a mob, and that is the player's own click.
+    if create_kinetics::rules::trains::train_passengers::add_sitting_passenger(occupant, false)
+        != (create_kinetics::rules::trains::train_passengers::Seating::Sit { eject: false })
+    {
+        return false;
+    }
+    if let Ok(mut book) = BOOK.lock() {
+        if book.pending.iter().any(|r| r.mob == Some(mob) || matches!(r.moving, Some((c, l, _)) if c == controller && l == local)) {
+            return false;
+        }
+        book.pending.push(Request { dimension: dimension.to_owned(), pos: cell, player: mob_uuid, mob: Some(mob), moving: Some((controller, local, at)) });
     }
     true
 }

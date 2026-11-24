@@ -244,12 +244,16 @@ pub struct StationEdit {
     /// `tryAssemble`: `Some(true)` assemble, `Some(false)` disassemble, `None` neither.
     pub try_assemble: Option<bool>,
     pub name: Option<String>,
+    /// `doorControl`: the mode the station gives its doors (`doorControls.set`).
+    pub door_control: Option<super::train_doors::DoorControl>,
 }
 
 /// One step of what `applySettings` does, in order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditStep {
     DropSchedule,
+    /// `be.doorControls.set(doorControl)`.
+    DoorControl(super::train_doors::DoorControl),
     Rename(String),
     Assemble,
     /// `tryDisassembleTrain` and, when it did, `tryEnterAssemblyMode` and `refreshAssemblyInfo`.
@@ -266,6 +270,14 @@ pub fn plan_edit(edit: &StationEdit, is_station: bool, assembling: bool) -> Vec<
     if edit.drop_schedule {
         steps.push(EditStep::DropSchedule);
         return steps;
+    }
+    if let Some(mode) = edit.door_control {
+        steps.push(EditStep::DoorControl(mode));
+        // The `/station doors` command stands in for the screen's door button alone: it leaves assembly mode as it is
+        // (the packet of the screen also says whether to stay in it).
+        if *edit == (StationEdit { door_control: Some(mode), ..StationEdit::default() }) {
+            return steps;
+        }
     }
     if let Some(name) = edit.name.as_deref().and_then(station_name) {
         steps.push(EditStep::Rename(name));
@@ -305,6 +317,8 @@ pub enum StationCommand {
     Disassemble,
     /// `schedule`: `StationEditPacket.dropSchedule`, "Retrieve Schedule".
     Schedule,
+    /// `doors <all|north|east|south|west|none>`: the station screen's "Onboard Door Control" (`DoorControl.createWidget`).
+    Doors(super::train_doors::DoorControl),
 }
 
 impl StationCommand {
@@ -322,7 +336,11 @@ impl StationCommand {
             "assemble" => StationCommand::Assemble,
             "disassemble" => StationCommand::Disassemble,
             "schedule" => StationCommand::Schedule,
-            other => return Err(format!("Unknown station command '{other}' (name, assembly, assemble, cancel, disassemble, schedule)")),
+            "doors" => match super::train_doors::DoorControl::parse(rest) {
+                Some(mode) => StationCommand::Doors(mode),
+                None => return Err("doors <all | north | east | south | west | none>".into()),
+            },
+            other => return Err(format!("Unknown station command '{other}' (name, assembly, assemble, cancel, disassemble, schedule, doors)")),
         })
     }
 
@@ -336,6 +354,7 @@ impl StationCommand {
             StationCommand::Assemble => StationEdit { try_assemble: Some(true), ..StationEdit::default() },
             StationCommand::Disassemble => StationEdit { try_assemble: Some(false), ..StationEdit::default() },
             StationCommand::Schedule => StationEdit { drop_schedule: true, ..StationEdit::default() },
+            StationCommand::Doors(mode) => StationEdit { door_control: Some(*mode), ..StationEdit::default() },
         })
     }
 }
@@ -668,6 +687,30 @@ mod tests {
         assert_eq!(plan_edit(&disassemble, true, true), vec![EditStep::Disassemble]);
         let drop = StationEdit { drop_schedule: true, name: Some("x".into()), ..StationEdit::default() };
         assert_eq!(plan_edit(&drop, true, true), vec![EditStep::DropSchedule]);
+    }
+
+    #[test]
+    fn the_door_control_is_set_first_and_alone() {
+        use super::super::train_doors::DoorControl;
+        let doors = StationEdit { door_control: Some(DoorControl::East), ..StationEdit::default() };
+        assert_eq!(plan_edit(&doors, true, true), vec![EditStep::DoorControl(DoorControl::East)]);
+        // Not a station any more: the packet still sets the doors before it gives up.
+        assert_eq!(plan_edit(&doors, false, false), vec![EditStep::DoorControl(DoorControl::East)]);
+        // With a name the packet goes on as before, the door first.
+        let both = StationEdit { door_control: Some(DoorControl::None), name: Some("Home".into()), ..StationEdit::default() };
+        assert_eq!(
+            plan_edit(&both, true, false),
+            vec![EditStep::DoorControl(DoorControl::None), EditStep::Rename("Home".into()), EditStep::ExitAssembly]
+        );
+        // A schedule drop returns before the door is looked at.
+        let drop = StationEdit { drop_schedule: true, door_control: Some(DoorControl::All), ..StationEdit::default() };
+        assert_eq!(plan_edit(&drop, true, true), vec![EditStep::DropSchedule]);
+        assert_eq!(
+            StationCommand::parse("doors North").unwrap().edit(),
+            Some(StationEdit { door_control: Some(DoorControl::North), ..StationEdit::default() })
+        );
+        assert!(StationCommand::parse("doors up").is_err());
+        assert!(StationCommand::parse("doors").is_err());
     }
 
     #[test]

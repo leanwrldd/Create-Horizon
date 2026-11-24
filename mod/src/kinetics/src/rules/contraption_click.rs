@@ -14,9 +14,11 @@
 //! - [`toggle_controls`]: `ContraptionControlsMovingInteraction`'s list of disabled actors.
 //! - [`swap_hand`]: `DeployerMovingInteraction`'s change of the player's item with the Deployer's.
 //!
-//! Known differences from Create: the Train Door (`SlidingDoorBlock`), the Conductor's blaze burner,
-//! the Depot and the train controls have no interaction here (their blocks are not on a structure in
-//! this port, or the trains are not); the click's `Fail` swing is not suppressed.
+//! The five Train Doors (`SlidingDoorBlock`, `DoorMovingInteraction`: `train_doors::click`) and the Conductor's Blaze
+//! Burner (`ConductorBlockInteractionBehavior`: `schedule_hand::block_click`) are routed here too; their decisions are
+//! in `rules::trains`.
+//!
+//! Known differences from Create: the Depot has no interaction here; the click's `Fail` swing is not suppressed.
 
 use super::collider_obb::Aabb;
 use super::contraption::State;
@@ -135,6 +137,11 @@ pub enum Interaction {
     Controls,
     /// `ControlsInteractionBehaviour`: the Train Controls of a carriage start a drive.
     TrainControls,
+    /// `DoorMovingInteraction` on a `SlidingDoorBlock` (`trains::train_doors::click`).
+    SlidingDoor,
+    /// `ConductorBlockInteractionBehavior.BlazeBurner`: the burner of a carriage in front of Train Controls
+    /// (`trains::schedule_hand::block_click`).
+    Conductor,
 }
 
 /// `BlockTags.WOODEN_DOORS` and `WOODEN_TRAPDOORS`: every door of wood, not iron or copper.
@@ -163,6 +170,8 @@ pub fn interaction_of(name: &str) -> Option<Interaction> {
             "deployer" => Some(Interaction::Deployer),
             "contraption_controls" => Some(Interaction::Controls),
             "controls" => Some(Interaction::TrainControls),
+            "blaze_burner" => Some(Interaction::Conductor),
+            _ if super::trains::train_doors::is_sliding_door(name) => Some(Interaction::SlidingDoor),
             p if p.ends_with("_seat") => Some(Interaction::Seat),
             _ => None,
         },
@@ -255,7 +264,12 @@ pub fn simple_toggle(
                 colliders: true,
             })
         }
-        Interaction::Seat | Interaction::Deployer | Interaction::Controls | Interaction::TrainControls => None,
+        Interaction::Seat
+        | Interaction::Deployer
+        | Interaction::Controls
+        | Interaction::TrainControls
+        | Interaction::SlidingDoor
+        | Interaction::Conductor => None,
     }
 }
 
@@ -495,6 +509,17 @@ mod tests {
         let on = State::new("minecraft:lever").with("powered", "true");
         assert_eq!(simple_toggle(Interaction::Lever, [0; 3], &on, None, 0.0).unwrap().sound.pitch, 0.5);
         assert!(simple_toggle(Interaction::Lever, [0; 3], &State::new("minecraft:lever"), None, 0.0).is_none());
+    }
+
+    #[test]
+    fn the_train_doors_and_the_conductor_s_burner_have_behaviours_of_their_own() {
+        assert_eq!(interaction_of("create:train_door"), Some(Interaction::SlidingDoor));
+        assert_eq!(interaction_of("create:andesite_door"), Some(Interaction::SlidingDoor));
+        assert_eq!(interaction_of("create:blaze_burner"), Some(Interaction::Conductor));
+        assert_eq!(route("create:train_door", false), Route::Behaviour(Interaction::SlidingDoor));
+        // Not a simple toggle: the glue asks `train_doors::click`.
+        let door = State::new("create:train_door").with("half", "lower").with("open", "false");
+        assert!(simple_toggle(Interaction::SlidingDoor, [0, 0, 0], &door, None, 0.5).is_none());
     }
 
     #[test]

@@ -44,9 +44,10 @@
 //!   player, the action bar names it, and the click calls it (`ElevatorTargetFloorPacket.handle`'s checks). The
 //!   Controls' screen and indicator are not drawn.
 //! - `handlePlayerStorageInteraction`: a chest, barrel or shulker box on a structure opens a chest view of its own
-//!   slots (`open_storage`; a double chest only the clicked half, an Item Vault nothing). The Train Door, the
-//!   Conductor's burner, the Depot's `MountedDepotInteractionBehaviour` and train controls are not here: a click on
-//!   such a block is taken (cancelled) and does nothing.
+//!   slots (`open_storage`; a double chest only the clicked half, an Item Vault nothing). The Depot's
+//!   `MountedDepotInteractionBehaviour` is not here: a click on such a block is taken (cancelled) and does nothing. The
+//!   Train Doors (`DoorMovingInteraction` on a `SlidingDoorBlock`), the Conductor's Blaze Burner
+//!   (`ConductorBlockInteractionBehavior`) and the train controls are (`rules::trains::{train_doors, schedule_hand}`).
 //! - A Deployer's fake player is not made for the swap: the hand is this port's own (`actor_tools`).
 
 use std::collections::BTreeMap;
@@ -489,8 +490,6 @@ struct Found {
     name: String,
     /// The controller's saved data when it is an elevator pulley (the cabin's floors are read from it).
     elevator: Option<Compound>,
-    /// The controller is a train's carriage anchor (`trains.rs`).
-    carriage: bool,
 }
 
 /// `rayTraceContraption` for every structure of the level: the nearest hit within `limit` (the distance to
@@ -523,8 +522,7 @@ fn find(host: &mut dyn mod_api::ServerHost, who: u128, limit: Option<f64>, game_
         if best.as_ref().is_none_or(|(b, _)| d < b.distance) {
             let name = live.moving.blocks.iter().find(|b| b.local == hit.local).map(|b| b.state.name.clone()).unwrap_or_default();
             let elevator = (entity.id == ELEVATOR_PULLEY).then(|| entity.nbt.clone());
-            let carriage = entity.id == super::train_draw::ANCHOR;
-            best = Some((Found { controller, entry, pose, hit, world, distance: d, name, elevator, carriage }, live.moving.clone()));
+            best = Some((Found { controller, entry, pose, hit, world, distance: d, name, elevator }, live.moving.clone()));
         }
     }
     best
@@ -555,8 +553,8 @@ fn handle(host: &mut dyn mod_api::ServerHost, who: u128, limit: Option<f64>) -> 
     // (stone, a chest) still takes it.
     let _acted = match rules::route(&block.state.name, wrench) {
         Route::Storage => open_storage(host, &dimension, &found, moving, who),
-        // A seat on a carriage holds no rider yet: nothing carries the marker along (`trains.rs`).
-        Route::Sit => !found.carriage && sit(host, &dimension, &found, who),
+        // A seat on a carriage is carried with it by the train's tick (`trains::carry_riders`).
+        Route::Sit => sit(host, &dimension, &found, who),
         Route::Behaviour(kind) => behave(host, &dimension, &found, moving, kind, who, held, wrench),
     };
     true
@@ -605,6 +603,11 @@ fn behave(
             apply_toggle(host, dimension, found, moving, &toggle);
             true
         }
+        Interaction::SlidingDoor => sliding_door(host, dimension, found, moving),
+        // `ConductorBlockInteractionBehavior.handlePlayerInteraction` (a wrench click is the Wrench's).
+        Interaction::Conductor => {
+            !wrench && super::train_riders::burner_click(&mut Adapter::Server(host), found.controller, local, who)
+        }
         Interaction::Deployer => deployer(host, dimension, found, moving, who, held, wrench),
         Interaction::Controls => controls(host, dimension, found, moving, who),
         // `ControlsInteractionBehaviour.handlePlayerInteraction` (a wrench click is the Wrench's).
@@ -613,16 +616,55 @@ fn behave(
 }
 
 /// `setContraptionBlockData` for each change, `invalidateColliders`, and the sound.
-fn apply_toggle(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, mut moving: Moving, toggle: &Toggle) {
-    for (at, state) in &toggle.changes {
+fn apply_toggle(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, moving: Moving, toggle: &Toggle) {
+    let sound = Some((toggle.sound.event, toggle.sound.volume, toggle.sound.pitch));
+    apply_changes(host, dimension, found, moving, &toggle.changes, sound);
+}
+
+fn apply_changes(
+    host: &mut dyn mod_api::ServerHost,
+    dimension: &str,
+    found: &Found,
+    mut moving: Moving,
+    changes: &[(Pos, create_kinetics::rules::contraption::State)],
+    sound: Option<(&str, f32, f32)>,
+) {
+    for (at, state) in changes {
         if let Some(block) = moving.blocks.iter_mut().find(|b| b.local == *at) {
             block.state = state.clone();
         }
     }
     write(host, dimension, found.controller, moving);
-    let mut adapter = Adapter::Server(host);
-    let sound = &toggle.sound;
-    Host::play_sound(&mut adapter, sound.event, found.world, BLOCKS, sound.volume, sound.pitch);
+    if let Some((event, volume, pitch)) = sound {
+        let mut adapter = Adapter::Server(host);
+        Host::play_sound(&mut adapter, event, found.world, BLOCKS, volume, pitch);
+    }
+}
+
+/// `DoorMovingInteraction.handle` on a Train Door (a `SlidingDoorBlock`): both halves, the other leaf of a double door, and
+/// the open sound (volume .3, as `playSound(player, sound, pitch)` of `SimpleBlockMovingInteraction`).
+fn sliding_door(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, moving: Moving) -> bool {
+    use create_kinetics::rules::trains::train_doors as doors;
+    let local = found.hit.local;
+    let state_at = |at: Pos| moving.blocks.iter().find(|b| b.local == at).map(|b| b.state.clone());
+    let Some(state) = state_at(local) else { return false };
+    let other_at = [local[0], local[1] + if state.get("half") == Some("upper") { -1 } else { 1 }, local[2]];
+    let double = doors::double_door_pos(local, &state).and_then(|at| state_at(at).map(|s| (at, s)));
+    let pitch = (util::random() % 1000) as f32 / 1000.0 * 0.1 + 0.9;
+    let Some(click) = doors::click(&state, local, state_at(other_at).as_ref(), double.as_ref().map(|(_, s)| s), pitch) else {
+        return false;
+    };
+    let mut changes = click.changes.clone();
+    // The other leaf of a double door is clicked too, with no player (no sound): `handlePlayerInteraction(null, ..)`.
+    if let (Some(at), Some((_, leaf))) = (click.double, double.as_ref()) {
+        let leaf_other_at = [at[0], at[1] + if leaf.get("half") == Some("upper") { -1 } else { 1 }, at[2]];
+        if let Some(second) = doors::click(leaf, at, state_at(leaf_other_at).as_ref(), None, 1.0) {
+            changes.extend(second.changes);
+        }
+    }
+    let sound = click.sound.map(|(event, pitch)| (event, 0.3, pitch));
+    apply_changes(host, dimension, found, moving.clone(), &changes, sound);
+    true
 }
 
 /// The structure's changed blocks into the controller's saved structure and the cached copy

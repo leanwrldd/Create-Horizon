@@ -6,8 +6,10 @@
 //! reads the world, this sorts out what was found, in the order the blocks were found (`capture` is called for
 //! each block as `searchMovedStructure` adds it, and the second bogey is the second one met).
 //!
-//! Left out: the blaze burner conductors (`ConductorBlockInteractionBehavior`), the portal cutoffs and the sound
-//! queue (`ArrivalSoundQueue`).
+//! The Blaze Burners that conduct (`ConductorBlockInteractionBehavior.BlazeBurner`, `assembledBlockConductors`,
+//! `blockConductors`) are here too.
+//!
+//! Left out: the portal cutoffs and the sound queue (`ArrivalSoundQueue`).
 
 use super::station::AssemblyError;
 use crate::rules::contraption::State;
@@ -16,6 +18,8 @@ use std::collections::BTreeMap;
 
 /// `AllBlocks.TRAIN_CONTROLS`.
 pub const CONTROLS: &str = "create:controls";
+/// The Blaze Burner (`AllBlocks.BLAZE_BURNER` registers `ConductorBlockInteractionBehavior.BlazeBurner`).
+pub const BLAZE_BURNER: &str = "create:blaze_burner";
 /// The two bogey blocks (`AbstractBogeyBlock`).
 pub const BOGEYS: [&str; 2] = ["create:small_bogey", "create:large_bogey"];
 
@@ -26,6 +30,11 @@ pub fn is_seat(state: &State) -> bool {
 
 pub fn is_bogey(state: &State) -> bool {
     BOGEYS.contains(&state.name.as_str())
+}
+
+/// `ConductorBlockInteractionBehavior.BlazeBurner.isValidConductor`: a burner that has a blaze (`HEAT_LEVEL != NONE`).
+pub fn is_valid_conductor(state: &State) -> bool {
+    state.is(BLAZE_BURNER) && state.get("blaze").is_some_and(|heat| heat != "none")
 }
 
 /// What `capture` and `assemble` noted about a carriage's blocks.
@@ -44,6 +53,10 @@ pub struct Summary {
     pub conductor_seats: BTreeMap<Pos, [bool; 2]>,
     /// `getSeats()`: every seat, in the order found.
     pub seats: Vec<Pos>,
+    /// `blockConductors`: `(forward, backward)`, set when a Blaze Burner (with a blaze) stands in front of Train Controls.
+    pub block_conductors: [bool; 2],
+    /// `assembledBlockConductors`: the burners found, in order.
+    pub burners: Vec<Pos>,
 }
 
 fn step(dir: Dir) -> [i32; 3] {
@@ -86,6 +99,9 @@ pub fn summarize(blocks: &[(Pos, State)], assembly_direction: Dir) -> Summary {
         if is_seat(state) {
             summary.seats.push(*pos);
         }
+        if is_valid_conductor(state) {
+            summary.burners.push(*pos);
+        }
         if state.is(CONTROLS) {
             match state.dir("facing") {
                 Some(facing) if facing.axis() == assembly_direction.axis() => {
@@ -96,6 +112,14 @@ pub fn summarize(blocks: &[(Pos, State)], assembly_direction: Dir) -> Summary {
                     }
                 }
                 _ => summary.sideways_controls = true,
+            }
+        }
+    }
+    for burner in summary.burners.clone() {
+        for direction in along(assembly_direction.axis()) {
+            if in_control(blocks, burner, direction) {
+                // `blockConductors.set(direction != assemblyDirection, true)`.
+                summary.block_conductors[usize::from(direction != assembly_direction)] = true;
             }
         }
     }
@@ -187,6 +211,38 @@ mod tests {
         // Controls at +x facing west: the seat is in control towards the east (`direction == assemblyDirection`):
         // slot 0 (forward). Controls at -x facing east: towards the west, slot 1 (backward).
         assert_eq!(s.conductor_seats.get(&[1, 1, 0]), Some(&[true, true]));
+    }
+
+    #[test]
+    fn a_blaze_burner_in_front_of_controls_conducts() {
+        let blocks = vec![
+            ([0, 0, 0], state("create:small_bogey[axis=x]")),
+            ([1, 1, 0], state("create:blaze_burner[blaze=smouldering,facing=north]")),
+            ([2, 1, 0], state("create:controls[facing=west]")),
+        ];
+        let s = summarize(&blocks, Dir::East);
+        // The controls east of the burner face back at it: in control towards the east, the forward side.
+        assert_eq!(s.block_conductors, [true, false]);
+        let s = summarize(&blocks, Dir::West);
+        assert_eq!(s.block_conductors, [false, true]);
+    }
+
+    #[test]
+    fn an_empty_burner_or_one_away_from_the_controls_does_not_conduct() {
+        let empty = vec![
+            ([0, 0, 0], state("create:small_bogey[axis=x]")),
+            ([1, 1, 0], state("create:blaze_burner[blaze=none,facing=north]")),
+            ([2, 1, 0], state("create:controls[facing=west]")),
+        ];
+        assert_eq!(summarize(&empty, Dir::East).block_conductors, [false, false]);
+        let away = vec![
+            ([0, 0, 0], state("create:small_bogey[axis=x]")),
+            ([1, 1, 0], state("create:blaze_burner[blaze=kindled,facing=north]")),
+            ([2, 2, 0], state("create:controls[facing=west]")),
+        ];
+        let s = summarize(&away, Dir::East);
+        assert_eq!(s.block_conductors, [false, false]);
+        assert_eq!(s.burners, vec![[1, 1, 0]]);
     }
 
     #[test]
