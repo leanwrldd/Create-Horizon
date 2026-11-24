@@ -1,6 +1,6 @@
 //! Create's train system, parts 1 to 3: the rules for track geometry, the track graph, travelling along
 //! it, signals, stations, navigation, schedules, and the train itself (carriages, ticking, the manager's
-//! train half, assembly, edge point targeting, observers). See `README.md` in this folder for what is ported from
+//! train half, assembly, edge point targeting, observers). See `docs/trains.md` at the repository root for what is ported from
 //! which Java file and what comes next.
 
 pub mod assembly;

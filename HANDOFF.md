@@ -92,13 +92,13 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   station, signal, observer, bogeys, Train Casing, schedule item). **Part 3 (merged `d46b3b5`, unplayed; a moving carriage sends only its
   pose, `d4a15f4`; seats on a carriage carry riders, `ab1473a`):** assembly and
   disassembly at the station, `Railways::tick` from the level tick, trains saved in the level attachment `create:trains`, each carriage
-  drawn by an anchor block entity in an invisible block that follows it (`create:carriage_anchor`, why in `rules/trains/README.md`),
+  drawn by an anchor block entity in an invisible block that follows it (`create:carriage_anchor`, why in `docs/trains.md`),
   bogeys with turning wheels, carriages solid (`solid::Sample::Oriented`), driving with W/S/A/D/Space/Sneak (a click on `create:controls` or
   `/train drive`), the station's schedule slot and `/train`. To check in game: assemble a two-bogey carriage with Train Controls on a
   straight station track (`/station assembly`, Train Casing on the track, Super Glue, `/station assemble`), watch the carriage appear on
   the next tick, `/train drive`, drive, `/train info`, stop at a station and `/station disassemble`, save and reload with a train standing
   still and one moving, ride a slope or a curve (pose and bogey angles), a Schedule in the station slot, and the frame time with a long
-  train (the anchor's update tag carries the structure every other tick while moving). **Part 4 (branch `worktree-agent-a285f9aef99a726ef`, unmerged, unplayed):** carriage cargo and fuel (`train_cargo.rs`), mobs seated on carriage seats as conductors, handing a Schedule to one or to a Blaze Burner (`train_riders.rs`), the Train Doors opening at a station by its door control (`train_doors.rs`, `/station doors`); the test list is in `rules/trains/README.md` ("Glue part 4"). Left for later: `rules/trains/README.md`'s "Next".
+  train (the anchor's update tag carries the structure every other tick while moving). **Part 4 (branch `worktree-agent-a285f9aef99a726ef`, unmerged, unplayed):** carriage cargo and fuel (`train_cargo.rs`), mobs seated on carriage seats as conductors, handing a Schedule to one or to a Blaze Burner (`train_riders.rs`), the Train Doors opening at a station by its door control (`train_doors.rs`, `/station doors`); the test list is in `docs/trains.md` ("Glue part 4"). Left for later: `docs/trains.md`'s "Next".
   Catnip's `intersect_ranged` and `intersect_sphere` are reconstructed, unverified (see its README);
 - merged 2026-11-23, unplayed: Deployer schematic printing on structures (`fc27597`), Factory Gauge links to
   Redstone and Display Links (`42abf2c`), structure clicks cancelled on the client, real reach, saved disabled
