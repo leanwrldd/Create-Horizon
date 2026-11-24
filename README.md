@@ -11,11 +11,20 @@ is not pinned to one Horizon commit.
 
 Test builds are on the [Releases](https://github.com/leanwrldd/Create-Horizon/releases) page. You need the
 [Horizon Launcher](https://playhorizon.dev), signed in with an account that owns Minecraft: Java Edition. Download
-`install.ps1` from the release and run it:
+the installer from the release and run it. On Windows, `install.ps1`:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
+
+On macOS or Linux, `install.sh`, in a terminal:
+
+```sh
+sh install.sh
+```
+
+It finds the launcher's program by itself (on the PATH, or inside the app in Applications on macOS); if it can't, pass
+it with `--launcher PATH`.
 
 It makes an instance of its own (`create-test`) on the Horizon nightly the build is for, installs the mod and has the
 launcher compile it. The mod is Rust source, so it's compiled on your computer: the first build downloads Rust and
