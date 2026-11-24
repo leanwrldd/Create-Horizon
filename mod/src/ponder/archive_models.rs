@@ -37,6 +37,7 @@ create:block/cogwheel
 create:block/content_observer/block
 create:block/contraption_controls/block
 create:block/controls/block_closed
+create:block/controls/block_virtual
 create:block/copper_tile_slab
 create:block/creative_bottom
 create:block/creative_bottom_window

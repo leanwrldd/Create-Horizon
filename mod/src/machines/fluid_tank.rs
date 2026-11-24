@@ -156,6 +156,15 @@ fn part_tags(pos: Pos, part: &Part) -> Vec<(&'static str, Option<Tag>)> {
     ]
 }
 
+/// What a Ponder scene sets in the data of the tank block at `pos` (`Controller`, `Size`, `Height`, `Window` and
+/// `TankContent`), for the renderer to read as it does a placed tank's.
+pub(crate) fn scene_tags(pos: Pos, part: &Part) -> Vec<(String, Tag)> {
+    part_tags(pos, part)
+        .into_iter()
+        .filter_map(|(key, tag)| Some((key.to_owned(), tag?)))
+        .collect()
+}
+
 fn content_tags(part: &Part) -> Vec<(&'static str, Option<Tag>)> {
     vec![(CONTENT, Some(content_tag(&part.fluid, part.amount)))]
 }

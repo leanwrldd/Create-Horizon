@@ -9,13 +9,15 @@ use crate::compat::{
 
 use create_kinetics::Dir;
 use create_kinetics::belt::{Ending, Part as BeltPart, Slope as BeltSlope};
+use create_kinetics::rules::fluid_tank::Part as TankPart;
 use create_kinetics::rules::ponder_belt::{self as belt_items, Action as BeltAction, Segment as BeltSegment};
+use create_kinetics::rules::ponder_fluid::{self as tank_fluid, Op as FluidOp, Saved as SavedTank};
 use create_kinetics::rules::arm::Phase as ArmPhase;
 use create_kinetics::rules::arm_points::{Mode as ArmMode, Point as ArmPoint, PointType as ArmPointType};
 use create_kinetics::rules::ponder_anim::{self as anim, Instruction};
 use create_kinetics::rules::ponder_arm::{Arm, Instruction as ArmInstruction};
 use create_kinetics::rules::ponder_particles::{
-    Kind as ParticleKind, Particle, Rng, Spawn, destroy_burst, emission_runs, glue_burst, jittered, particle,
+    Kind as ParticleKind, Particle, Rng, Spawn, destroy_burst, emission_runs, glue_burst, jittered, jittered_across, particle,
     within_block,
 };
 
@@ -223,6 +225,8 @@ struct SceneFile {
     models: Vec<(State, Vec<Model>)>,
     /// Each Mechanical Arm's interaction points: the arm, then (type, mode, position) of each.
     arms: Vec<(Pos, Vec<(String, String, Pos)>)>,
+    /// The scene's Fluid Tank blocks.
+    tanks: Vec<SavedTank>,
     duration: u32,
     scale: f32,
     offset: f32,
@@ -239,9 +243,26 @@ impl FromJson for SceneFile {
             events: field(value, "events")?,
             models: field_or(value, "models"),
             arms: field_or(value, "arms"),
+            tanks: field_or(value, "tanks"),
             duration: field(value, "duration")?,
             scale: field(value, "scale")?,
             offset: field(value, "offset")?,
+        })
+    }
+}
+
+/// `[pos, controller, width, height, window, fluid, amount]`: a Fluid Tank block as the structure file saves it.
+impl FromJson for SavedTank {
+    fn from_json(value: &Value) -> Option<Self> {
+        let items = value.as_array()?;
+        Some(Self {
+            pos: read(items, 0)?,
+            controller: read(items, 1)?,
+            width: read(items, 2)?,
+            height: read(items, 3)?,
+            window: read::<i32>(items, 4)? != 0,
+            fluid: read(items, 5)?,
+            amount: read(items, 6)?,
         })
     }
 }
@@ -294,11 +315,16 @@ enum Event {
     BeltChange(u32, String),
     /// `world.instructArm(pos, phase, heldItem, targetedPoint)`.
     Arm(Pos, ArmPhase, Option<String>, i32),
+    /// Fluid into or out of the Fluid Tanks at these blocks (`rules::ponder_fluid`).
+    Fluid(Vec<Pos>, FluidOp),
     /// `effects.superGlue(pos, side, fullBlock)`: a burst of glue on a block's face (`SuperGlueItem.spawnParticles`).
     Glue(Pos, [i32; 3], bool),
     /// `effects.emitParticles`: `kind` at a point, its motion, within the block's space or not, per tick, for ticks.
     /// The last is the radius of the random offset each particle's motion takes (`VecHelper.offsetRandomly`).
-    Particles(ParticleKind, [f32; 3], [f32; 3], bool, f32, u32, f32),
+    /// The last says the offset is across only (`jittered_across`: a press's item particles).
+    Particles(ParticleKind, [f32; 3], [f32; 3], bool, f32, u32, f32, bool),
+    /// `flashDisplayLink`: the bulb of the links here glows from now (`LinkWithBulbBlockEntity.pulse`).
+    Pulse(Vec<Pos>),
     Marker,
 }
 
@@ -311,6 +337,8 @@ pub struct Scene {
     proxy: Option<BlockStateId>,
     /// The points each Mechanical Arm reaches (`InteractionPoints`).
     arms: BTreeMap<Pos, Vec<ArmPoint>>,
+    /// The scene's Fluid Tank blocks as the structure file left them.
+    tanks: BTreeMap<Pos, TankPart>,
     /// The scene's belt blocks, and the items put on belts and depots (`rules::ponder_belt`).
     belts: BTreeMap<Pos, BeltSegment>,
     belt_actions: Vec<(i64, BeltAction)>,
@@ -617,9 +645,20 @@ impl Scene {
                 }
             }
         }
+        let tanks = {
+            let creative = |pos: Pos| {
+                file.blocks
+                    .iter()
+                    .find(|(at, _)| *at == pos)
+                    .and_then(|(_, state)| file.palette.get(*state))
+                    .is_some_and(|(id, _)| id == "create:creative_fluid_tank")
+            };
+            tank_fluid::parts(&file.tanks, creative)
+        };
         Self {
             events,
             markers,
+            tanks,
             belts,
             belt_actions,
             belt_stacks,
@@ -684,6 +723,7 @@ impl Scene {
         let mut data = BTreeMap::<Pos, Vec<(String, Tag)>>::new();
         let mut flaps = BTreeMap::<Pos, (f32, bool)>::new();
         let mut cracks = BTreeMap::<Pos, i32>::new();
+        let mut tanks = self.tanks.clone();
         let mut has_reveals = false;
         let mut frame = Frame::default();
         for (index, (at, event)) in self.events.iter().enumerate() {
@@ -800,6 +840,11 @@ impl Scene {
                         }
                     }
                 }
+                Event::Fluid(positions, op) => {
+                    for &pos in positions {
+                        tank_fluid::apply(&mut tanks, pos, op);
+                    }
+                }
                 Event::Flap(pos, outward) => {
                     flaps.insert(*pos, (*at, *outward));
                 }
@@ -868,7 +913,14 @@ impl Scene {
                         }
                     }
                 }
-                Event::Particles(kind, origin, motion, within, per_tick, ticks, jitter) => {
+                Event::Pulse(positions) => {
+                    for &pos in positions {
+                        let stored = data.entry(pos).or_default();
+                        stored.retain(|(known, _)| known != "Pulse");
+                        stored.push(("Pulse".to_owned(), Tag::Long(*at as i64)));
+                    }
+                }
+                Event::Particles(kind, origin, motion, within, per_tick, ticks, jitter, across) => {
                     for emitted in 0..*ticks {
                         let age = tick - (at + emitted as f32);
                         if age < 0.0 {
@@ -890,7 +942,11 @@ impl Scene {
                             if *within {
                                 start = within_block(start, &mut rng);
                             }
-                            let motion = if *jitter > 0.0 { jittered(*motion, *jitter, &mut rng) } else { *motion };
+                            let motion = match (*jitter > 0.0, *across) {
+                                (true, true) => jittered_across(*motion, *jitter, &mut rng),
+                                (true, false) => jittered(*motion, *jitter, &mut rng),
+                                _ => *motion,
+                            };
                             let spawn = Spawn { pos: start, motion: motion.map(f64::from) };
                             let particle = particle(*kind, spawn, &mut rng);
                             frame.add_particle(&particle, age);
@@ -899,6 +955,10 @@ impl Scene {
                 }
                 Event::Marker => {}
             }
+        }
+        // Each tank block shows what the structure file and the fluid instructions left in it.
+        for (pos, part) in &tanks {
+            data.entry(*pos).or_default().extend(crate::machines::fluid_tank::scene_tags(*pos, part));
         }
         if !self.belt_actions.is_empty() {
             let world = belt_items::World {
@@ -1394,6 +1454,12 @@ fn decode(row: &[Value], palette: &mut Vec<State>) -> Option<(f32, Event)> {
             read(row, 6)?,
             read(row, 7)?,
             read(row, 8).unwrap_or(0.0),
+            read(row, 9).unwrap_or(false),
+        ),
+        "pulse" => Event::Pulse(read(row, 2)?),
+        "fluid" => Event::Fluid(
+            read(row, 2)?,
+            FluidOp::from_row(row.get(3)?.as_str()?, row.get(4)?.as_str()?, read(row, 5)?)?,
         ),
         "marker" => Event::Marker,
         _ => return None,

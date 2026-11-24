@@ -105,6 +105,7 @@ pub mod plough;
 pub mod ponder_anim;
 pub mod ponder_arm;
 pub mod ponder_belt;
+pub mod ponder_fluid;
 pub mod ponder_particles;
 pub mod ponder_timeline;
 pub mod portable_interface;
