@@ -15,10 +15,12 @@
 //! The server sends the pose as news (`Motion`: the position, the velocity, the yaw and pitch and how they are
 //! changing, at a game time) every other tick while the carriage moves and once when it stops; the client runs the
 //! pose on from the news (`Motion::at`, at most six ticks) so the carriage moves smoothly between updates. The update
-//! tag is the block entity's whole data, structure included: Horizon merges an update tag into the client's copy, but a
-//! mod's hook can't tell a chunk being sent from a block change, so the structure travels with each update (a
-//! structure of fifty blocks is about a kilobyte). The one-shot fields of `ModBlockEntityView::set_client_update_fields`
-//! would send the pose alone; the compat layer doesn't expose them yet.
+//! tag is the block entity's whole data, structure included (a mod's hook can't tell a chunk being sent from a block
+//! change, and `set_client_update_fields`' one-shot fields only ride on top of that tag), so the anchor's data is
+//! rewritten and sent only when the carriage stops, when its bogeys change and every 40 ticks while it moves. The
+//! news in between goes alone as a message (`POSE_CHANNEL`, `PoseNews`: about 100 bytes) to the players within 96
+//! blocks, from each player's own tick (`server_players` can be empty in single player); the client draws from
+//! whichever is newer, the message or the block entity's data.
 //!
 //! The wheels turn with the distance moved (`CarriageBogey.updateAngles`): the server sends each bogey's angle, how it
 //! turns each tick, and the bogey's own yaw and pitch; the bogeys are drawn from their wheel angles with the pieces of
@@ -29,12 +31,16 @@
 //! no coupling between carriages is drawn (`CarriageCouplingRenderer`), no sounds or smoke, and a carriage further
 //! than a block entity is drawn (about 64 blocks) from the viewer isn't drawn.
 
-use create_kinetics::rules::trains::carriage_pose::{self as pose, BogeyPart, CENTRE, Motion, Op, CarriagePose};
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
+
+use create_kinetics::rules::trains::carriage_pose::{self as pose, BogeyNews, BogeyPart, CENTRE, Motion, Op, CarriagePose, PoseNews};
 use create_kinetics::rules::contraption::State;
 use create_kinetics::Pos;
 use crate::compat::{
     BlockEntityDraw, BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
-    BlockEntityTicksEvent, BlockEntityUpdateTagEvent, Compound, Hooks, Host, ModBlockEntity, StandaloneModelsEvent, Tag,
+    BlockEntityTicksEvent, BlockEntityUpdateTagEvent, Compound, Hooks, Host, ModBlockEntity, NetFromServerEvent,
+    PlayerTickEvent, StandaloneModelsEvent, Tag,
 };
 
 use super::contraption as engine;
@@ -223,10 +229,126 @@ fn draw_bogey_parts(host: &dyn Host, draw: &mut BlockEntityDraw, large: bool, wh
     }
 }
 
+// --- the pose news between data updates ------------------------------------------------------------------------------
+
+/// The channel the pose news goes on.
+pub const POSE_CHANNEL: &str = "create:carriage_pose";
+/// How far (blocks) from an anchor a player is sent its news: a block entity is drawn within 64 blocks.
+const NEWS_RANGE: f64 = 96.0;
+/// News older than this (ticks) is dropped.
+const NEWS_LIFE: i64 = 200;
+
+impl From<&BogeyData> for BogeyNews {
+    fn from(b: &BogeyData) -> Self {
+        BogeyNews {
+            large: b.large,
+            upside_down: b.upside_down,
+            leading: b.leading,
+            yaw: b.yaw,
+            pitch: b.pitch,
+            wheel: b.wheel,
+            wheel_rate: b.wheel_rate,
+        }
+    }
+}
+
+impl From<&BogeyNews> for BogeyData {
+    fn from(b: &BogeyNews) -> Self {
+        BogeyData {
+            large: b.large,
+            upside_down: b.upside_down,
+            leading: b.leading,
+            yaw: b.yaw,
+            pitch: b.pitch,
+            wheel: b.wheel,
+            wheel_rate: b.wheel_rate,
+        }
+    }
+}
+
+/// The server's latest news of each anchor: its dimension, a number that grows with each news, the encoded news.
+struct Published {
+    dimension: String,
+    seq: u64,
+    position: [f64; 3],
+    time: i64,
+    bytes: Vec<u8>,
+}
+
+static PUBLISHED: LazyLock<Mutex<HashMap<Pos, Published>>> = LazyLock::new(Mutex::default);
+/// What each player has been sent: anchor to news number.
+static SENT: LazyLock<Mutex<HashMap<u128, HashMap<Pos, u64>>>> = LazyLock::new(Mutex::default);
+static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+/// The client's latest news of each anchor.
+static RECEIVED: LazyLock<Mutex<HashMap<Pos, PoseNews>>> = LazyLock::new(Mutex::default);
+
+fn lock<T>(m: &'static LazyLock<Mutex<T>>) -> MutexGuard<'static, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The server: a carriage's new pose, for the players near its anchor (sent from their own ticks).
+pub fn publish(dimension: &str, anchor: Pos, motion: &Motion, bogeys: &[BogeyData], derailed: bool) {
+    let news = PoseNews { anchor, motion: *motion, derailed, bogeys: bogeys.iter().map(BogeyNews::from).collect() };
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let entry = Published { dimension: dimension.to_owned(), seq, position: motion.position, time: motion.time, bytes: news.encode() };
+    lock(&PUBLISHED).insert(anchor, entry);
+}
+
+/// The server: an anchor is gone.
+pub fn forget(_dimension: &str, anchor: Pos) {
+    lock(&PUBLISHED).remove(&anchor);
+}
+
+/// The server, in a player's tick: the news near them they haven't had.
+fn send_news(host: &mut dyn Host) {
+    let Some(player) = host.acting_player() else { return };
+    let dimension = host.dimension();
+    let now = util::game_time(&*host);
+    let mut out = Vec::new();
+    {
+        let mut published = lock(&PUBLISHED);
+        published.retain(|_, p| now - p.time <= NEWS_LIFE);
+        if published.is_empty() {
+            return;
+        }
+        let mut sent = lock(&SENT);
+        let seen = sent.entry(player.uuid).or_default();
+        seen.retain(|anchor, _| published.contains_key(anchor));
+        for (anchor, p) in published.iter() {
+            if p.dimension != dimension || seen.get(anchor).is_some_and(|s| *s >= p.seq) {
+                continue;
+            }
+            let d = [0, 1, 2].map(|i| p.position[i] - player.position[i]);
+            if d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > NEWS_RANGE * NEWS_RANGE {
+                continue;
+            }
+            seen.insert(*anchor, p.seq);
+            out.push(p.bytes.clone());
+        }
+    }
+    for bytes in out {
+        let _ = host.net_send_to_player(player.uuid, POSE_CHANNEL, &bytes);
+    }
+}
+
+/// The client: the motion and bogeys to draw an anchor from, the news if it is newer than the block entity's data.
+fn latest(pos: Pos, nbt: &Compound) -> Option<(Motion, Vec<BogeyData>)> {
+    let saved = motion_of(nbt);
+    let received = lock(&RECEIVED);
+    match (saved, received.get(&pos)) {
+        (Some(saved), Some(news)) if news.motion.time > saved.time => {
+            Some((news.motion, news.bogeys.iter().map(BogeyData::from).collect()))
+        }
+        (None, Some(news)) => Some((news.motion, news.bogeys.iter().map(BogeyData::from).collect())),
+        (Some(saved), _) => Some((saved, bogeys_of(nbt))),
+        (None, None) => None,
+    }
+}
+
 fn submit(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
     let nbt = &event.entity.nbt;
     let Some(parsed) = engine::parsed(event.pos, event.entity) else { return };
-    let Some(motion) = motion_of(nbt) else { return };
+    let Some((motion, bogeys)) = latest(event.pos, nbt) else { return };
     let draw = &mut *event.draw;
     let now = draw.game_time as f64 + f64::from(draw.partial);
     let at: CarriagePose = motion.at(now);
@@ -234,7 +356,6 @@ fn submit(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
     let origin = [0, 1, 2].map(|i| at.position[i] - f64::from(event.pos[i]));
     let initial_yaw = util::float(nbt, INITIAL_YAW).unwrap_or(0.0);
     let spacing = util::int(nbt, "Spacing");
-    let bogeys = bogeys_of(nbt);
 
     draw.push();
     draw.translate(f32s(origin));
@@ -266,6 +387,27 @@ fn submit(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
 }
 
 impl Hooks for Draw {
+    /// The server: a player's tick sends them the carriage news near them.
+    fn player_tick(&self, host: &mut dyn Host, _: &mut PlayerTickEvent) {
+        send_news(host);
+    }
+
+    /// The client: a carriage's pose news, kept for its anchor's draw.
+    fn net_from_server(&self, _: &mut dyn Host, event: &mut NetFromServerEvent<'_>) {
+        if event.channel != POSE_CHANNEL {
+            return;
+        }
+        let Some(news) = PoseNews::decode(event.data) else { return };
+        let mut received = lock(&RECEIVED);
+        if received.len() > 1024 {
+            let newest = news.motion.time;
+            received.retain(|_, old| newest - old.motion.time <= NEWS_LIFE);
+        }
+        if received.get(&news.anchor).is_none_or(|old| old.motion.time < news.motion.time) {
+            received.insert(news.anchor, news);
+        }
+    }
+
     fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
         for model in [pose::FRAME, pose::SMALL_WHEELS, pose::PIN, pose::PISTON, pose::DRIVE, pose::LARGE_WHEELS, pose::BELT] {
             event.models.push(model.to_owned());

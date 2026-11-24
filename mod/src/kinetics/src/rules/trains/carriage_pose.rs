@@ -278,6 +278,176 @@ pub fn standard_bogey(large: bool, wheel_angle: f32) -> Vec<BogeyPart> {
     parts
 }
 
+// --- the pose news a moving carriage sends its viewers ----------------------------------------------------------------
+
+/// A bogey's part of the pose news.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BogeyNews {
+    pub large: bool,
+    pub upside_down: bool,
+    pub leading: bool,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub wheel: f64,
+    pub wheel_rate: f64,
+}
+
+/// What a moving carriage tells the clients near it, without its structure (Create syncs the entity's position and
+/// rotation each tick, `CarriageContraptionEntity`'s data; here the block entity that draws it is told by a message, so
+/// the structure goes only with the block entity's own, rarer updates): the anchor block it is drawn by, the motion,
+/// whether it is derailed, and the bogeys.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PoseNews {
+    pub anchor: [i32; 3],
+    pub motion: Motion,
+    pub derailed: bool,
+    pub bogeys: Vec<BogeyNews>,
+}
+
+/// The size of one bogey in [`PoseNews::encode`]: flags, yaw, pitch, wheel and its rate.
+const BOGEY_BYTES: usize = 1 + 4 + 4 + 8 + 8;
+/// The size of [`PoseNews::encode`] before the bogeys.
+const HEAD_BYTES: usize = 12 + 24 + 24 + 16 + 8 + 1 + 1;
+
+impl PoseNews {
+    /// Little-endian bytes: the anchor, the position and velocity, yaw, its rate, pitch, its rate, the time, the
+    /// derailed flag, the bogey count, then each bogey.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(HEAD_BYTES + self.bogeys.len() * BOGEY_BYTES);
+        for v in self.anchor {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in self.motion.position.iter().chain(&self.motion.velocity) {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in [self.motion.yaw, self.motion.yaw_rate, self.motion.pitch, self.motion.pitch_rate] {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        out.extend_from_slice(&self.motion.time.to_le_bytes());
+        out.push(u8::from(self.derailed));
+        out.push(self.bogeys.len().min(255) as u8);
+        for b in self.bogeys.iter().take(255) {
+            out.push(u8::from(b.large) | u8::from(b.upside_down) << 1 | u8::from(b.leading) << 2);
+            out.extend_from_slice(&b.yaw.to_le_bytes());
+            out.extend_from_slice(&b.pitch.to_le_bytes());
+            out.extend_from_slice(&b.wheel.to_le_bytes());
+            out.extend_from_slice(&b.wheel_rate.to_le_bytes());
+        }
+        out
+    }
+
+    /// The news [`PoseNews::encode`] wrote, or none when the bytes are short, long or not finite.
+    pub fn decode(data: &[u8]) -> Option<Self> {
+        let mut at = 0usize;
+        let mut take = |n: usize| -> Option<&[u8]> {
+            let part = data.get(at..at + n)?;
+            at += n;
+            Some(part)
+        };
+        let i32_at = |b: &[u8]| i32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        let f32_at = |b: &[u8]| f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        let f64_at = |b: &[u8]| f64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
+        let mut anchor = [0; 3];
+        for v in &mut anchor {
+            *v = i32_at(take(4)?);
+        }
+        let mut vectors = [0.0; 6];
+        for v in &mut vectors {
+            *v = f64_at(take(8)?);
+        }
+        let mut angles = [0.0f32; 4];
+        for v in &mut angles {
+            *v = f32_at(take(4)?);
+        }
+        let time_bytes = take(8)?;
+        let time = i64::from_le_bytes(time_bytes.try_into().ok()?);
+        let derailed = take(1)?[0] != 0;
+        let count = usize::from(take(1)?[0]);
+        let mut bogeys = Vec::with_capacity(count);
+        for _ in 0..count {
+            let flags = take(1)?[0];
+            let yaw = f32_at(take(4)?);
+            let pitch = f32_at(take(4)?);
+            let wheel = f64_at(take(8)?);
+            let wheel_rate = f64_at(take(8)?);
+            bogeys.push(BogeyNews {
+                large: flags & 1 != 0,
+                upside_down: flags & 2 != 0,
+                leading: flags & 4 != 0,
+                yaw,
+                pitch,
+                wheel,
+                wheel_rate,
+            });
+        }
+        if at != data.len() {
+            return None;
+        }
+        let finite = vectors.iter().all(|v| v.is_finite())
+            && angles.iter().all(|v| v.is_finite())
+            && bogeys.iter().all(|b| b.yaw.is_finite() && b.pitch.is_finite() && b.wheel.is_finite() && b.wheel_rate.is_finite());
+        if !finite {
+            return None;
+        }
+        let motion = Motion {
+            position: [vectors[0], vectors[1], vectors[2]],
+            velocity: [vectors[3], vectors[4], vectors[5]],
+            yaw: angles[0],
+            yaw_rate: angles[1],
+            pitch: angles[2],
+            pitch_rate: angles[3],
+            time,
+        };
+        Some(PoseNews { anchor, motion, derailed, bogeys })
+    }
+}
+
+#[cfg(test)]
+mod news_tests {
+    use super::*;
+
+    fn news() -> PoseNews {
+        PoseNews {
+            anchor: [-12, 64, 300],
+            motion: Motion {
+                position: [1.5, -2.25, 1e6],
+                velocity: [0.25, 0.0, -0.5],
+                yaw: 91.5,
+                yaw_rate: -1.25,
+                pitch: 3.0,
+                pitch_rate: 0.5,
+                time: 123_456_789,
+            },
+            derailed: true,
+            bogeys: vec![
+                BogeyNews { large: true, upside_down: false, leading: true, yaw: 10.0, pitch: -2.0, wheel: 359.5, wheel_rate: 12.0 },
+                BogeyNews { large: false, upside_down: true, leading: false, yaw: 0.0, pitch: 0.0, wheel: 0.0, wheel_rate: 0.0 },
+            ],
+        }
+    }
+
+    #[test]
+    fn news_survives_the_round_trip() {
+        let n = news();
+        let bytes = n.encode();
+        assert_eq!(bytes.len(), HEAD_BYTES + 2 * BOGEY_BYTES);
+        assert_eq!(PoseNews::decode(&bytes), Some(n));
+    }
+
+    #[test]
+    fn short_long_or_broken_news_is_refused() {
+        let bytes = news().encode();
+        assert_eq!(PoseNews::decode(&bytes[..bytes.len() - 1]), None);
+        let mut long = bytes.clone();
+        long.push(0);
+        assert_eq!(PoseNews::decode(&long), None);
+        let mut broken = news();
+        broken.motion.yaw = f32::NAN;
+        assert_eq!(PoseNews::decode(&broken.encode()), None);
+        assert_eq!(PoseNews::decode(&[]), None);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

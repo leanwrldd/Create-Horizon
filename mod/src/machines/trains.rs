@@ -76,6 +76,9 @@ const RETRY: i64 = 20;
 const SAVE_EVERY: i64 = 100;
 /// Ticks between pose news of a moving carriage.
 const NEWS_EVERY: i64 = 2;
+/// Ticks between rewrites of a moving carriage's anchor data (structure and pose, sent whole to clients): the pose news
+/// in between goes as a message to the players near it (`train_draw::publish`).
+const DATA_EVERY: i64 = 40;
 /// Ticks an anchor with no train is left before it is removed.
 const ORPHAN_TICKS: i64 = 400;
 
@@ -102,6 +105,8 @@ pub struct CarriageRt {
     /// Game time of the last news and whether it said the carriage moved.
     pub news_at: i64,
     pub news_moving: bool,
+    /// Game time the anchor's data was last rewritten (and so sent whole).
+    pub data_at: i64,
     /// The bogeys' blocks changed or the structure is new: send everything.
     pub fresh: bool,
 }
@@ -126,6 +131,7 @@ impl CarriageRt {
             wheel: [0.0; 2],
             news_at: i64::MIN,
             news_moving: false,
+            data_at: i64::MIN,
             fresh: true,
         }
     }
@@ -508,8 +514,9 @@ fn remove_anchor(host: &mut dyn Host, pos: Pos) {
     if host.block(pos) != ANCHOR {
         return;
     }
-    // The structure kept for its collision goes with it.
+    // The structure kept for its collision goes with it, and its pose news.
     super::contraption::forget_live(host.dimension(), pos);
+    draw::forget(host.dimension(), pos);
     if let Some(air) = host.default_state("minecraft:air") {
         let dimension = host.dimension();
         host.set_block(dimension, pos, air, ANCHOR_FLAGS);
@@ -616,6 +623,7 @@ fn update_anchor(
         }
         rt.news_at = now;
         rt.news_moving = moved;
+        rt.data_at = now;
         rt.fresh = false;
         return;
     }
@@ -628,11 +636,17 @@ fn update_anchor(
     let Some(anchor) = rt.anchor else { return };
     let motion = if moved { Motion::new(&pose_now, &before.unwrap_or(pose_now), now) } else { Motion::new(&pose_now, &pose_now, now) };
     let bogeys = bogey_data(carriage, graph, &pose_now, derailed, rt, if moved { diff } else { [0.0; 3] });
-    let wrote = host.change_mod_block_entity(anchor, &mut |e| {
-        draw::write_pose(&mut e.nbt, &motion, initial_yaw, spacing, &bogeys, derailed);
-    });
-    if wrote {
-        host.block_entity_sync(anchor);
+    // The pose alone to the players near it; the whole data (the structure travels with it) when the carriage stops,
+    // when something changed, and every `DATA_EVERY` ticks for players who come into view and for saving.
+    draw::publish(dimension, anchor, &motion, &bogeys, derailed);
+    if !moved || rt.fresh || now - rt.data_at >= DATA_EVERY {
+        let wrote = host.change_mod_block_entity(anchor, &mut |e| {
+            draw::write_pose(&mut e.nbt, &motion, initial_yaw, spacing, &bogeys, derailed);
+        });
+        if wrote {
+            host.block_entity_sync(anchor);
+        }
+        rt.data_at = now;
     }
     rt.news_at = now;
     rt.news_moving = moved;
