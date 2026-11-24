@@ -206,6 +206,13 @@ pub fn jittered(motion: [f32; 3], radius: f32, rng: &mut Rng) -> [f32; 3] {
     motion.map(|v| v + (rng.float() as f32 - 0.5) * 2.0 * radius)
 }
 
+/// `VecHelper.offsetRandomly(Vec3.ZERO, random, radius).multiply(1, 0, 1)` added to `motion`: the offset across, none
+/// up or down (`PressingBehaviour.makePressingParticleEffect`). The offset still draws three numbers, as Java does.
+pub fn jittered_across(motion: [f32; 3], radius: f32, rng: &mut Rng) -> [f32; 3] {
+    let offset = [0, 1, 2].map(|_| (rng.float() as f32 - 0.5) * 2.0 * radius);
+    [motion[0] + offset[0], motion[1], motion[2] + offset[2]]
+}
+
 /// `particleEmitterWithinBlockSpace`: a point anywhere in the block about `centre`.
 pub fn within_block(centre: [f64; 3], rng: &mut Rng) -> [f64; 3] {
     centre.map(|v| v + rng.float() - 0.5)
@@ -272,6 +279,16 @@ mod tests {
             assert_eq!(p.velocity, motion.map(f64::from));
         }
         assert_eq!(jittered([1.0, 2.0, 3.0], 0.0, &mut rng), [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn jitter_across_leaves_the_vertical_motion_alone() {
+        let mut rng = Rng::seeded(&[9]);
+        for _ in 0..100 {
+            let motion = jittered_across([0.0, 0.125, 0.0], 0.175, &mut rng);
+            assert_eq!(motion[1], 0.125);
+            assert!(motion[0].abs() <= 0.175 && motion[2].abs() <= 0.175);
+        }
     }
 
     #[test]

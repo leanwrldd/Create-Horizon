@@ -79,6 +79,39 @@ def arm_points(raw):
     return arms
 
 
+TANKS = ("create:fluid_tank", "create:creative_fluid_tank")
+
+
+def tank_data(raw):
+    """Each Fluid Tank block's saved multi-block data as `[pos, controller, width, height, window, fluid, amount]`
+    (`FluidTankBlockEntity.write`): the controller's `Size`, `Height`, `Window` and `TankContent`, and for the other
+    blocks its `Controller`, made relative to the scene through `LastKnownPos`."""
+    nbt = read_nbt(raw)
+    palette = [entry["Name"] for entry in nbt["palette"]]
+    tanks = {tuple(entry["pos"]): entry["nbt"] for entry in nbt["blocks"]
+             if palette[entry["state"]] in TANKS and "nbt" in entry}
+
+    def block_pos(value):
+        return [value["X"], value["Y"], value["Z"]] if isinstance(value, dict) else list(value)
+
+    rows = {}
+    for pos, data in tanks.items():
+        controller = list(pos)
+        if "Controller" in data and "LastKnownPos" in data:
+            known = block_pos(data["LastKnownPos"])
+            controller = [a + c - k for a, c, k in zip(pos, block_pos(data["Controller"]), known)]
+        content = data.get("TankContent", {})
+        fluid = content.get("FluidName", content.get("id", "minecraft:empty"))
+        amount = content.get("Amount", content.get("amount", 0))
+        rows[pos] = [list(pos), controller, data.get("Size", 0), data.get("Height", 0), int(data.get("Window", 1)),
+                     "" if fluid == "minecraft:empty" else fluid, amount]
+    for row in rows.values():
+        head = rows.get(tuple(row[1]))
+        if head is not None and not row[2]:
+            row[2], row[3], row[4], row[5], row[6] = head[2], head[3], head[4], head[5], head[6]
+    return list(rows.values())
+
+
 def model_resolver(jar):
     entries = set(jar.namelist())
 
@@ -135,6 +168,9 @@ def model_resolver(jar):
     return models_for
 
 
+OPPOSITES = {"north": "south", "south": "north", "east": "west", "west": "east", "up": "down", "down": "up"}
+
+
 def expand_properties(jar, palette, blocks, events):
     original = {tuple(pos): palette[index] for pos, index in blocks}
     changed = {}
@@ -172,8 +208,40 @@ def expand_properties(jar, palette, blocks, events):
             props[key] = value
         return id, props
 
+    def resolve(spec, old):
+        """A property value an instruction takes from the block's old state (`getValue(P)`, offset or turned round)."""
+        value = old.get(spec["from"])
+        if value is None:
+            return None
+        if spec.get("opposite"):
+            return OPPOSITES.get(value, value)
+        if spec.get("add"):
+            return str(int(value) + spec["add"]) if value.lstrip("-").isdigit() else None
+        return value
+
     for tick, op, *args in events:
-        if op == "properties":
+        if op == "update":
+            # `modifyBlock(pos, s -> ...s.getValue(P)...)`: the same instruction for blocks that differ.
+            groups = {}
+            for pos in args[0]:
+                spot = tuple(pos)
+                state = changed.get(spot, original.get(spot))
+                if state is None:
+                    continue
+                old_id, old_props = state
+                new_id = args[1] or old_id
+                props = {} if new_id != old_id else dict(old_props)
+                for key, spec in args[2].items():
+                    value = resolve(spec, old_props) if isinstance(spec, dict) else spec
+                    if value is not None:
+                        props[key] = value
+                if (new_id, props) == (old_id, old_props):
+                    continue
+                changed[spot] = (new_id, props)
+                groups.setdefault((new_id, tuple(sorted(props.items()))), []).append(pos)
+            for (id, props), positions in groups.items():
+                yield [tick, "block", positions, id, dict(props)]
+        elif op == "properties":
             groups = {}
             for pos in args[0]:
                 spot = tuple(pos)
@@ -250,7 +318,8 @@ def import_ponder(jar, content):
                 events.append([end, "caption", lang[text_key], 100])
                 end += 100
         arms = arm_points(jar.read(f"assets/create/ponder/{path}.nbt"))
-        timeline = dict(size=size, palette=palette, blocks=blocks, speeds=speeds, events=events, models=fallback, arms=arms, duration=max(80, end),
+        tanks = tank_data(jar.read(f"assets/create/ponder/{path}.nbt"))
+        timeline = dict(size=size, palette=palette, blocks=blocks, speeds=speeds, events=events, models=fallback, arms=arms, tanks=tanks, duration=max(80, end),
                         bounds=scene.pop("bounds"), scale=scene.pop("scale"), offset=scene.pop("offset"))
         (output / scene["file"]).write_text(json.dumps(timeline, separators=(",", ":")), encoding="utf-8")
     (output / "catalog.json").write_text(json.dumps(catalogue, separators=(",", ":")), encoding="utf-8")

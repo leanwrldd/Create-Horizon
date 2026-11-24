@@ -107,9 +107,19 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   every renderer that reads the key Create saves shows it), `setFilterData`, Harvester/Roller `setAnimatedSpeed`,
   `flapFunnel` (and the flap `createItemOnBelt` ends with), `incrementBlockBreakingProgress` (crack texture over the
   block, ten calls break it, with crumbs), fluid particles (honey, chocolate), item entity discards, and the particle
-  constants now follow Horizon's ports of the vanilla classes. Left: `modifyBlockEntity` for fluids, items in
-  inventories, recipes and display text (`ponder_storyboards.py` prints what it skips), `modifyBlock` that reads the
-  old state, parrots, carts, `showFilterSlotInput`, `toggleControls`, `hideElement`, `propagatePipeChange`, trains;
+  constants now follow Horizon's ports of the vanilla classes. Then (unplayed): fluid in Fluid Tanks
+  (`rules/ponder_fluid.rs`; the tank blocks come from the scene's structure file, `ponder_assets.tank_data`),
+  `modifyBlock` that reads the old state (an `update` op `ponder_assets.expand_properties` resolves against the
+  structure), `toggleControls`, the filter and scroll input boxes (read from the Ponder library's bytecode:
+  `tools` has no disassembler, the constants are in `highlight_box`), nixie text, the postbox flag, the controls'
+  `Disabled`, a press's item particles, the display link's bulb pulse and the fluid pipe's `getAxisState`;
+  `propagatePipeChange` is counted as having nothing to draw (the pipes' flow isn't drawn). `python -m unittest
+  tools/test_ponder.py` checks the generator's pure parts. Left (`ponder_storyboards.py` prints what it skips):
+  Mechanical Crafter inventories, `setCraftingResult` and `connectCrafterInvs` (needs `rules::crafter_grid::World`
+  run inside the replay), display board text and dye (item names come from the client's language files),
+  `VisualizedItems` on a basin and a depot's `HeldItem` (nothing draws them), brass tunnel modes and filters (not
+  drawn), item drain, basin, spout and hose pulley fluid, parrots, carts, `hideElement` (parrots and carts only),
+  `chaseBoundingBoxOutline`, trains;
 - minecart contraptions (blocked: nothing can draw a structure on a vanilla minecart);
 - Deployer schematic printing on a structure (clicking levers, doors, trapdoors, gates, seats, Deployers and Controls
   on a moving structure is merged, `006778e`; client-side click cancelling and the elevator Controls branch are not);

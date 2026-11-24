@@ -148,18 +148,42 @@ def tags(root, registry):
 
 UNKNOWN = object()
 
+# `FluidStack`'s first argument: Create's own fluids and the vanilla ones the storyboards use, as (name, id). A flowing
+# fluid is its source here: the scene shows the fluid, not its level.
+FLUIDS = {"AllFluids.CHOCOLATE": ("chocolate", "create:chocolate"), "AllFluids.HONEY": ("honey", "create:honey"),
+          "Fluids.WATER": ("water", "minecraft:water"), "Fluids.LAVA": ("lava", "minecraft:lava"),
+          "Fluids.FLOWING_LAVA": ("lava", "minecraft:lava")}
+
+
+def fluid_of(source):
+    """The fluid a `new FluidStack(...)` expression names."""
+    match = re.search(r"\b(AllFluids|Fluids)\.([A-Z_]+)", source)
+    if not match:
+        return None
+    key = f"{match[1]}.{match[2]}"
+    if key not in FLUIDS and match[1] == "AllFluids":
+        return match[2].lower(), f"create:{match[2].lower()}"
+    return FLUIDS.get(key)
+
+
+# The Fluid Tank blocks the fluid instructions can act on (`FluidTankBlockEntity`, `CreativeFluidTankBlockEntity`).
+TANKS = {"create:fluid_tank", "create:creative_fluid_tank"}
+
 
 class Links(list):
     """An `ArrayList` a storyboard fills with the links `showIndependentSection` returns."""
 
 
 class Storyboard:
-    def __init__(self, registry, method, helpers, dimensions):
+    def __init__(self, registry, method, helpers, dimensions, blocks=None):
         self.registry = registry
+        # The block id at each position of the scene's structure.
+        self.blocks = blocks or {}
         self.tick = 0
         self.env = {}
         self.ops = []
         self.unhandled = Counter()
+        self.inert = Counter()
         self.next_section = 1
         self.next_caption = 1
         self.key = None
@@ -225,9 +249,22 @@ class Storyboard:
             return UNKNOWN
         source, kind = text(node), node.type
         if kind == "identifier":
+            if source not in self.env and len(source) > 1 and source.isupper():
+                # A statically imported constant (`SHAPE`, `LEVEL`): named as its field is in a property position.
+                return source.lower()
             return self.env.get(source, UNKNOWN)
         if kind == "parenthesized_expression":
             return self.value(node.named_children[0])
+        # `new BlockPos[]{a, b}` and `a[i]`: a list of what the initializer holds.
+        if kind in {"array_creation_expression", "array_initializer"}:
+            initializer = node if kind == "array_initializer" else field(node, "value")
+            if initializer is not None:
+                return [self.value(child) for child in initializer.named_children]
+        if kind == "array_access":
+            array, index = self.value(field(node, "array")), self.value(field(node, "index"))
+            if isinstance(array, list) and isinstance(index, int) and not isinstance(index, bool) and 0 <= index < len(array):
+                return array[index]
+            return UNKNOWN
         if kind == "string_literal":
             return java_string(node)
         if kind in {"true", "false"}:
@@ -241,8 +278,12 @@ class Storyboard:
                     text(field(node, "operator")), lambda: UNKNOWN)()
         if kind == "binary_expression":
             left, right = (self.value(field(node, side)) for side in ("left", "right"))
+            operator = text(field(node, "operator"))
+            # `state.getValue(P) - 1`: the old value's offset, worked out where the old state is known.
+            if isinstance(left, tuple) and left[:1] == ("old",) and operator in {"+", "-"} \
+                    and isinstance(right, int) and not isinstance(right, bool):
+                return ("old", left[1], left[2] + (right if operator == "+" else -right))
             if UNKNOWN not in (left, right):
-                operator = text(field(node, "operator"))
                 operators = {
                     "+": lambda: left + right, "-": lambda: left - right,
                     "*": lambda: left * right, "/": lambda: int(left / right) if isinstance(left, int) and isinstance(right, int) else left / right,
@@ -296,8 +337,10 @@ class Storyboard:
                 return tuple(args)
             if name in {"ItemParticleOption", "BlockParticleOption"}:
                 return "item"
-            if name == "FluidStack" and (fluid := re.search(r"AllFluids\.([A-Z_]+)", text(node))):
-                return ("fluid", fluid[1].lower())
+            if name == "FluidStack" and (fluid := fluid_of(text(node))):
+                # (`fluid`, short name, amount in mB, id): the name is what the particle code reads.
+                amount = args[1] if len(args) > 1 and isinstance(args[1], int) and not isinstance(args[1], bool) else 0
+                return ("fluid", fluid[0], amount, fluid[1])
             if name == "ItemStack" and args and isinstance(args[0], tuple) and args[0][0] == "id":
                 return args[0]
             if name == "AABB":
@@ -338,6 +381,19 @@ class Storyboard:
             elif name not in {"world", "overlay", "special", "effects", "title", "markAsFinished", "setNextUpEnabled", "getCurrentTime"}:
                 self.unhandled[f"scene.{name}"] += 1
             return UNKNOWN
+
+        # `Component.literal(text)`, its `getString()` and `Component.Serializer.toJson(component, ...)`.
+        if target_text == "Component" and name == "literal" and len(values) == 1 and isinstance(values[0], str):
+            return ("text", values[0])
+        if isinstance(value, tuple) and value[:1] == ("text",) and name == "getString" and not values:
+            return value[1]
+        if target_text == "Component.Serializer" and name == "toJson" and values \
+                and isinstance(values[0], tuple) and values[0][:1] == ("text",):
+            return ("json", values[0][1])
+        # `FluidHelper.copyStackWithAmount(stack, amount)`.
+        if target_text == "FluidHelper" and name == "copyStackWithAmount" and len(values) == 2 \
+                and isinstance(values[0], tuple) and values[0][:1] == ("fluid",) and isinstance(values[1], int):
+            return ("fluid", values[0][1], values[1], values[0][3])
 
         # `PackageItem.containing(...)` picks a random style (`PackageStyles.getRandomBox`): the first one stands for it.
         if target_text == "PackageItem" and name == "containing":
@@ -393,6 +449,11 @@ class Storyboard:
                         if name in {"showLine", "showBigLine"} and isinstance(first, tuple) and isinstance(second, tuple) and numbers(first, 3) and numbers(second, 3):
                             self.emit("line", first, second, color, duration)
                             return UNKNOWN
+                    # `showFilterSlotInput`, `showScrollInput` and friends: `HighlightValueBoxInstruction`, a white
+                    # outline box of the given size for the duration.
+                    if name in HIGHLIGHTS and (box_ := highlight_box(name, values)):
+                        self.emit("outline", *box_, "white", values[-1])
+                        return UNKNOWN
                     if name == "showControls" and len(values) == 3 and isinstance(values[0], tuple):
                         self.emit("control", values[0], values[2] if isinstance(values[2], int) else 40)
                     else:
@@ -462,9 +523,28 @@ class Storyboard:
                 elif name == "colored" and len(values) == 1 and isinstance(values[0], str):
                     options["color"] = values[0]
                 return value
+            # `state.getValue(P).getOpposite()`.
+            if value[0] == "old" and name == "getOpposite" and not values and value[2] == 0:
+                return ("opposite", value[1])
             if value[0] == "id":
                 if name in {"getDefaultState", "defaultBlockState", "get", "asStack", "asItem", "copy", "copyWithCount"}:
                     return value
+                # `FluidPipeBlock.getAxisState(axis)`: open on both sides along the axis and shut on the others.
+                if name == "getAxisState" and len(values) == 1 and values[0] in {"x", "y", "z"}:
+                    axes = {"east": "x", "west": "x", "up": "y", "down": "y", "north": "z", "south": "z"}
+                    return ("id", value[1], value[2] | {side: str(axis == values[0]).lower() for side, axis in axes.items()})
+                # The state a `modifyBlock` lambda gets is the old one: `getValue` reads its property.
+                if name == "getValue" and value[1] == "" and len(values) == 1 and isinstance(values[0], str):
+                    return ("old", values[0], 0)
+                # `setValue(P, old value, with an offset or turned round)`: worked out per block when the scene is built.
+                if name == "setValue" and len(values) == 2 and isinstance(values[0], str) \
+                        and isinstance(values[1], tuple) and values[1][:1] in {("old",), ("opposite",)}:
+                    spec = {"from": values[1][1]}
+                    if values[1][0] == "opposite":
+                        spec["opposite"] = True
+                    elif values[1][2]:
+                        spec["add"] = values[1][2]
+                    return ("id", value[1], value[2] | {values[0]: spec})
                 if name == "setValue" and len(values) == 2 and all(isinstance(v, (str, bool, int)) for v in values):
                     return ("id", value[1], value[2] | {str(values[0]): str(values[1]).lower()})
                 if name == "cycle" and len(values) == 1 and isinstance(values[0], str):
@@ -506,11 +586,29 @@ class Storyboard:
         if param is None or body is None:
             return None
         entries = {}
+        # Locals the lambda declares (`Component component = Component.literal("0F");`) are known to the puts below.
+        declared = {}
+        if body.type == "block":
+            for statement in body.named_children:
+                if statement.type == "local_variable_declaration":
+                    declared.update((text(field(d, "name")), self.env.get(text(field(d, "name")), UNKNOWN))
+                                    for d in statement.named_children if d.type == "variable_declarator")
+                    self.execute(statement)
+        try:
+            return self.nbt_puts(body, param, entries)
+        finally:
+            for name, before in declared.items():
+                self.env[name] = before
+
+    def nbt_puts(self, body, param, entries):
         for call in method_calls_all(body):
             name, target, args = invocation(call)
             owner = text(target)
             if owner == param and name in NBT_TYPES and len(args) == 2:
                 value = self.value(args[1])
+                # `Component.Serializer.toJson(..)`: this port saves a tube's text as the plain string.
+                if isinstance(value, tuple) and value[:1] == ("json",):
+                    value = value[1]
                 kind = NBT_TYPES[name]
                 key = java_string(args[0])
                 if kind == "b" and isinstance(value, bool):
@@ -549,6 +647,58 @@ class Storyboard:
                 value = self.value(args[0])
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     return {"CreatePonderAnimatedSpeed": ["f", float(value)]}
+        # `be.forceFlag = raise` (`PostboxBlockEntity`: the flag is up while it holds a package or is forced) and
+        # `ccte.disabled = true` (`ContraptionControlsBlockEntity.disabled`, saved as `Disabled`): a field a renderer reads.
+        if param is not None and body is not None and body.type == "assignment_expression" \
+                and text(field(body, "operator")) == "=":
+            left = text(field(body, "left"))
+            keys = {"forceFlag": "Filled", "disabled": "Disabled"}
+            value = self.value(field(body, "right"))
+            if left.startswith(param + ".") and left[len(param) + 1:] in keys and isinstance(value, bool):
+                return {keys[left[len(param) + 1:]]: ["b", value]}
+        return None
+
+    def press_burst(self, node):
+        """The arguments of the `particles` row for `PressingBehaviour.makePressingParticleEffect(pos, stack)` and
+        `makeCompactingParticleEffect(pos, stack)`: the item particles of one press stroke.
+
+        The pressing burst is `getParticleAmount()` (the press: 15) particles at `pos` less a quarter block, thrown up
+        at 1/8 with `offsetRandomly(.125)` across; the compacting one 20 at `pos`, up at 1/4, `.175` across. Both zero
+        the vertical part of the random offset (`multiply(1, 0, 1)`).
+        """
+        param, body = self.lambda_body(node)
+        for call in method_calls_all(body) if body is not None else ():
+            name, _, args = invocation(call)
+            at = self.value(args[0]) if len(args) == 2 else UNKNOWN
+            if not numbers(at, 3):
+                continue
+            if name == "makePressingParticleEffect":
+                return [[at[0], at[1] - 0.25, at[2]], [0, 0.125, 0], False, 15, 1, 0.125, True]
+            if name == "makeCompactingParticleEffect":
+                return [list(at), [0, 0.25, 0], False, 20, 1, 0.175, True]
+        return None
+
+    def fluid_op(self, node):
+        """`[kind, fluid id, amount]` for a lambda that fills or drains a tank, or None.
+
+        The `IFluidHandler` of a tank block (`ifh.fill(stack, EXECUTE)`, `ifh.drain(amount, EXECUTE)`), the tank
+        behind `getTankInventory()` and `CreativeSmartFluidTank.setContainedFluid(stack)` all act on the controller.
+        """
+        param, body = self.lambda_body(node)
+        if body is None:
+            return None
+        for call in method_calls_all(body):
+            name, _, args = invocation(call)
+            if name in {"fill", "drain"} and len(args) == 2 and text(args[1]).endswith("FluidAction.EXECUTE"):
+                value = self.value(args[0])
+                if name == "fill" and isinstance(value, tuple) and value[:1] == ("fluid",) and value[2] > 0:
+                    return ["fill", value[3], value[2]]
+                if name == "drain" and isinstance(value, int) and not isinstance(value, bool) and value > 0:
+                    return ["drain", "", value]
+            if name == "setContainedFluid" and len(args) == 1:
+                value = self.value(args[0])
+                if isinstance(value, tuple) and value[:1] == ("fluid",):
+                    return ["set", value[3], 0]
         return None
 
     def select(self, name, values):
@@ -575,6 +725,8 @@ class Storyboard:
         return UNKNOWN
 
     def world(self, name, values, args):
+        if name == "getHolderLookupProvider":
+            return UNKNOWN  # a registry handle `put`s pass on; the saved data is what matters
         selected = values[0] if values else UNKNOWN
         section = values[1] if len(values) > 1 else UNKNOWN
         if name in {"showSection", "showIndependentSection", "showIndependentSectionImmediately", "showSectionAndMerge"} and isinstance(selected, list):
@@ -633,7 +785,10 @@ class Storyboard:
                 self.env[param] = before
                 if isinstance(changed, tuple) and changed[0] == "id":
                     positions = [selected] if isinstance(selected, tuple) else selected
-                    if changed[1]:
+                    if any(isinstance(spec, dict) for spec in changed[2].values()):
+                        # Reads the old state: `ponder_assets.expand_properties` resolves it against the structure.
+                        self.emit("update", positions, changed[1], changed[2])
+                    elif changed[1]:
                         self.emit("block", positions, changed[1], changed[2])
                     elif changed[2]:
                         self.emit("properties", positions, changed[2])
@@ -728,6 +883,28 @@ class Storyboard:
                 if entries:
                     self.emit("nbt", positions, entries)
                     return UNKNOWN
+                burst = self.press_burst(args[2])
+                if burst:
+                    self.emit("particles", "item", *burst)
+                    return UNKNOWN
+                # Fluid in a Fluid Tank: the tank rules (`rules::ponder_fluid`) replay it.
+                fluid = self.fluid_op(args[2])
+                if fluid and all(self.blocks.get(tuple(int(v) for v in pos)) in TANKS for pos in positions):
+                    self.emit("fluid", positions, *fluid)
+                    return UNKNOWN
+        # `flashDisplayLink(pos)` is `LinkWithBulbBlockEntity.pulse`: the bulb glows from now on.
+        if name == "flashDisplayLink" and numbers(selected, 3):
+            self.emit("pulse", [selected])
+            return UNKNOWN
+        # `toggleControls(pos)` is `cycleBlockProperty(pos, ControlsBlock.VIRTUAL)`.
+        if name == "toggleControls" and numbers(selected, 3):
+            self.emit("properties", [selected], {"virtual": None})
+            return UNKNOWN
+        # `propagatePipeChange(pos)` is `onSpeedChanged(0)` on the pump: it only restarts the pipes' flow, which
+        # nothing here draws, so there is nothing to show.
+        if name == "propagatePipeChange" and numbers(selected, 3):
+            self.inert["world.propagatePipeChange"] += 1
+            return UNKNOWN
         if name == "toggleRedstonePower" and isinstance(selected, list):
             self.emit("toggle", selected)
             return UNKNOWN
@@ -762,6 +939,41 @@ ANIMATED = {"rotateBearing": "bearing", "movePulley": "pulley", "moveDeployer": 
 
 DIRECTIONS = {"up": (0, 1, 0), "down": (0, -1, 0), "north": (0, 0, -1),
               "south": (0, 0, 1), "east": (1, 0, 0), "west": (-1, 0, 0)}
+
+
+HIGHLIGHTS = {"showFilterSlotInput", "showScrollInput", "showCenteredScrollInput", "showRepeaterScrollInput"}
+
+
+def highlight_box(name, values):
+    """`(low, high)` of the box `PonderOverlayInstructions.<name>` outlines, from the bytecode of the Ponder library:
+
+    - `showFilterSlotInput(location, duration)`: 0.1 either way; `(location, side, duration)`: the location moved
+      0.0234375 into the block and `VecHelper.axisAlingedPlaneOf(side)` (1 on the axes across `side`) * 0.0859375.
+    - `showScrollInput(location, side, duration)`: 0.0625 along `side`'s axis, 0.25 across it;
+      `showCenteredScrollInput(pos, side, duration)` is that at the block's surface on `side`.
+    - `showRepeaterScrollInput(pos, duration)`: (1/6, 0.0625, 1/6) around the bottom surface raised 0.1875.
+    """
+    if not values or not isinstance(values[-1], int) or isinstance(values[-1], bool):
+        return None
+    sides = [v for v in values if isinstance(v, str) and v in DIRECTIONS]
+    side = sides[0] if sides else None
+    if name == "showRepeaterScrollInput" and len(values) == 2 and numbers(values[0], 3):
+        centre = vector("blockSurface", [values[0], "down"])
+        centre = (centre[0], centre[1] + 0.1875, centre[2])
+        extent = (1 / 6, 0.0625, 1 / 6)
+    elif name == "showFilterSlotInput" and len(values) == 2 and numbers(values[0], 3):
+        centre, extent = values[0], (0.1, 0.1, 0.1)
+    elif name == "showFilterSlotInput" and len(values) == 3 and numbers(values[0], 3) and side:
+        centre = tuple(c - 0.0234375 * n for c, n in zip(values[0], DIRECTIONS[side]))
+        extent = tuple((1 - abs(n)) * 0.0859375 for n in DIRECTIONS[side])
+    elif name in {"showScrollInput", "showCenteredScrollInput"} and len(values) == 3 and side and numbers(values[0], 3):
+        centre = values[0] if name == "showScrollInput" else vector("blockSurface", [values[0], side])
+        extent = tuple(0.0625 if n else 0.25 for n in map(abs, DIRECTIONS[side]))
+    else:
+        return None
+    if centre is UNKNOWN:
+        return None
+    return (tuple(c - e for c, e in zip(centre, extent)), tuple(c + e for c, e in zip(centre, extent)))
 
 
 def numbers(values, length):
@@ -827,7 +1039,7 @@ def generate(create, jar, output, models_output):
     for path in (directory / "scenes").rglob("*.java"):
         for method in (n for n in walk(parse(path)) if n.type == "method_declaration"):
             method_groups.setdefault(path.stem, {})[text(field(method, "name"))] = method
-    missing, unhandled, models = [], Counter(), set()
+    missing, unhandled, inert, models = [], Counter(), Counter(), set()
     with ZipFile(jar) as archive:
         lang = json.loads(archive.read("assets/create/lang/en_us.json"))
         models_for = model_resolver(archive)
@@ -835,7 +1047,8 @@ def generate(create, jar, output, models_output):
             owner, method = reference.split("::")
             size, palette, blocks, _ = structure(archive.read(f"assets/create/ponder/{path}.nbt"))
             helpers = method_groups[owner]
-            script = Storyboard(registry, helpers[method], helpers, size)
+            script = Storyboard(registry, helpers[method], helpers, size,
+                                {tuple(pos): palette[index][0] for pos, index in blocks})
             key = script.key
             if key is None or f"create.ponder.{key}.header" not in lang:
                 missing.append((path, reference, key))
@@ -858,6 +1071,7 @@ def generate(create, jar, output, models_output):
                          offset=script.offset, duration=script.tick, ops=script.ops)
             scene["tags"] = [groups[tag]["id"] for tag in scene["tags"]]
             unhandled.update(script.unhandled)
+            inert.update(script.inert)
         if missing:
             raise ValueError(f"Unmatched Java scenes: {missing}")
     scenes = list(index.values())
@@ -873,6 +1087,7 @@ def generate(create, jar, output, models_output):
     )
     print(f"{len(scenes)} registered storyboards and {len(groups)} Ponder tags")
     print("Unsupported source operations:", dict(unhandled))
+    print("Instructions with nothing to draw:", dict(inert))
 
 
 if __name__ == "__main__":
