@@ -74,7 +74,8 @@ pub fn models_baked(host: &mut dyn ClientHost) {
     *MODELS.lock().unwrap_or_else(PoisonError::into_inner) = resolved;
 }
 
-fn model(name: &str) -> Option<ModelRef> {
+pub(crate) fn model(name: &str) -> Option<ModelRef> {
+
     MODELS.lock().unwrap_or_else(PoisonError::into_inner).get(name).copied()
 }
 

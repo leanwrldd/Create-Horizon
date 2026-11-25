@@ -25,7 +25,11 @@ BLOCKS = {
                            {"default": _STATION}, render_shape="MODEL"),
 }
 
+# What the block entity draws besides the block's model (`AllPartialModels.STATION_ON`, `STATION_OFF`, `STATION_ASSEMBLE`: the flag).
+MODELS = ["block/track_station/flag_on", "block/track_station/flag_off", "block/track_station/flag_assemble"]
+
 TAB = ["track_station"]
+
 
 NAMES = {
     "block.create.track_station": "Train Station",

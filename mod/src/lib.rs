@@ -687,10 +687,14 @@ impl mod_api::Hooks for Mod {
 
     fn client_tick_post(&self, host: &mut dyn mod_api::ClientHost, _: &mut mod_api::ClientTickPostEvent) {
         machines::cog_placement::client_tick(&*host);
+        machines::train_overlay::client_tick(&mut *host);
         compat::events::client_tick_post(host)
     }
 
     fn right_click_block(&self, mut host: mod_api::HostSide<'_>, event: &mut mod_api::RightClickBlockEvent<'_>) -> mod_api::Flow {
+        if let mod_api::Flow::Cancel = machines::train_overlay::right_click_block(&mut host, event) {
+            return mod_api::Flow::Cancel;
+        }
         if let mod_api::Flow::Cancel = machines::cog_placement::right_click_block(&mut host, event) {
             return mod_api::Flow::Cancel;
         }
@@ -701,6 +705,9 @@ impl mod_api::Hooks for Mod {
     }
 
     fn right_click_item(&self, mut host: mod_api::HostSide<'_>, event: &mut mod_api::RightClickItemEvent<'_>) -> mod_api::Flow {
+        if let mod_api::Flow::Cancel = machines::train_overlay::right_click_item(&mut host, event) {
+            return mod_api::Flow::Cancel;
+        }
         machines::structure_click::right_click_item(&mut host, event)
     }
 
@@ -730,7 +737,8 @@ impl mod_api::Hooks for Mod {
     }
 
     fn submit_custom_geometry(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::SubmitCustomGeometryEvent<'_>) {
-        machines::cog_placement::submit_custom_geometry(host, event)
+        machines::cog_placement::submit_custom_geometry(host, event);
+        machines::train_overlay::submit_custom_geometry(host, event)
     }
 
     fn render_tooltip_pre(
@@ -881,7 +889,12 @@ impl mod_api::Hooks for Mod {
         compat::world::run_mod_command(host, event)
     }
 
+    fn register_entity_layers(&self, _: &mod_api::RegistrationContext, event: &mut mod_api::RegisterEntityLayersEvent<'_>) {
+        machines::train_hat::register_entity_layers(event)
+    }
+
     fn render_level_stage(&self, host: &dyn mod_api::ClientHost, event: &mut mod_api::RenderLevelStageEvent<'_>) {
+
         compat::client::render_level_stage(host, event)
     }
 

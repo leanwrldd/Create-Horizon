@@ -10,9 +10,11 @@
 //!
 //! Differences from Create, for the README:
 //! - Create runs the session on the client (the hover shows the line the wheels would take, the click sends
-//!   `TrainRelocationPacket`); here the server keeps it and the click acts at once. There is no preview, and so no
-//!   `train.relocate.valid` message.
-//! - Only a straight piece of track can be clicked (a curve's point is a client ray in Create), as for the edge points.
+//!   `TrainRelocationPacket`); here the server keeps it and the click acts at once. The client says where the cursor is and
+//!   the server answers with [`preview`] (the line the wheels would take) and the `train.relocate.valid` message.
+//! - A curve is clicked by the client's ray at its segments (`track_overlay::pick_curves`), which sends the segment; the location is
+//!   `TrackGraphHelper.getBezierGraphLocationAt` (`graph_helper.rs`).
+
 //! - The probe's `ignoreEdgePoints` and `ignoreTurns` are the listener-less default of [`Listeners`].
 
 use std::collections::BTreeMap;
@@ -34,6 +36,8 @@ pub const BLOCK_REACH: f64 = 4.5;
 
 pub const MSG_ABORT: &str = "Relocation aborted";
 pub const MSG_INVALID: &str = "Cannot relocate Train to here";
+/// `create.train.relocate.valid`, shown while the cursor is on a spot the train fits.
+pub const MSG_VALID: &str = "Can relocate to here, Click to Confirm";
 pub const MSG_SUCCESS: &str = "Relocation successful";
 pub const MSG_TOO_FAR: &str = "Cannot relocate Train this far away";
 pub const MSG_MOVING: &str = "Cannot relocate a moving Train";
@@ -142,6 +146,45 @@ fn walk(train: &Train, nets: &RailNetworks, location: &TrackGraphLocation, up_no
         out.reached += 1;
     }
     Some(out)
+}
+
+/// What the client's preview of a spot shows (`relocate(.., simulate = true)` on the client records `toVisualise`): whether the train
+/// can stand there, and the places its wheels would take, from the first wheel to the last one reached (the walk stops at the first
+/// stretch that is blocked or crossed by another train, which is included). Empty when the location is not on the graph.
+#[allow(clippy::too_many_arguments)]
+pub fn preview(
+    train: &Train,
+    nets: &RailNetworks,
+    others: &BTreeMap<Uuid, Train>,
+    location: &TrackGraphLocation,
+    up_normal: Vec3,
+    dimension: u32,
+    max_assembly_length: f64,
+) -> (bool, Vec<Vec3>) {
+    let Some(found) = walk(train, nets, location, up_normal) else { return (false, Vec::new()) };
+    let Some(graph) = nets.graphs.get(&location.graph) else { return (false, Vec::new()) };
+    let mut points: Vec<Vec3> = found.positions.first().copied().into_iter().collect();
+    for i in 0..found.positions.len().saturating_sub(1) {
+        let blocking = i as i32 >= found.reached - 1;
+        let collided = !found.blocked
+            && find_colliding_train(
+                train.id,
+                train.graph,
+                graph,
+                found.positions[i],
+                found.positions[i + 1],
+                dimension,
+                others,
+                max_assembly_length,
+                None,
+            )
+            .is_some();
+        points.push(found.positions[i + 1]);
+        if collided || blocking {
+            return (false, points);
+        }
+    }
+    (!found.blocked, points)
 }
 
 /// `TrainRelocator.relocate(..)` once the graph location is known: whether the train can stand there and, unless `simulate`, puts
@@ -281,6 +324,29 @@ mod tests {
         // The probe starts at the click with the trailing wheel and goes on for the wheel spacing.
         assert_eq!(t.carriages[0].trailing_point().position, 60.0);
         assert_eq!(t.carriages[0].leading_point().position, 62.0);
+    }
+
+    #[test]
+    fn the_preview_lists_the_wheels_places_and_says_whether_they_fit() {
+        let (mut rails, g) = setup(100.0);
+        rails.trains.insert(1, train_at(&rails.nets, g, 1, 100.0, 12.0));
+        let (ok, points) = {
+            let train = &rails.trains[&1];
+            preview(train, &rails.nets, &BTreeMap::new(), &at(g, 60.0, 100.0), UP, 0, 128.0)
+        };
+        assert!(ok);
+        // Two wheels: the first place, then the second two blocks on.
+        assert_eq!(points.len(), 2);
+        assert!((points[1][0] - points[0][0]).abs() > 1.5);
+        // At the end of the track the probe is blocked: the line is still shown, and it is not valid.
+        let (ok, points) = {
+            let train = &rails.trains[&1];
+            preview(train, &rails.nets, &BTreeMap::new(), &at(g, 99.5, 100.0), UP, 0, 128.0)
+        };
+        assert!(!ok);
+        assert!(!points.is_empty());
+        // And a simulated relocation agrees about validity.
+        assert!(!try_relocate(&mut rails, 1, &at(g, 99.5, 100.0), true));
     }
 
     #[test]

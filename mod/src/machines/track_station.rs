@@ -17,8 +17,10 @@
 //!   out of the world; `disassemble` puts them back (`Train.disassemble`) and `/station schedule` gives the train's schedule back. The
 //!   comparator reads 15 while a train stands here (`trainPresent`), and a Schedule item right-clicked into the station (an empty
 //!   sneaking hand takes it out) is the auto-schedule slot (`depotBehaviour`, `applyAutoSchedule`).
-//! - Not drawn: the flag (`StationRenderer`), the overlay on the track and the assembly outlines (`TRACK_ASSEMBLING_OVERLAY`,
-//!   the green and red bogey spots): `/station` tells the bogey offsets instead.
+//! - The flag (`StationRenderer`), the overlay on the track and the assembly spots (`TRACK_ASSEMBLING_OVERLAY`, the blue and green
+//!   bogey spots) are `train_overlay.rs`'s: it reads this entity's data (`TargetTrack`, `TrainPresent`) and scans the assembly itself.
+//!   `/station` still tells the bogey offsets.
+
 //! - The door control (`DoorControlBehaviour`) is `/station doors <all|north|east|south|west|none>` (saved as `DoorControl`; the
 //!   carriages' doors read it, `train_doors.rs`). No real depot behaviour (the slot holds one Schedule), no map markers (`StationMarker`), no computer
 //!   behaviour, no display sources, no package ports (`attachPackagePort`).
@@ -221,8 +223,11 @@ fn tick(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     }
 
     net::store(&target, &mut nbt, pos);
+    // `trainPresent` for the client's flag (`train_overlay.rs`); the data goes out when it changes.
+    nbt.insert(super::train_overlay::TRAIN_PRESENT.into(), Tag::Byte(i8::from(train_here.is_some())));
     if nbt != event.entity.nbt {
         event.entity.nbt = nbt;
+        host.block_entity_sync(pos);
     }
 }
 

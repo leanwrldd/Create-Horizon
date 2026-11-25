@@ -279,7 +279,15 @@ pub fn with_networks<R>(dimension: &str, f: impl FnOnce(&mut RailNetworks) -> R)
     lock(&STATE).get_mut(dimension).map(|st| f(&mut st.rails.nets))
 }
 
+/// Runs `f` on a dimension's graphs without waiting for the server's tick to let go of them: for the client's reads in a single-player
+/// world (`None` when they are busy, when the dimension was never ticked here, or on a client that has no graphs).
+pub fn try_with_networks<R>(dimension: &str, f: impl FnOnce(&RailNetworks) -> R) -> Option<R> {
+    let states = STATE.try_lock().ok()?;
+    states.get(dimension).map(|st| f(&st.rails.nets))
+}
+
 /// Runs `f` on a dimension's railways: the graphs and the trains (`trains.rs`).
+
 pub fn with_railways<R>(dimension: &str, f: impl FnOnce(&mut Railways) -> R) -> Option<R> {
     lock(&STATE).get_mut(dimension).map(|st| f(&mut st.rails))
 }

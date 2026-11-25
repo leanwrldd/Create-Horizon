@@ -11,7 +11,8 @@
 //!   (`DisplayLinkBlock.notifyGatherers`).
 //! - The filter is matched as an item id (a Filter item as its own id): the matching of trains' cargo is part 3's
 //!   (`TrainWorld::item_matches`).
-//! - The overlay on the track (`TRACK_OBSERVER_OVERLAY`) isn't drawn (see `track_signal.rs`).
+//! - The overlay on the track (`TRACK_OBSERVER_OVERLAY`) is drawn by `train_overlay.rs` (see `track_signal.rs`).
+
 
 use create_kinetics::rules::trains::edge_blocks as rules;
 use create_kinetics::rules::trains::graph::EdgePointType;

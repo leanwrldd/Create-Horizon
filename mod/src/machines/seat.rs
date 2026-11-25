@@ -499,7 +499,31 @@ pub(super) fn passengers_of(host: &dyn Host, dimension: &str, controller: Pos) -
         .collect()
 }
 
+/// [`passengers_of`] with the riders' entity ids instead of uuids: the seat's local position, the entity id and whether it is a
+/// player (the Train Hat goes to the clients by entity id).
+pub(super) fn riders_with_ids(host: &dyn Host, dimension: &str, controller: Pos) -> Vec<(Pos, u32, bool)> {
+    let seats: Vec<Seat> = BOOK
+        .lock()
+        .map(|book| {
+            book.seats
+                .iter()
+                .filter(|s| s.dimension == dimension && matches!(s.carry, Carry::Moving { controller: c, .. } if c == controller))
+                .map(Seat::copy)
+                .collect()
+        })
+        .unwrap_or_default();
+    seats
+        .iter()
+        .filter(|s| rider(host, s) == Rider::Riding)
+        .filter_map(|s| match s.carry {
+            Carry::Moving { local, .. } => Some((local, rider_entity(host, s)?, s.mob.is_none())),
+            _ => None,
+        })
+        .collect()
+}
+
 /// `AbstractContraptionEntity.addSittingPassenger` for a mob: `mob` (entity id and uuid) sits on the seat at `local`
+
 /// of the structure of `controller`, whose marker goes to `at`. A mob already on that seat is not replaced, a player
 /// on it is not either (`rules::trains::train_passengers::add_sitting_passenger`); a mob that rides something is left
 /// alone. False when nothing was done.

@@ -1254,7 +1254,27 @@ pub fn carriage_info(dimension: &str, train: Uuid, carriage: i32, seat: Option<P
     })
 }
 
+/// The entity ids of everyone who wears the Train Hat now (`EntityHats.shouldRenderTrainHat`): the riders of a conductor seat, of a
+/// carriage with a schedule (a player's needs none). The client draws the hat on these (`train_hat.rs`). The head slot isn't read.
+pub fn hat_wearers(host: &dyn Host, dimension: &str) -> Vec<u32> {
+    use create_kinetics::rules::trains::schedule_hand::{HatView, wears_train_hat};
+    let keys: Vec<Key> = lock(&DIMS).get(dimension).map(|d| d.carriages.keys().copied().collect()).unwrap_or_default();
+    let mut out = Vec::new();
+    for (train, carriage) in keys {
+        let has_schedule = runtime_view(dimension, train).is_some_and(|v| v.has_schedule);
+        for (seat, id, player) in super::seat::riders_with_ids(host, dimension, seat_key(train, carriage)) {
+            let conductor_seat = carriage_info(dimension, train, carriage, Some(seat)).is_some_and(|i| i.conductor_seat);
+            let view = HatView { head_item: false, tagged: false, on_carriage: true, carriage_has_schedule: has_schedule, player, conductor_seat };
+            if wears_train_hat(&view) {
+                out.push(id);
+            }
+        }
+    }
+    out
+}
+
 /// `train.runtime` as the Schedule hand-over reads it.
+
 pub fn runtime_view(dimension: &str, train: Uuid) -> Option<RuntimeView> {
     world::with_railways(dimension, |r| {
         r.trains.get(&train).map(|t| RuntimeView {

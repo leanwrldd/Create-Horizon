@@ -1,4 +1,4 @@
-# Trains, parts 1 to 4: the rules foundation, stations, navigation, schedules, the train itself, the display data, the relocator, cargo, passengers and doors
+# Trains, parts 1 to 5: the rules foundation, stations, navigation, schedules, the train itself, the display data, the relocator, cargo, passengers, doors and what the client draws
 
 Pure rules (no game types) for Create 6.0.10's train system, ported from
 `create-java-src/src/main/java/com/simibubi/create/content/trains/`. Tests sit beside each file.
@@ -44,6 +44,8 @@ Registered through `tools/gen_modules.py`, which now also lists a rules folder w
 | `train_passengers.rs` | `CarriageContraptionEntity.checkConductors`, `Train.countPlayerPassengers`, `SeatBlock.canBePickedUp`, `SeatInteractionBehaviour.handleEntityCollision`, `AbstractContraptionEntity.addSittingPassenger` | the conductor sides from the burners and the seated mobs, the players seated, who a seat picks up, who gives way to whom, whether a mob touches a seat |
 | `schedule_hand.rs` | `ScheduleItem.handScheduleTo`, `ScheduleItemEntityInteraction`, `ConductorBlockInteractionBehavior`, `EntityHats.shouldRenderTrainHat`, `BlazeBurnerMovementBehaviour.shouldRenderHat`, `BlazeBurnerRenderer.renderShared` (the hat) | the decisions of handing a Schedule to a seated conductor or a Blaze Burner (apply, deny, resume, take back), their messages, and when the Train Hat is worn and where it sits on a burner |
 | `train_doors.rs` | `DoorControl`, `DoorControlBehaviour`, `SlidingDoorMovementBehaviour`, `DoorMovingInteraction`, `SlidingDoorBlock.isDoubleDoor`, `StationEditPacket` (door control) | the six door modes (matching, saved name, English), the five Train Doors, `getDoorFacing`, `shouldOpen` / `shouldUpdate` / `tickOpen` / `toggleDoor`, the click on a door in a carriage; `edge_blocks.rs` carries the station edit and `/station doors` |
+| `track_overlay.rs` | `TrackBlock.prepareTrackOverlay` / `prepareAssemblyOverlay`, `TrackTargetingBehaviour.render`, `TrackTargetingClient.render`, `StationRenderer` (the flag, the assembly spots), `StationBlockEntity.flag`, `TrackBlockOutline.pickCurves` / `drawCurveSelection`, `TrainRelocator.relocateClient` (the preview lines), `CurvedTrackSelectionPacket` | a pose stack as a chain of operations (`Chain`, `Affine`), the edge point marker's pose on a straight block or a curve segment, the assembly spots and their colours, the flag's lerp, model choice, wiggle and angle, the cursor's ray against a curve's segments and the outline of the one it hits, the preview's lines, and the wire formats of the client's hover, the server's preview and a click on a curve |
+| `train_hat.rs` | `CreateHatArmorLayer.render`, `TrainHatInfo`, `EntityHats` | the operations that lay the Train Hat on a head (`translateAndRotate` to the head, the head cube's top, the hat's scale, flip, sink and tilt), for the humanoid, villager and illager heads |
 
 Design: Java object references become ids (`NodeId`, edge = `(from, to)`, point = `(type, uuid)`).
 `RailNetworks` is `GlobalRailwayManager`'s graphs + signal edge groups; whatever Java does to trains
@@ -111,9 +113,8 @@ as in Java.
 - **Passengers**: seating by lead (`SeatBlock.getLeashed`), seating when a mob walks onto a seat in the world, the
   `#c:capturing_not_supported` tag (NeoForge's, not in the data), `seatHostileMobs` (on), `TamableAnimal` sitting, a rider's
   dismount place (`ContraptionDismountLocation`), the seat mapping packet (`ContraptionSeatMappingPacket`).
-- **Conductor hat**: drawing it. The decisions are in `schedule_hand.rs`; nothing draws on a mob (`CreateHatArmorLayer`,
-  `TrainHatInfo`), and a carriage's Blaze Burner head isn't drawn in the structure at all (its `renderInContraption`), so there
-  is no hat to put on it. `TrainHat` in a burner's data isn't read either.
+- **Conductor hat**: drawn on mobs since part 5 (below); a carriage's Blaze Burner head isn't drawn in the structure at all (its
+  `renderInContraption`), so there is still no hat to put on it. `TrainHat` in a burner's data isn't read either.
 - **Doors**: `SlidingDoorBlockEntity`'s animation and `VISIBLE` (the doors here swing), the elevator contact's door control
   (`ElevatorContactBlockEntity.doorControls`) and `getElevatorDoorControl`, the double-door neighbour of a platform's sliding door,
   the station screen's door widget (`DoorControl.createWidget`: `/station doors` stands in), `ContraptionDisableActorPacket`.
@@ -176,9 +177,8 @@ Differences from Create, and what's missing (the module headers have the details
 - No station, assembly or schedule screens: `/station` and `/schedule` stand in, and a right click prints the state.
 - **Assembly stopped at the track in part 2**: the scan, the bogey clicks, the errors and the wheel points on the graph; part 3 (below)
   gathers the carriages and makes the train, with disassembly, the station's train presence and the auto-schedule slot.
-- A point on a curve can't be selected (client curve picking); the signal and observer overlays on the track and the station
-  flag/assembly outlines aren't drawn; the bogeys' wheels aren't drawn; no door controls, display sources, map markers,
-  computer behaviour, package ports.
+- (Part 5 drew the overlays, the flag and the assembly spots, and made a point on a curve selectable.) The bogeys' wheels aren't
+  drawn here; no door controls, display sources, map markers, computer behaviour, package ports (see parts 4 and 4b for what came later).
 - The graphs' points ticked in `train_net.rs` in part 2; `Railways::tick` owns them since part 3 (`trains.rs`).
 - The track-clicks of an assembly area are `use_item_on` on the track block (`TrackBlock.useItemOn`).
 
@@ -262,12 +262,12 @@ Wrench session), and the changes in `display_link.rs`, `display_link_source.rs`,
 `ScheduleCtx` on the train itself. One table per dimension's `Railways` (Create has one for the manager); the HashMap's order between
 predictions that tie is the destination's order here.
 
-**TrainRelocator**: `/train relocate` with a Wrench in hand starts it on the nearest train (Create: a Wrench click on one of its carriages,
-`handleSpecialInteractions`, which would be an edit of `structure_click.rs`); the next Wrench click on a piece of straight track puts the
-train there (`getNearestTrackAxis` from the look, `getGraphLocationAt`), a sneak-click or putting the Wrench away ends it. The client's
-preview (green and red line, "Can relocate to here") isn't there; a failed click says "Cannot relocate Train to here". Curves can't be
-clicked (a client ray in Create). The session ends when the train moves (`cannot_relocate_moving`). A derailed train's graph is none, so
-(as in Create) only other derailed trains count as in its way.
+**TrainRelocator**: `/train relocate` with a Wrench in hand starts it on the nearest train, and so does a Wrench click on a carriage that no
+block of it takes (part 5: `structure_click.rs` -> `train_relocate::carriage_wrenched`); the next Wrench click on a piece of track puts the
+train there (`getNearestTrackAxis` from the look, `getGraphLocationAt`), a sneak-click or putting the Wrench away ends it. A failed click says
+"Cannot relocate Train to here". The session ends when the train moves (`cannot_relocate_moving`). A derailed train's graph is none, so
+(as in Create) only other derailed trains count as in its way. Part 5 added the preview and clicking a curve (below).
+
 
 **Map markers** (`StationMarker`, `StationMapData`, `MapItemSavedDataMixin`, `StationMapDecorationRenderer`) are **not ported**. Horizon does
 have map decorations: the client hook `map_decorations` (`MapInfo` with the map's id, centre, scale and dimension, and a `MapDecoration` of a
@@ -308,13 +308,68 @@ fuel: `poweredTrainTopSpeed`); a Schedule with a "cargo threshold" condition; tr
 side; a Blaze Burner next to Train Controls (assemble first) taking and giving back a Schedule; a player sitting on a carriage seat counting
 for a "players seated" condition.
 
+## Glue part 5: what the client draws (not played)
+
+Rules in `track_overlay.rs` and `train_hat.rs` (and `relocator::preview`); glue in `mod/src/machines/`: `train_overlay.rs` (the client's half of
+the edge point items, the curve under the cursor and the relocation preview), `train_hat.rs` (the hat layer), and changes in `track_target.rs`,
+`train_relocate.rs`, `structure_click.rs`, `track_station.rs`, `trains.rs`, `seat.rs`, `track.rs` and `lib.rs` (the new API's client hooks).
+
+- **Held item**: with a Station, Signal or Observer in the main hand, the track under the cursor (or the spot the item already picked, or a curve
+  segment) shows the overlay model (`block/track_overlay/{station,signal,observer}`) at `1 + 1/16` scale, as `TrackTargetingClient.render`
+  does: `client_tick` works out the spot, checks it with `withGraphLocation` where the client can read the graphs and keeps the pose,
+  `submit_custom_geometry` draws it as a model instance (`WorldDrawContext::draw_model_instances`, the model resolved with the other standalone models).
+  `Affine` and `Chain` are a pose stack as a matrix and as the operations that made it: the matrix goes to the instance, the operations are
+  replayed by a block entity's draw (`translate`, `scale`, `rotate_about`).
+- **Placed**: each block entity of the three draws the overlay at its target track in its own pose (`TrackTargetingBehaviour.render`), with
+  `Overlay` `SKIP` / `DUAL` for signals. The station raises its flag (`StationRenderer.renderFlag`: `flag_on`, `flag_off`, `flag_assemble`, the
+  lift squared with the wiggle, the `LerpedFloat` that chases a tenth a tick) and, while it assembles with no train, draws a spot for each
+  place a bogey may go (blue) or is (green). The station's block entity now says `TrainPresent` (synced when it changes); the client scans the
+  assembly itself (`track_station::refresh`, every second). The spots are four boxes with the model's own UVs and texture, tinted, because a
+  model can't be tinted all over; their texture is imported by naming `block/track_overlay/assembling` in `track.py`'s `MODELS`.
+- **Curves**: every track block entity that is drawn tells `train_overlay.rs` its curves (`TRACKS_WITH_TURNS`); each client tick, while an edge point
+  item is held or a relocation runs, the eye's ray is tried against each curve's segments (`pick_curves`, the same boxes and order as
+  `pickCurves`, rotated into each segment's frame). The segment under the cursor is outlined (`drawCurveSelection`, black at `.4` alpha) and a right
+  click on it, in either click hook, is cancelled on the client and sent as `create:curve_click` (what `CurvedTrackSelectionPacket` and the relocation
+  packet carry: the block, the curve's key, the segment and the side). The server (`track_target.rs` `select_curve`; `train_relocate.rs`) answers in the
+  sender's own turn. A selection on a curve is the component's `bezier` entry (`TRACK_TARGETING_ITEM_BEZIER`); `item_data` already wrote
+  `Bezier` into a placed block and `ensure_point` places the point with `bezier_graph_location_at`.
+- **Relocation**: a Wrench click on a carriage that no block of it took starts a session (`handleSpecialInteractions`: the one edit of `structure_click.rs`).
+  While it runs the client sends the track under the cursor and the look (`create:relocation_hover`, when it changes and every 10 ticks); the
+  server walks the wheels there (`relocator::preview`, the same walk as `relocate(simulate)` with the places recorded, up to the first stretch that
+  fails) and answers (`create:relocation_preview`) with the places and whether the train fits. The client draws the line at `-.925` below the
+  places, `0x95CD41` and the last stretch `0xEA5C2B` when it can't be, alternate pieces thinner; the server says "Can relocate to here, Click to
+  Confirm" (green) or "Cannot relocate Train to here" (red) on the action bar. A curve is clicked the same way as for the edge points.
+- **The Train Hat**: Horizon draws on a mob through entity layers (`register_entity_layers`, `EntityRenderLayer::submit`: the entity's frame, a
+  humanoid's head pose in `PosedParts`). A layer has no host, so `train_hat.rs` has the server tell each player which entity ids wear the hat
+  (`create:train_hats`, from `player_tick`: `trains::hat_wearers` over `seat::riders_with_ids`, `schedule_hand::wears_train_hat`). The pose is
+  `CreateHatArmorLayer`'s chain; the head is the humanoid model's `head` part (zombies, skeletons, players) or, for villagers and illagers, the
+  model's origin turned by the head's yaw and pitch.
+
+Differences and what is left out:
+- The graphs aren't on clients: the held overlay is checked against them only where the client can read the server's (single-player, a LAN
+  host); elsewhere it shows on any track. The relocation preview is the server's, so it works everywhere.
+- The overlay instance's light is the track block's with a floor of 4; the flag's `LerpedFloat` runs on the frame's clock; a tilted track's shift and
+  the girder under a curve aren't drawn (neither is ported). `TrackBlockOutline`'s outline of straight track under the cursor isn't drawn.
+- **The hat on a mob needs the mob's head**: Create reads it off the live model parts (`TrainHatInfo`); a layer sees only a humanoid's, so
+  only the zombie family, skeletons, villagers, the trader, the illagers and players get one, with head cubes taken from the vanilla models (not read
+  from Horizon's) and the villagers' renderer scale of `0.9375`. Mobs with a `train_hat_info` file (a pig, a witch, a piglin ...) go without. The
+  helmet check (`getHatFor` returns nothing for a worn item) and `TrainHat` in a mob's data aren't read.
+- **A carriage's Blaze Burner hat isn't drawn**: the burner's head isn't drawn in the structure at all (`BlazeBurnerRenderer.renderInContraption`),
+  so a hat on it has nothing to sit on. `burner_wears_hat` and `hat_placement` in `schedule_hand.rs` are ready for it.
+- To check in game: hold a Station, Signal and Observer over straight and curved track (overlay, side flips with the look, sneak-click clears, a
+  second click places with the point on the curve), a placed signal in `DUAL` and `SKIP`, the flag rising with a train in and while assembling
+  (and the spots, blue and green, where bogeys go), then a Wrench on a carriage: the line follows the cursor, green or orange, the message,
+  a click on a straight piece and on a curve, sneak-click aborts; a villager on a conductor seat of a carriage with a schedule wearing the hat, the
+  hat following its head, a player in that seat, and no hat on a plain seat; and no panic in `latest.log` (a hook that panics every frame costs seconds).
+
 ## Next
 
-1. Play-test glue parts 3, 4 and 4b (HANDOFF.md lists what to watch).
-2. `TrainDisplay`, map markers (see glue part 4), portals (`AllPortalTracks`, the carriage cutoffs), the station screens, the Wrench click
-   on a carriage that starts a relocation, the relocation preview, the elevator contact's door control.
-3. The track overlays of edge points, the station's flag and assembly outlines, and edge points on curved track (picking a point on a
-   curve with the cursor), the girder and tilt of a curve.
-4. The Train Hat drawn (on seated mobs and on a carriage's Blaze Burner), seating by lead, the cargo of the Depot, Toolbox and Creative Crate
-   on a carriage, mail transfer.
+1. Play-test glue parts 3, 4, 4b and 5 (HANDOFF.md lists what to watch).
+2. `TrainDisplay`, map markers (see glue part 4), portals (`AllPortalTracks`, the carriage cutoffs), the station screens, the elevator
+   contact's door control.
+3. The girder and tilt of a curve (`GirderAngles`, `TrackBlockEntityTilt`, `yOffsetAt`), `TrackBlockOutline`'s selection box for straight
+   track, `CurvedTrackInteraction`'s break progress and the Wrench's pick-up of a curve.
+4. The Blaze Burner's Train Hat (needs the burner's head drawn in a carriage first), the hat on mobs whose heads aren't known (Create reads
+   `train_hat_info`), seating by lead, the cargo of the Depot, Toolbox and Creative Crate on a carriage, mail transfer.
 5. One-shot update fields for the pose (`set_client_update_fields`) so only the pose travels, once the compat layer exposes them.
+

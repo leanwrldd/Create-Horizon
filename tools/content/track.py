@@ -70,7 +70,14 @@ BLOCKS["track"]["properties"]["occludes"] = False  # `noOcclusion`
 
 # What the block entity draws besides the block's model (`AllPartialModels.TRACK_TIE`, `TRACK_SEGMENT_LEFT`,
 # `TRACK_SEGMENT_RIGHT`, the `TrackModelHolder.DEFAULT`).
-MODELS = ["block/track/tie", "block/track/segment_left", "block/track/segment_right"]
+MODELS = [
+    "block/track/tie", "block/track/segment_left", "block/track/segment_right",
+    # The markers an edge point shows on its track (`AllPartialModels.TRACK_*_OVERLAY`; `machines/train_overlay.rs`). The assembling
+    # one is only named so its texture is imported: the spots are drawn as boxes in the colour of their state.
+    "block/track_overlay/station", "block/track_overlay/signal", "block/track_overlay/signal_dual", "block/track_overlay/observer",
+    "block/track_overlay/assembling",
+]
+
 
 TAB = ["track"]
 

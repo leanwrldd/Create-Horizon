@@ -10,8 +10,9 @@
 //!
 //! Known differences from Create, for the README:
 //! - The computer behaviour isn't there (`SignalStateChangeEvent`, `hasAttachedComputer`).
-//! - The overlay on the track (`TRACK_SIGNAL_OVERLAY`, drawn by `TrackTargetingBehaviour.render`) isn't drawn: the track's
-//!   own drawing has no overlay hook yet. The overlay state is kept (`Overlay`).
+//! - The overlay on the track (`TRACK_SIGNAL_OVERLAY`, `TrackTargetingBehaviour.render`) is drawn by `train_overlay.rs` from this
+//!   entity's data (`TargetTrack`, `TargetDirection`, `Bezier`, `Overlay`).
+
 //! - `SignalBlock.neighborChanged` is polled from the block entity's tick through `signals.rs`; the four-tick release of
 //!   the power (`scheduleTick(pos, this, 4)`) is a countdown in `PowerOff`.
 //! - A signal placed against redstone starts unpowered until its first tick reads it (`getStateForPlacement`'s
