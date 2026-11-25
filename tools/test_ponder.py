@@ -161,5 +161,92 @@ class OldStateReads(unittest.TestCase):
         self.assertEqual(self.expand([], events), [])
 
 
+class Scripts(unittest.TestCase):
+    """Whole storyboard methods run through `Storyboard`: control flow, helpers that return a value, the values a scene builds."""
+
+    class NoRegistry:
+        ids = {}
+
+        def items(self, node):
+            name = storyboards.text(node).split(".")
+            return [f"minecraft:{name[1].lower()}"] if name[0] in {"Blocks", "Items"} and len(name) > 1 else []
+
+    def run_scene(self, body, helpers="", blocks=None):
+        from tree_sitter import Language, Parser
+        import tree_sitter_java
+
+        source = ("class S { " + helpers + " static void scene(SceneBuilder builder, SceneBuildingUtil util) { "
+                  "CreateSceneBuilder scene = new CreateSceneBuilder(builder); " + body + " } }")
+        root = Parser(Language(tree_sitter_java.language())).parse(source.encode()).root_node
+        methods = {storyboards.text(storyboards.field(n, "name")): n
+                   for n in storyboards.walk(root) if n.type == "method_declaration"}
+        script = storyboards.Storyboard(self.NoRegistry(), methods["scene"], methods, (5, 5, 5), blocks)
+        return script
+
+    def ops(self, script, name):
+        return [op for op in script.ops if op[1] == name]
+
+    def test_continue_skips_the_rest_of_an_iteration_and_break_ends_the_loop(self):
+        script = self.run_scene("for (int i = 0; i < 6; i++) { if (i == 1) continue; if (i == 4) break; scene.idle(10); }")
+        # Iterations 0, 2 and 3 idle: 30 ticks.
+        self.assertEqual(script.tick, 30)
+        self.assertFalse(script.unhandled)
+
+    def test_a_post_increment_in_a_condition_reads_the_old_value(self):
+        script = self.run_scene("int i = 0; for (int p : new int[]{5, 6, 7, 8}) { if (i++ == 2) break; scene.idle(1); }")
+        self.assertEqual(script.tick, 2)
+
+    def test_a_null_local_compares_equal_to_null_until_it_is_assigned(self):
+        script = self.run_scene("Selection previous = null; for (boolean left : Iterate.trueAndFalse) {"
+                                " if (previous != null) scene.idle(7); previous = util.select().position(1, 1, 1); }")
+        self.assertEqual(script.tick, 7)
+        self.assertFalse(script.unhandled)
+
+    def test_a_helper_hands_back_what_it_returns(self):
+        helpers = "static Vec3 above(BlockPos pos) { return VecHelper.getCenterOf(pos).add(0, 0.3, 0); }"
+        script = self.run_scene("Vec3 at = above(util.grid().at(1, 2, 3)); scene.overlay().showFilterSlotInput(at, Direction.EAST, 10);",
+                                helpers)
+        self.assertEqual(len(self.ops(script, "outline")), 1)
+
+    def test_a_directions_axis_and_neighbours_are_worked_out(self):
+        script = self.run_scene("for (Direction d : Iterate.horizontalDirections) { if (d.getAxis() != Axis.Z) scene.idle(5); }")
+        self.assertEqual(script.tick, 10)
+        script = self.run_scene("Direction offset = Direction.NORTH; for (int i = 0; i < 3; i++) {"
+                                " if (offset == Direction.WEST) scene.idle(4); offset = offset.getClockWise(); }")
+        # North, east, south: the west turn never comes up.
+        self.assertEqual(script.tick, 0)
+
+    def test_a_linked_list_reverses_in_place(self):
+        script = self.run_scene("List<BlockPos> blocks = new LinkedList<>(); for (int y = 1; y < 3; y++) blocks.add(util.grid().at(0, y, 0));"
+                                " Collections.reverse(blocks); for (BlockPos p : blocks) { scene.world().setBlock(p, Blocks.WATER.defaultBlockState(), false); }")
+        self.assertEqual([op[2] for op in self.ops(script, "block")], [[(0, 2, 0)], [(0, 1, 0)]])
+
+    def test_hex_colours_are_numbers(self):
+        script = self.run_scene("scene.effects().createRedstoneParticles(util.grid().at(3, 2, 3), 0xFFFFFF, 10);")
+        self.assertEqual(len(self.ops(script, "particles")), 1)
+
+    def test_a_signal_state_is_saved_by_name(self):
+        script = self.run_scene("scene.world().changeSignalState(util.grid().at(1, 1, 1), SignalBlockEntity.SignalState.GREEN);")
+        self.assertEqual(self.ops(script, "nbt"), [[0, "nbt", [(1, 1, 1)], {"State": ["s", "GREEN"]}]])
+
+    def test_a_bogey_moves_one_tick_less_than_it_is_given(self):
+        script = self.run_scene("scene.world().animateBogey(util.grid().at(1, 1, 1), -9, 9);")
+        # Ten ticks of -0.9 a tick, the last of them 0.
+        self.assertEqual(self.ops(script, "animate"), [[0, "animate", "bogey", [1, 1, 1], -8.1, 10]])
+
+    def test_the_default_package_and_a_fluid_bucket_are_items(self):
+        script = self.run_scene("ItemStack box = PackageStyles.getDefaultBox().copy();"
+                                " scene.world().createItemOnBelt(util.grid().at(1, 1, 0), Direction.WEST, box);")
+        self.assertEqual(self.ops(script, "belt_put"), [[0, "belt_put", 1, [1, 1, 0], "create:cardboard_package_12x12"]])
+        script = self.run_scene("ItemStack bucket = AllFluids.CHOCOLATE.get().getFluidType().getBucket(new FluidStack(Fluids.WATER, 1000));"
+                                " scene.world().setFilterData(util.select().position(3, 1, 1), SmartFluidPipeBlockEntity.class, bucket);")
+        self.assertEqual(self.ops(script, "nbt"), [[0, "nbt", [(3, 1, 1)], {"Filter": ["item", "create:chocolate_bucket"]}]])
+
+    def test_a_press_started_on_a_basin_is_a_basin_stroke(self):
+        script = self.run_scene("scene.world().modifyBlockEntity(util.grid().at(1, 3, 1), MechanicalPressBlockEntity.class,"
+                                " pte -> pte.startProcessingBasin());")
+        self.assertEqual(self.ops(script, "press"), [[0, "press", [(1, 3, 1)], "basin"]])
+
+
 if __name__ == "__main__":
     unittest.main()

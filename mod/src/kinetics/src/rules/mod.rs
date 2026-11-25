@@ -106,6 +106,7 @@ pub mod plough;
 pub mod ponder_anim;
 pub mod ponder_arm;
 pub mod ponder_belt;
+pub mod ponder_bogey;
 pub mod ponder_crafter;
 pub mod ponder_fluid;
 pub mod ponder_particles;

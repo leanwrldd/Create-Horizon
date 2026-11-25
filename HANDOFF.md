@@ -123,9 +123,24 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   renderer counts from the scene tick), Display Board text and dye (parts worded from the client's language at draw time),
   a basin's `VisualizedItems` (`rules/basin_output.rs`) and a depot's `HeldItem`, Brass Tunnel mode and filters (filter
   items drawn by the value box renderer from the state it is given), fluid in Item Drains, Spouts and Basins
-  (`ponder_fluid::Vessel`), and `chaseBoundingBoxOutline` (drawn at its final box, the chase not animated). Left
-  (`ponder_storyboards.py` prints what it skips): hose pulley fluid (needs the world's water replayed), water wheel
-  materials, millstone input, factory gauge and package scenes, parrots, carts, `hideElement`, trains;
+  (`ponder_fluid::Vessel`), and `chaseBoundingBoxOutline` (drawn at its final box, the chase not animated). Then
+  (unplayed, skips 426 to 268): the generator runs `break`, `continue` and `return` (helpers hand back values, so
+  `getTunnelFilterVec` and friends resolve), `null`, hex literals, `LinkedList`/`List.of`/`Couple`/`Collections.reverse`,
+  a Direction's `getAxis`/`getOpposite`/`getClockWise`/`getNormal`, `FactoryPanelPosition`, `PackageStyles.getDefaultBox`
+  and `AllFluids.X.get().getFluidType().getBucket` (so the hose pulley's water loops, the vault, crafter and tunnel
+  loops, the package belt items and the smart pipe's bucket filter now replay; the `continue` in the arm scene is now
+  honoured), `changeSignalState` (`State` by name: the signal's indicator reads it), `animateBogey` (an `animate` row
+  of kind `bogey`: `rules/ponder_bogey.rs` turns the scripted distance into the wheels' angle and `train_draw.rs`'s
+  `submit_ponder_bogey` draws frame and wheels for a scene's bogey blocks, as `BogeyBlockEntityRenderer` does),
+  `startProcessingBasin`, redstone wires set to power 15; counted as having nothing to draw: the Fluid Valve's
+  `onSpeedChanged(0)`, `removeShadow`, `debug`, and `modifyEntities(ItemEntity.class, e -> { if (e.getY() < 1) ... })`
+  (items the scene's own machines drop; the player makes none). Left (`ponder_storyboards.py` prints what it skips):
+  parrots and birbs (`createBirb`, `moveParrot`, `movePointOfInterest`, ...: no entity drawing), carts, `hideElement`
+  (only ever of those), `animateTrainStation` (the station flag is drawn from the real world's track: `draw_station`
+  needs the scene's track, and the structure's `TargetTrack` isn't read), `conductorBlaze` (the burner draws no hat),
+  `glueBlockOnto`, hose pulley `fill` (`modifyBlockEntity`), water wheel materials, millstone input, frogport, chain
+  conveyor, packager, table cloth and factory panel `modifyBlockEntity` calls, `modifyEntity` of a link
+  (`setDeltaMovement`, `setItem`, `setSheared`), `createEntity`;
 - minecart contraptions (blocked: nothing can draw a structure on a vanilla minecart);
 - merged 2026-11-23, unplayed: clicking levers, doors, trapdoors, gates, seats, Deployers and Controls on a moving
   structure (`006778e`); items carrying frequencies and orders, the gauge click picking the panel, arrows, `/gauge move`

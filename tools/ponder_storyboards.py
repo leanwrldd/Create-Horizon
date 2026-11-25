@@ -211,6 +211,9 @@ class Storyboard:
         self.depth = 0
         self.dimensions = dimensions
         self.next_link = 1
+        # `break`, `continue` or `return` in flight, and what the last `return` carried.
+        self.flow = None
+        self.returned = UNKNOWN
         self.breaking = {}
         self.bounds = [0, 0, max(dimensions[0], dimensions[2])]
         self.scale = 1
@@ -223,9 +226,13 @@ class Storyboard:
     def execute(self, node):
         if node is None:
             return
+        if self.flow:
+            return
         if node.type in {"block", "constructor_body"}:
             for child in node.named_children:
                 self.execute(child)
+                if self.flow:
+                    break
         elif node.type == "local_variable_declaration":
             for child in node.named_children:
                 if child.type == "variable_declarator":
@@ -249,19 +256,36 @@ class Storyboard:
                 if not check:
                     break
                 self.execute(field(node, "body"))
+                if self.flow == "break":
+                    self.flow = None
+                    break
+                if self.flow == "return":
+                    break
+                self.flow = None
                 self.value(field(node, "update"))
         elif node.type == "enhanced_for_statement":
             values = self.value(field(node, "value"))
             if isinstance(values, list):
                 name = text(field(node, "name"))
                 before = self.env.get(name, UNKNOWN)
-                for value in values:
+                for value in list(values):
                     self.env[name] = value
                     self.execute(field(node, "body"))
+                    if self.flow == "break":
+                        self.flow = None
+                        break
+                    if self.flow == "return":
+                        break
+                    self.flow = None
                 self.env[name] = before
             else:
                 self.unhandled[node.type] += 1
-        elif node.type not in {"line_comment", "block_comment", "return_statement"}:
+        elif node.type in {"break_statement", "continue_statement"}:
+            self.flow = node.type.split("_")[0]
+        elif node.type == "return_statement":
+            self.returned = self.value(node.named_children[0]) if node.named_children else UNKNOWN
+            self.flow = "return"
+        elif node.type not in {"line_comment", "block_comment"}:
             self.unhandled[node.type] += 1
 
     def value(self, node):
@@ -289,6 +313,10 @@ class Storyboard:
             return java_string(node)
         if kind in {"true", "false"}:
             return kind == "true"
+        if kind == "null_literal":
+            return None
+        if kind == "hex_integer_literal":
+            return int(source.rstrip("lL"), 16)
         if kind in {"decimal_integer_literal", "decimal_floating_point_literal"}:
             return float(source.rstrip("fFdDlL")) if any(c in source for c in ".eEfFdD") else int(source.rstrip("lL"))
         if kind == "unary_expression":
@@ -313,6 +341,7 @@ class Storyboard:
                     "%": lambda: left % right, "<": lambda: left < right, "<=": lambda: left <= right,
                     ">": lambda: left > right, ">=": lambda: left >= right, "==": lambda: left == right,
                     "!=": lambda: left != right, "&&": lambda: left and right, "||": lambda: left or right,
+                    "^": lambda: left ^ right if isinstance(left, bool) and isinstance(right, bool) else UNKNOWN,
                 }
                 try:
                     return operators.get(operator, lambda: UNKNOWN)()
@@ -327,8 +356,10 @@ class Storyboard:
         if kind == "update_expression":
             name = text(node.named_children[0])
             if name in self.env and isinstance(self.env[name], (int, float)):
+                before = self.env[name]
                 self.env[name] += -1 if "--" in source else 1
-                return self.env[name]
+                # `i++` is the old value, `++i` the new one.
+                return before if source.startswith(name) else self.env[name]
         if kind == "assignment_expression":
             name = text(field(node, "left"))
             value = self.value(field(node, "right"))
@@ -347,6 +378,11 @@ class Storyboard:
                 return field_name.lower()
             if source == "Iterate.horizontalDirections":
                 return ["north", "east", "south", "west"]
+            if source == "Iterate.trueAndFalse":
+                return [True, False]
+            # `array.length`.
+            if field_name == "length" and isinstance(counted := self.value(field(node, "object")), list):
+                return len(counted)
             if source == "Iterate.directions":
                 return list(DIRECTIONS)
             if field_name.isupper():
@@ -356,8 +392,11 @@ class Storyboard:
             name = text(field(node, "type"))
             if name == "CreateSceneBuilder":
                 return ("scene",)
-            if name.startswith("ArrayList"):
+            if name.startswith(("ArrayList", "LinkedList")):
                 return Links()
+            # `new FactoryPanelPosition(pos, slot)`: `.pos()` and `.slot()` read it back.
+            if name == "FactoryPanelPosition" and len(args) == 2:
+                return ("panel", args[0], args[1])
             if name in {"Vec3", "Vec3i", "BlockPos"} and numbers(args, 3):
                 return tuple(args)
             if name in {"ItemParticleOption", "BlockParticleOption"}:
@@ -406,6 +445,9 @@ class Storyboard:
             elif name == "showBasePlate":
                 x, z, size = self.bounds
                 self.emit("show", 0, box((x, 0, z), (x + size - 1, 0, z + size - 1)), DIRECTIONS["up"])
+            elif name in {"removeShadow", "debug"}:
+                # The ground shadow under a scene's sections is not drawn here, and `debug` only logs to the developer's console.
+                self.inert[f"scene.{name}"] += 1
             elif name not in {"world", "overlay", "special", "effects", "title", "markAsFinished", "setNextUpEnabled", "getCurrentTime"}:
                 self.unhandled[f"scene.{name}"] += 1
             return UNKNOWN
@@ -455,6 +497,40 @@ class Storyboard:
         # `PackageItem.containing(...)` picks a random style (`PackageStyles.getRandomBox`): the first one stands for it.
         if target_text == "PackageItem" and name == "containing":
             return ("id", "create:cardboard_package_12x12", {})
+        # `PackageStyles.getDefaultBox()` is the first style's box (`ALL_BOXES.get(0)`), the cardboard 12x12 one.
+        if target_text == "PackageStyles" and name == "getDefaultBox" and not values:
+            return ("id", "create:cardboard_package_12x12", {})
+        # `AllFluids.CHOCOLATE.get().getFluidType().getBucket(stack)`: the fluid's bucket item (`create:<fluid>_bucket`).
+        if name == "getBucket" and (bucket := re.match(r"AllFluids\.([A-Z_]+)\.get\(\)\s*\.getFluidType\(\)$", target_text)):
+            return ("id", f"create:{bucket[1].lower()}_bucket", {})
+        # What `VecHelper`, `Vec3`, `Couple`, `List` and `Collections` do to the values a storyboard builds.
+        if target_text == "VecHelper" and name == "getCenterOf" and len(values) == 1 and numbers(values[0], 3):
+            return tuple(v + 0.5 for v in values[0])
+        if target_text == "Vec3" and name == "atLowerCornerOf" and len(values) == 1 and numbers(values[0], 3):
+            return tuple(values[0])
+        if target_text == "Couple" and name == "create" and len(values) == 2:
+            return ("couple", values[0], values[1])
+        if isinstance(value, tuple) and value[:1] == ("couple",) and name in {"getFirst", "getSecond"} and not values:
+            return value[1 if name == "getFirst" else 2]
+        if isinstance(value, tuple) and value[:1] == ("panel",) and name in {"pos", "slot"} and not values:
+            return value[1 if name == "pos" else 2]
+        if target_text in {"List", "ImmutableList"} and name == "of":
+            return list(values)
+        if target_text == "Collections" and name == "reverse" and len(values) == 1 and isinstance(values[0], list):
+            values[0].reverse()
+            return UNKNOWN
+        # A `Direction`, as the lowercase name this script keeps: `getAxis`, `getOpposite`, `getClockWise`, `getNormal`.
+        if isinstance(value, str) and value in DIRECTIONS and not values:
+            vertical = value in {"up", "down"}
+            ring = ["north", "east", "south", "west"]
+            if name == "getAxis":
+                return next(axis for axis, step in zip("xyz", DIRECTIONS[value]) if step)
+            if name == "getOpposite":
+                return next(side for side, step in DIRECTIONS.items() if step == tuple(-v for v in DIRECTIONS[value]))
+            if name in {"getClockWise", "getCounterClockWise"} and not vertical:
+                return ring[(ring.index(value) + (1 if name == "getClockWise" else -1)) % 4]
+            if name == "getNormal":
+                return DIRECTIONS[value]
 
         # `FluidFX.getFluidParticle(stack)`: Create's `FluidStackParticle`. `VecHelper.offsetRandomly(vec, random, radius)`
         # is `vec` plus up to `radius` either way on each axis: the player draws it, so only the radius is kept.
@@ -473,9 +549,12 @@ class Storyboard:
                 previous = self.env
                 self.env = {text(field(param, "name")): v for param, v in zip(params, values)}
                 self.depth += 1
+                self.returned = UNKNOWN
                 self.execute(field(method, "body"))
                 self.depth -= 1
                 self.env = previous
+                result, self.returned, self.flow = self.returned, UNKNOWN, None
+                return result
             return UNKNOWN
 
         if isinstance(value, tuple) and value[0] == "service":
@@ -897,6 +976,14 @@ class Storyboard:
         if name == "cycleBlockProperty" and isinstance(section, str) and isinstance(selected, (tuple, list)):
             self.emit("properties", [selected] if isinstance(selected, tuple) else selected, {section: None})
             return UNKNOWN
+        # `s -> s.hasProperty(RedStoneWireBlock.POWER) ? s.setValue(RedStoneWireBlock.POWER, 15) : s`: the wires in the selection.
+        if name == "modifyBlocks" and isinstance(selected, list) and len(args) > 1 and args[1].type == "lambda_expression" \
+                and (powered := re.fullmatch(r"\w+->\w+\.hasProperty\(RedStoneWireBlock\.POWER\)\?\w+\.setValue\(RedStoneWireBlock\.POWER,(\d+)\):\w+",
+                                             re.sub(r"\s+", "", text(args[1])))):
+            wires = [pos for pos in selected if self.blocks.get(tuple(int(v) for v in pos)) == "minecraft:redstone_wire"]
+            if wires:
+                self.emit("properties", wires, {"power": powered[1]})
+            return UNKNOWN
         if name in {"modifyBlock", "modifyBlocks"} and isinstance(selected, (tuple, list)) and len(args) > 1 and args[1].type == "lambda_expression":
             param = text(field(args[1], "parameters"))
             if param.isidentifier():
@@ -963,6 +1050,21 @@ class Storyboard:
         if name == "modifyEntities" and len(args) == 2 and text(args[0]) == "ItemEntity.class" and text(args[1]) == "Entity::discard":
             self.emit("item_end", 0)
             return UNKNOWN
+        # `modifyEntities(ItemEntity.class, e -> { if (e.getY() < 1) e.discard(); })` clears the items the scene's own machines
+        # dropped to the floor (a saw's or a basin's output); the player makes none of those, so there is nothing to clear.
+        if name == "modifyEntities" and len(args) == 2 and text(args[0]) == "ItemEntity.class" \
+                and re.sub(r"\s+", "", text(args[1])) == "e->{if(e.getY()<1)e.discard();}":
+            self.inert["world.modifyEntities (items on the floor)"] += 1
+            return UNKNOWN
+        # `changeSignalState(pos, state)`: `State` saved by name, which the signal's indicator reads.
+        if name == "changeSignalState" and numbers(selected, 3) and isinstance(section, str) and section.upper() in SIGNAL_STATES:
+            self.emit("nbt", [selected], {"State": ["s", section.upper()]})
+            return UNKNOWN
+        # `animateBogey(pos, distance, duration)`: `AbstractBogeyBlockEntity.animate` for `duration + 1` ticks of
+        # `distance / (duration + 1)`, the last of them 0, so the bogey has moved `distance * duration / (duration + 1)` when it ends.
+        if name == "animateBogey" and numbers(selected, 3) and numbers(values[1:], 2) and values[2] >= 0:
+            self.emit("animate", "bogey", list(selected), values[1] * values[2] / (values[2] + 1), int(values[2]) + 1)
+            return UNKNOWN
         # `setFilterData(selection, class, stack)`: `FilteringBehaviour.setFilter`, saved as the block entity's `Filter`.
         if name == "setFilterData" and len(values) == 3 and isinstance(values[2], tuple) and values[2][0] == "id":
             positions = [selected] if numbers(selected, 3) else selected
@@ -1000,6 +1102,10 @@ class Storyboard:
         if name == "modifyBlockEntity" and len(args) == 3 and args[2].type == "lambda_expression":
             positions = [selected] if isinstance(selected, tuple) and numbers(selected, 3) else selected
             if isinstance(positions, list) and positions:
+                # `be.onSpeedChanged(0)` on a Fluid Valve restarts the pipes' flow, like `propagatePipeChange`: nothing here draws it.
+                if re.fullmatch(r"\w+->\w+\.onSpeedChanged\(0\)", re.sub(r"\s+", "", text(args[2]))):
+                    self.inert["world.onSpeedChanged"] += 1
+                    return UNKNOWN
                 if self.crafter_rows(args[2], positions):
                     return UNKNOWN
                 entries = self.tunnel_entries(args[2], positions) or self.entity_entries(args[2])
@@ -1055,6 +1161,10 @@ class Storyboard:
             if started and numbers(selected, 3):
                 self.emit("press", [selected], started[1].lower())
                 return UNKNOWN
+            # `startProcessingBasin()` is `pressingBehaviour.start(Mode.BASIN)`.
+            if re.fullmatch(r"\w+\s*->\s*\w+\.startProcessingBasin\(\)", re.sub(r"\s+", " ", text(args[2]))) and numbers(selected, 3):
+                self.emit("press", [selected], "basin")
+                return UNKNOWN
         # `instructArm(armLocation, phase, heldItem, targetedPoint)`: `ArmBlockEntity.Phase`, `ItemStack.EMPTY` for none.
         if name == "instructArm" and len(values) == 4 and isinstance(selected, tuple) and numbers(selected, 3)                 and isinstance(section, str) and isinstance(values[3], int):
             held = values[2][1] if isinstance(values[2], tuple) and values[2][0] == "id" else None
@@ -1077,6 +1187,7 @@ def method_calls_all(node):
 
 
 ANIMATED = {"rotateBearing": "bearing", "movePulley": "pulley", "moveDeployer": "deployer"}
+SIGNAL_STATES = {"RED", "YELLOW", "GREEN", "INVALID"}
 
 DIRECTIONS = {"up": (0, 1, 0), "down": (0, -1, 0), "north": (0, 0, -1),
               "south": (0, 0, 1), "east": (1, 0, 0), "west": (-1, 0, 0)}

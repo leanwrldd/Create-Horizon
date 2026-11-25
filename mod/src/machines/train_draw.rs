@@ -36,6 +36,8 @@ use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 
 use create_kinetics::rules::trains::carriage_pose::{self as pose, BogeyNews, BogeyPart, CENTRE, Motion, Op, CarriagePose, PoseNews};
 use create_kinetics::rules::contraption::State;
+use create_kinetics::rules::ponder_bogey;
+use create_kinetics::rules::trains::bogey;
 use create_kinetics::Pos;
 use crate::compat::{
     BlockEntityDraw, BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
@@ -227,6 +229,26 @@ fn draw_bogey_parts(host: &dyn Host, draw: &mut BlockEntityDraw, large: bool, wh
         }
         draw.pop();
     }
+}
+
+/// A bogey block in a Ponder scene (`BogeyBlockEntityRenderer`): the frame and wheels under the block's centre, turned when the
+/// block lies along X, the wheels at the angle `animateBogey` has brought them to (`rules::ponder_bogey`). Only a scene's block
+/// entity (the one with the scene's tick) draws it: a bogey in the world has no block entity and is drawn by its carriage.
+fn submit_ponder_bogey(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
+    let Some(size) = ponder_bogey::size_of(event.block) else { return };
+    if crate::float(&event.entity.nbt, crate::ponder::TICK).is_none() {
+        return;
+    }
+    let distance = crate::float(&event.entity.nbt, crate::ponder::ANIMATED).unwrap_or(0.0);
+    let along_x = host.block_state_property(event.state, "axis").as_deref() == Some("x");
+    let draw = &mut *event.draw;
+    draw.push();
+    draw.translate([0.5, 0.5, 0.5]);
+    if along_x {
+        draw.rotate_about([0.0, 1.0, 0.0], 90.0, [0.0; 3]);
+    }
+    draw_bogey_parts(host, draw, size.id == bogey::LARGE.id, ponder_bogey::wheel_angle(distance, size));
+    draw.pop();
 }
 
 // --- the pose news between data updates ------------------------------------------------------------------------------
@@ -444,6 +466,7 @@ impl Hooks for Draw {
 
     fn block_entity_submit(&self, host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
         if event.block != ANCHOR {
+            submit_ponder_bogey(host, event);
             return;
         }
         submit(host, event);
