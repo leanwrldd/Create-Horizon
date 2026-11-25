@@ -9,7 +9,8 @@
 //!
 //! Differences from Create, for the README:
 //! - The table is kept for each dimension (Create has one for the whole manager); a summary lists the trains of its own dimension.
-//! - `getWaitingStatus` of a "Players Seated" condition shows 0 passengers (the trains have no carriage entities to seat anyone).
+//! - A "Players Seated" status counts the players on the seats of the train's carriages (`trains::count_passengers`). The
+//!   departure board's predictions (`submitPredictions`) don't read passengers, as in Create.
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -65,12 +66,15 @@ pub fn station_name(host: &dyn Host, pos: Pos) -> Option<String> {
 pub fn train_status(host: &dyn Host, pos: Pos) -> Option<String> {
     let station = station_id(host, pos)?;
     let day_time = host.day_time();
-    world::with_railways(host.dimension(), |rails| {
+    let dimension = host.dimension();
+    let present = world::with_railways(dimension, |rails| {
         let graph = rails.nets.graphs.values().find(|g| g.point(EdgePointType::Station, station).is_some())?;
-        let present = graph.point(EdgePointType::Station, station)?.station()?.present_train(station, &rails.trains)?;
-        rules::train_status_line(rails.trains.get(&present), day_time, 0)
+        graph.point(EdgePointType::Station, station)?.station()?.present_train(station, &rails.trains)
     })
-    .flatten()
+    .flatten()?;
+    // `train.countPlayerPassengers()`: the players on the seats of its carriages ("Players Seated").
+    let passengers = super::trains::count_passengers(host, dimension, present);
+    world::with_railways(dimension, |rails| rules::train_status_line(rails.trains.get(&present), day_time, passengers)).flatten()
 }
 
 /// `ObservedTrainNameSource.provideLine`: the name of the train the observer at `pos` sees; `None` is `EMPTY_LINE`.

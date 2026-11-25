@@ -142,6 +142,7 @@ pub(super) fn finish(
     let AssembledTrain { mut train, bogey_indices } = match result {
         Ok(assembled) => assembled,
         Err(failure) => {
+            station::remember_failure(host.dimension(), station_pos, &failure.error, failure.carriage);
             say(host, uuid, &failure.error);
             return false;
         }

@@ -30,6 +30,8 @@ pub mod schedule_nbt;
 pub mod signal;
 pub mod railways;
 pub mod station;
+pub mod station_marker;
+pub mod station_screen;
 pub mod targeting;
 pub mod train;
 pub mod train_cargo;
