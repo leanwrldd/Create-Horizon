@@ -9,7 +9,8 @@
 //! - `SlidingDoorBlockEntity` (the sliding animation, `VISIBLE`) isn't here: the port's doors are vanilla-style doors that
 //!   swing, so the door's state is just `open`; the close sound that Create plays when the client-side animation has settled
 //!   is played when the door closes.
-//! - The elevator contact's `DoorControlBehaviour` (an elevator cabin's doors) is not wired (`getElevatorDoorControl`).
+//! - The elevator contact's `DoorControlBehaviour` (an elevator cabin's doors) is [`should_open_in_elevator`] and
+//!   [`elevator_door_contact`]; the glue (`machines/train_doors.rs`) runs it for a cabin. Its screen is `/elevator doors`.
 //! - Catnip's `NBTHelper.writeEnum` / `readEnum` are not in the Java tree: the enum is saved as its constant's name
 //!   (`"ALL"`, `"NORTH"`, ...), and an unknown or missing value reads as `ALL`, the first constant.
 
@@ -174,6 +175,34 @@ pub fn should_open(disabled: bool, speed: f64, control: Option<DoorControl>, doo
         Some(DoorControl::None) => false,
         Some(mode) => mode.matches(door),
     }
+}
+
+/// `SlidingDoorMovementBehaviour.shouldOpen` for a door in an Elevator cabin. `canOpen` is
+/// `context.motion.length() < 1 / 128f && !entity.isStalled() || ec.arrived`: a cabin that has arrived opens whatever its
+/// motion says. `control` is the `DoorControlBehaviour` of the contact at the column's current target (`getElevatorDoorControl`:
+/// `None` when the column has no target, the target is out of the cabin's reach, or the contact has no block entity).
+pub fn should_open_in_elevator(disabled: bool, speed: f64, stalled: bool, arrived: bool, control: Option<DoorControl>, door: Dir) -> bool {
+    if disabled {
+        return false;
+    }
+    let can_open = (speed < OPEN_BELOW_SPEED && !stalled) || arrived;
+    if !can_open {
+        return false;
+    }
+    match control {
+        None => false,
+        Some(DoorControl::All) => true,
+        Some(DoorControl::None) => false,
+        Some(mode) => mode.matches(door),
+    }
+}
+
+/// `ElevatorContraption.getCurrentTargetY` then `elevatorColumn.contactAt(y)`: the contact whose door control the cabin's
+/// doors read. `target` is the column's targeted floor if it has one; a floor outside `min..=max` (`isTargetUnreachable`)
+/// is none.
+pub fn elevator_door_contact(target: Option<i32>, min_contact_y: i32, max_contact_y: i32, column: (i32, i32)) -> Option<Pos> {
+    let y = target.filter(|y| *y >= min_contact_y && *y <= max_contact_y)?;
+    Some([column.0, y, column.1])
 }
 
 /// What a door's actor remembers (`context.data.Open`, `context.firstMovement`).
@@ -492,5 +521,36 @@ mod tests {
         // A leaf with the same hinge is no double door.
         let same = State::new("create:train_door").with("facing", "north").with("half", "lower").with("hinge", "left").with("open", "false");
         assert_eq!(click(&clicked, [0, 0, 0], None, Some(&same), 1.0).and_then(|c| c.double), None);
+    }
+
+    #[test]
+    fn a_cabin_that_has_arrived_opens_whatever_its_motion_says() {
+        // Moving fast and not arrived: shut. Arrived: open even at speed. Slow and held still: shut.
+        assert!(!should_open_in_elevator(false, 0.2, false, false, Some(DoorControl::All), Dir::North));
+        assert!(should_open_in_elevator(false, 0.2, false, true, Some(DoorControl::All), Dir::North));
+        assert!(should_open_in_elevator(false, 0.0, false, false, Some(DoorControl::All), Dir::North));
+        assert!(!should_open_in_elevator(false, 0.0, true, false, Some(DoorControl::All), Dir::North));
+        // A held cabin that has arrived still opens (`||`).
+        assert!(should_open_in_elevator(false, 0.0, true, true, Some(DoorControl::All), Dir::North));
+    }
+
+    #[test]
+    fn a_contacts_door_control_picks_the_doors_of_a_cabin() {
+        let open = |c, d| should_open_in_elevator(false, 0.0, false, true, c, d);
+        assert!(open(Some(DoorControl::East), Dir::East));
+        assert!(!open(Some(DoorControl::East), Dir::West));
+        assert!(!open(Some(DoorControl::None), Dir::East));
+        // No contact to ask, or a disabled door: shut.
+        assert!(!open(None, Dir::East));
+        assert!(!should_open_in_elevator(true, 0.0, false, true, Some(DoorControl::All), Dir::East));
+    }
+
+    #[test]
+    fn the_contact_asked_is_the_one_at_the_columns_target_if_the_cabin_reaches_it() {
+        assert_eq!(elevator_door_contact(Some(70), 64, 80, (5, -3)), Some([5, 70, -3]));
+        assert_eq!(elevator_door_contact(Some(64), 64, 80, (5, -3)), Some([5, 64, -3]));
+        assert_eq!(elevator_door_contact(Some(81), 64, 80, (5, -3)), None);
+        assert_eq!(elevator_door_contact(Some(63), 64, 80, (5, -3)), None);
+        assert_eq!(elevator_door_contact(None, 64, 80, (5, -3)), None);
     }
 }

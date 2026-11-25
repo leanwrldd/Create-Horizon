@@ -10,14 +10,17 @@
 //! and packages; a sneaking empty hand takes them out; a renamed Name Tag sets the address. The
 //! flag goes up while it holds packages.
 //!
-//! Known differences from Create: no train station link, no screen (the address is a Name Tag),
+//! The station link is `train_mail.rs` (a Postbox picks a Track Station with a click and is linked when placed; its tick registers
+//! it with the station).
+//!
+//! Known differences from Create: no screen (the address is a Name Tag),
 //! the lid is never drawn open (`open` stays false: Create sets it while the screen is open), the
 //! flag rises at once and doesn't wiggle, no waterlogging, no clipboard address copying.
 
 use create_kinetics::rules::frogport as rules;
 use create_kinetics::rules::package as package_rules;
 use crate::compat::{
-    BlockEntityContainerEvent, BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTicksEvent,
+    BlockEntityContainerEvent, BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockEntityUpdateTagEvent, Compound, ContainerAcceptsEvent, EquipmentSlot, Flow, Hooks, Host,
     ModBlockEntity, ModContainer, RightClickBlockEvent, StandaloneModelsEvent, Tag, Text, UseItemOnEvent,
 };
@@ -70,7 +73,19 @@ impl Hooks for Postboxes {
         is_postbox(event.block).then(|| (event.block.to_owned(), Compound::new()))
     }
 
-    fn block_entity_ticks(&self, _: &dyn Host, _: &mut BlockEntityTicksEvent<'_>) {}
+    /// `PackagePortBlockEntity.lazyTick`: a linked Postbox registers with its station (`train_mail.rs`).
+    fn block_entity_ticks(&self, _: &dyn Host, event: &mut BlockEntityTicksEvent<'_>) {
+        if is_postbox(event.block) {
+            event.ticks = true;
+        }
+    }
+
+    fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
+        if is_postbox(&event.entity.id) {
+            let now = util::game_time(&*host);
+            super::train_mail::tick_postbox(host, event.pos, event.entity, now);
+        }
+    }
 
     fn block_entity_container(&self, _: &dyn Host, event: &mut BlockEntityContainerEvent<'_>) -> Option<ModContainer> {
         is_postbox(event.block).then(|| {
@@ -205,6 +220,8 @@ impl Hooks for Postboxes {
                 util::put(&mut e.nbt, ADDRESS, Tag::String(name.as_str().into()));
             });
             host.block_entity_sync(pos);
+            // `PackagePortBlockEntity.filterChanged`: the station's record takes the new address.
+            super::train_mail::filter_changed(host, pos);
             let line = if name.is_empty() { "Address cleared".to_owned() } else { format!("Address: {name}") };
             host.action_bar(player.uuid, Text::literal(line));
             return Flow::Cancel;

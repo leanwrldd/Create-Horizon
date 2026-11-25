@@ -6,9 +6,11 @@
 //! the marker). The glue lists them as [`Passenger`]s (the carriage seat they sit on and whether they are a player);
 //! the rules answer which sides of the carriage a driver is present for, and whether a mob walking over a seat sits on it.
 //!
-//! Left out: `SeatBlock.getLeashed` (a leashed mob is seated with the player's click), the config `seatHostileMobs`
-//! (always on, its default: every mob is picked up unless it is a Shulker or in `#c:capturing_not_supported`), and
-//! `TamableAnimal.setInSittingPose`.
+//! `SeatBlock.getLeashed` is [`first_leashed`]: a player's click on a seat seats a mob they lead, if one is within
+//! [`LEASH_SEARCH`] blocks, in the player's place.
+//!
+//! Left out: the config `seatHostileMobs` (always on, its default: every mob is picked up unless it is a Shulker or in
+//! `#c:capturing_not_supported`), and `TamableAnimal.setInSittingPose`.
 
 use crate::Pos;
 use std::collections::BTreeMap;
@@ -102,9 +104,57 @@ pub fn touches_seat(centre: [f64; 3], feet: [f64; 3]) -> bool {
     dx <= TOUCH_HORIZONTAL && dz <= TOUCH_HORIZONTAL && dy >= -TOUCH_BELOW && dy <= TOUCH_ABOVE
 }
 
+/// `SeatBlock.getLeashed` looks at the entities in `player.getBoundingBox().inflate(10)`.
+pub const LEASH_SEARCH: f64 = 10.0;
+
+/// The box `getLeashed` searches: the player's box, grown by [`LEASH_SEARCH`] on every side.
+pub fn leash_search_box(player_box: [[f64; 3]; 2]) -> [[f64; 3]; 2] {
+    [player_box[0].map(|c| c - LEASH_SEARCH), player_box[1].map(|c| c + LEASH_SEARCH)]
+}
+
+/// One entity of that box, as `getLeashed` tests it.
+#[derive(Clone, Copy, Debug)]
+pub struct LeashCandidate<'a> {
+    /// `e instanceof Mob`: only a mob takes a lead.
+    pub mob: bool,
+    /// `mob.getLeashHolder() == player`.
+    pub led_by_player: bool,
+    pub candidate: Candidate<'a>,
+}
+
+/// `SeatBlock.getLeashed`: the first entity (in the world's order) that is a mob led by the player and can be picked up
+/// (`canBePickedUp`). Its index in `entities`.
+pub fn first_leashed(entities: &[LeashCandidate<'_>]) -> Option<usize> {
+    entities.iter().position(|e| e.mob && e.led_by_player && can_be_picked_up(&e.candidate))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_lead_search_grows_the_players_box_by_ten() {
+        let b = leash_search_box([[0.0, 64.0, 0.0], [0.6, 65.8, 0.6]]);
+        assert_eq!(b, [[-10.0, 54.0, -10.0], [10.6, 75.8, 10.6]]);
+    }
+
+    #[test]
+    fn a_led_mob_that_can_be_picked_up_is_seated_in_the_players_place() {
+        let cow = Candidate { kind: "minecraft:cow", player: false, living: true, ignored: false };
+        let led = |mob, led_by_player, candidate| LeashCandidate { mob, led_by_player, candidate };
+        // Not led by the player (or by anyone): skipped, and the first one that is led wins.
+        let list = [
+            led(true, false, cow),
+            led(true, true, Candidate { kind: "minecraft:shulker", ..cow }),
+            led(true, true, Candidate { ignored: true, ..cow }),
+            led(false, true, cow),
+            led(true, true, cow),
+            led(true, true, Candidate { kind: "minecraft:horse", ..cow }),
+        ];
+        assert_eq!(first_leashed(&list), Some(4));
+        assert_eq!(first_leashed(&list[..4]), None);
+        assert_eq!(first_leashed(&[]), None);
+    }
 
     fn seats() -> BTreeMap<Pos, [bool; 2]> {
         let mut m = BTreeMap::new();

@@ -43,6 +43,9 @@ Registered through `tools/gen_modules.py`, which now also lists a rules folder w
 | `train_cargo.rs` | `TrainCargoManager`, `MountedStorageManager` (`initialize`, `canUseForFuel`, `isExposed`), `Train.burnFuel` (the container item) | what a carriage's chests, barrels, shulker boxes, vaults and tanks hold, sorted into the items, fluids and fuel slots the schedule conditions and `burnFuel` read; the version / idle ticker change detection; taking one fuel item out (and putting its bucket back) |
 | `train_passengers.rs` | `CarriageContraptionEntity.checkConductors`, `Train.countPlayerPassengers`, `SeatBlock.canBePickedUp`, `SeatInteractionBehaviour.handleEntityCollision`, `AbstractContraptionEntity.addSittingPassenger` | the conductor sides from the burners and the seated mobs, the players seated, who a seat picks up, who gives way to whom, whether a mob touches a seat |
 | `schedule_hand.rs` | `ScheduleItem.handScheduleTo`, `ScheduleItemEntityInteraction`, `ConductorBlockInteractionBehavior`, `EntityHats.shouldRenderTrainHat`, `BlazeBurnerMovementBehaviour.shouldRenderHat`, `BlazeBurnerRenderer.renderShared` (the hat) | the decisions of handing a Schedule to a seated conductor or a Blaze Burner (apply, deny, resume, take back), their messages, and when the Train Hat is worn and where it sits on a burner |
+| `mail.rs` | `GlobalStation.runMailTransfer`, `GlobalPackagePort`, `StationBlockEntity.attachPackagePort`, `PackagePortPlacementPacket`, `PackagePortTargetSelectionHandler.validateDiff` | packages between carriages and a station's Postboxes (import what isn't for the port, export what matches, offline buffer and `primed`, a Creative Crate voiding), the range checks |
+| `portal_track.rs` | `AllPortalTracks`, `PortalTrackProvider`, `TrackBlock.connectToPortal` / `updateShape` / `getConnected` (bound half), `BlockUtil.getLargestRectangleAround`, `PortalShape.getRelativePosition` | portal integrations, the exit of a portal track (vanilla destination rebuilt from Horizon's port of it), the link plan with its failures and English, the survival check, the bound ends that join two dimensions |
+| `portal_cutoff.rs` | `CarriageContraption` (`isHiddenInPortal`, `atSeam`, `withinVisible`), `CarriageContraptionEntity.isLocalCoordWithin`, `DimensionalCarriageEntity.updatePassengerLoadout` / `dismountPlayer` | what of a carriage a portal hides, the seam slice, which passengers sit down or are put off, where a player goes |
 | `train_doors.rs` | `DoorControl`, `DoorControlBehaviour`, `SlidingDoorMovementBehaviour`, `DoorMovingInteraction`, `SlidingDoorBlock.isDoubleDoor`, `StationEditPacket` (door control) | the six door modes (matching, saved name, English), the five Train Doors, `getDoorFacing`, `shouldOpen` / `shouldUpdate` / `tickOpen` / `toggleDoor`, the click on a door in a carriage; `edge_blocks.rs` carries the station edit and `/station doors` |
 | `track_overlay.rs` | `TrackBlock.prepareTrackOverlay` / `prepareAssemblyOverlay`, `TrackTargetingBehaviour.render`, `TrackTargetingClient.render`, `StationRenderer` (the flag, the assembly spots), `StationBlockEntity.flag`, `TrackBlockOutline.pickCurves` / `drawCurveSelection`, `TrainRelocator.relocateClient` (the preview lines), `CurvedTrackSelectionPacket` | a pose stack as a chain of operations (`Chain`, `Affine`), the edge point marker's pose on a straight block or a curve segment, the assembly spots and their colours, the flag's lerp, model choice, wiggle and angle, the cursor's ray against a curve's segments and the outline of the one it hits, the preview's lines, and the wire formats of the client's hover, the server's preview and a click on a curve |
 | `train_hat.rs` | `CreateHatArmorLayer.render`, `TrainHatInfo`, `EntityHats` | the operations that lay the Train Hat on a head (`translateAndRotate` to the head, the head cube's top, the hat's scale, flip, sink and tilt), for the humanoid, villager and illager heads |
@@ -362,14 +365,41 @@ Differences and what is left out:
   a click on a straight piece and on a curve, sneak-click aborts; a villager on a conductor seat of a carriage with a schedule wearing the hat, the
   hat following its head, a player in that seat, and no hat on a plain seat; and no panic in `latest.log` (a hook that panics every frame costs seconds).
 
+## Glue part 4c: more cargo, mail, lead seating, elevator doors, portals (not played)
+
+- **Cargo**: a Depot (its slot 0), a Toolbox (`Inventory.Items`, 32 slots) and a Creative Crate (two slots; a burn leaves it whole and
+  the fuel's bucket is voided) on a carriage are cargo and fuel (`train_cargo::cargo_slots` / `items_path` / `is_bottomless`;
+  `portable_interface_storage::items_of_with` / `apply_items_with`, which keep a Depot's output slots). The Portable Storage Interface
+  still sees only chests, barrels, shulker boxes and vaults. Other mods' inventories (`FallbackMountedStorageType`) have no copy.
+- **Mail** (`machines/train_mail.rs`, `postbox.rs`): Create has it (`runMailTransfer`). Only a Postbox links to a station
+  (`TrainStationFrogportTarget.canSupport`); a Frogport links to a chain. Right-click a Track Station with a Postbox in hand to pick it,
+  then place the Postbox within 5 blocks: its `Target` is `{type: "create:train_station", relative_pos}`. The Postbox's tick registers it
+  every 10 ticks (`lazyTick`), a Name Tag re-registers it (`filterChanged`). `TrainEvent::MailTransfer` now runs the transfer; the
+  station's records and the offline buffers are saved in the station block entity as `Ports`; `port_packages` (Fetch Packages) is
+  answered. Differences: no selection outline, particles are a command, no ComputerCraft events.
+- **Seating by lead**: `seat::leashed_by` (`SeatBlock.getLeashed`: a mob on the player's lead within 10 blocks, using
+  `entity_leash_holder`) seats the mob on a block seat. **Not wired for a carriage's seat**: that click is `structure_click.rs`, which this
+  branch left alone; its seat branch should call `seat::leashed_by(host, uuid, entity_id)` and, on `Some((id, uuid))`, `seat::sit_mob_on_structure`.
+- **Elevator doors**: an Elevator Contact has a door control (`DoorControl`, saved as the constant's name); `/elevator doors <mode>` sets it for
+  the contact last right-clicked. A cabin's sliding doors open when the cabin has arrived (or is slow and not held) by the control of the
+  contact at the column's target floor (`train_doors::tick_elevator`, `should_open_in_elevator`).
+- **Portals**: rules only. What the API allows: `entity_teleport_to_level` moves players, mobs, items and vehicles (with passengers) between
+  levels and `entity_travel_to_dimension` / `entity_portal` are hooks; blocks of another level read through `host.level(dim)` when it is loaded.
+  What it can't: read the portal link (`Portal.getPortalDestination`, the points of interest), build a portal, or keep an entity in two levels
+  (a carriage here is an anchor block entity per dimension, which `carriage.rs` already models). So `portal_track.rs` rebuilds the destination
+  from the portal blocks the glue lists, without creating a portal. **Not glued**, because it needs a redesign: one set of graphs and trains per
+  dimension (`track.rs`, `trains.rs`) must become one shared set (Create has one manager), `HostTracks` must read blocks of another dimension, the
+  track block needs `connectToPortal` on its tick, `BoundLocation` / `BoundDimension` in its block entity and the `bound_ends` in `getConnected`,
+  anchors need to be kept in both dimensions, and the cutoff (`portal_cutoff.rs`) applied to what is drawn and to the carriage's collision.
+
 ## Next
 
-1. Play-test glue parts 3, 4, 4b and 5 (HANDOFF.md lists what to watch).
-2. `TrainDisplay`, map markers (see glue part 4), portals (`AllPortalTracks`, the carriage cutoffs), the station screens, the elevator
-   contact's door control.
+1. Play-test glue parts 3, 4, 4b, 4c and 5 (HANDOFF.md lists what to watch).
+2. `TrainDisplay`, map markers (see glue part 4), gluing portals (see glue part 4c), the station screens.
 3. The girder and tilt of a curve (`GirderAngles`, `TrackBlockEntityTilt`, `yOffsetAt`), `TrackBlockOutline`'s selection box for straight
    track, `CurvedTrackInteraction`'s break progress and the Wrench's pick-up of a curve.
 4. The Blaze Burner's Train Hat (needs the burner's head drawn in a carriage first), the hat on mobs whose heads aren't known (Create reads
-   `train_hat_info`), seating by lead, the cargo of the Depot, Toolbox and Creative Crate on a carriage, mail transfer.
+   `train_hat_info`), the lead seating on a carriage seat (`structure_click.rs`'s `sit` needs the player's entity id to call
+   `seat::leashed_by`, then `seat::sit_mob_on_structure`).
 5. One-shot update fields for the pose (`set_client_update_fields`) so only the pose travels, once the compat layer exposes them.
 
