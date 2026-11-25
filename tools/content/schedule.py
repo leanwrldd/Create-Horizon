@@ -12,7 +12,11 @@ The schedule is edited with the `/schedule` command instead of Create's screen (
 # components, and 64 as its stack size.
 ITEMS = {"schedule": {"template": "minecraft:iron_nugget", "max_stack_size": 64}}
 
+# The Train Hat a seated conductor wears (`AllPartialModels.TRAIN_HAT`; `machines/train_hat.rs`).
+MODELS = ["entity/train_hat"]
+
 TAB = ["schedule"]
+
 
 NAMES = {
     "item.create.schedule": "Train Schedule",

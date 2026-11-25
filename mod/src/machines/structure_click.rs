@@ -551,14 +551,22 @@ fn handle(host: &mut dyn mod_api::ServerHost, who: u128, limit: Option<f64>) -> 
     let dimension = host.dimension().to_owned();
     // Create's client cancels the click whatever `handlePlayerInteraction` answers: a block that does nothing
     // (stone, a chest) still takes it.
-    let _acted = match rules::route(&block.state.name, wrench) {
+    let acted = match rules::route(&block.state.name, wrench) {
         Route::Storage => open_storage(host, &dimension, &found, moving, who),
         // A seat on a carriage is carried with it by the train's tick (`trains::carry_riders`).
         Route::Sit => sit(host, &dimension, &found, who),
         Route::Behaviour(kind) => behave(host, &dimension, &found, moving, kind, who, held, wrench),
     };
+    // `handleSpecialInteractions`: a Wrench click that nothing on a carriage took starts relocating its train.
+    if !acted && wrench {
+        let mut adapter = Adapter::Server(&mut *host);
+        if let Some((train, _)) = super::trains::carriage_of_anchor(&adapter, found.controller) {
+            super::train_relocate::carriage_wrenched(&mut adapter, who, found.world, train);
+        }
+    }
     true
 }
+
 
 fn registry_has_server_structures(host: &mut dyn mod_api::ServerHost) -> bool {
     let dimension = host.dimension();
