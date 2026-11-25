@@ -72,6 +72,8 @@ BLOCKS["track"]["properties"]["occludes"] = False  # `noOcclusion`
 # `TRACK_SEGMENT_RIGHT`, the `TrackModelHolder.DEFAULT`).
 MODELS = [
     "block/track/tie", "block/track/segment_left", "block/track/segment_right",
+    # The girder under a curve (`AllPartialModels.GIRDER_SEGMENT_*`; `GirderAngles`, `machines/track_draw.rs`).
+    "block/metal_girder/segment_top", "block/metal_girder/segment_middle", "block/metal_girder/segment_bottom",
     # The markers an edge point shows on its track (`AllPartialModels.TRACK_*_OVERLAY`; `machines/train_overlay.rs`). The assembling
     # one is only named so its texture is imported: the spots are drawn as boxes in the colour of their state.
     "block/track_overlay/station", "block/track_overlay/signal", "block/track_overlay/signal_dual", "block/track_overlay/observer",

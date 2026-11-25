@@ -8,8 +8,8 @@
 //! its curves ([`track_ends`]), `placeTracks` ([`plan_tracks`]), `removeConnection`'s `HAS_BE` rule and
 //! `BezierConnection.spawnItems`' drop points ([`drop_points`]), `getRequiredItems` for the curve cost.
 //!
-//! Known differences: the slope smoothing of `TrackBlockEntityTilt` is not ported, so `yOffsetAt` is 0 and a track is
-//! never tilted; `getBlockPathType`, waterlogging and `AllPortalTracks` are left out; `TrackMaterial` is the
+//! Known differences: the slope smoothing of `TrackBlockEntityTilt` is `track_tilt.rs`; a straight block's tilt comes in as
+//! [`TrackView::y_offset`]; `getBlockPathType`, waterlogging and `AllPortalTracks` are left out; `TrackMaterial` is the
 //! andesite one only.
 
 use super::bezier::BezierConnection;
@@ -216,6 +216,9 @@ pub struct TrackView<'a> {
     pub curves: &'a [BezierConnection],
     /// `ITrackBlock.getMaterialSimple(world, v)` for a point: the id of the track material there, or `default`.
     pub material: &'a dyn Fn(Vec3, &str) -> String,
+    /// `ITrackBlock.getYOffsetAt(world, pos, state, end)` for a straight block: the tilt of the end at a point
+    /// (`TrackBlockEntityTilt.getYOffsetForAxisEnd`).
+    pub y_offset: &'a dyn Fn(Vec3) -> i32,
 }
 
 /// `TrackBlock.getConnected(world, pos, state, linear, connectedTo)`: the track ends of the block (empty when
@@ -253,7 +256,7 @@ pub fn track_ends(view: &TrackView, linear: bool, connected_to: Option<&TrackNod
             normal,
             dimension: view.dimension,
             material: &simple,
-            y_offset: &|_| 0,
+            y_offset: view.y_offset,
         };
         list = connected_straight(&straight, connected_to);
     }
@@ -277,7 +280,7 @@ pub fn track_ends(view: &TrackView, linear: bool, connected_to: Option<&TrackNod
                 .materials(curve_material(offset(0.0, b)), curve_material(offset(1.0, b)))
                 .with_normal(bc.normals[i])
                 .with_direction(None)
-                .with_y_offset(0)
+                .with_y_offset(bc.y_offset_at(offset(0.5, b)))
         };
         add_to_list_if_connected(connected_to, &mut list, make(true), make(false));
     }
@@ -398,6 +401,7 @@ mod tests {
             dimension: 0,
             curves,
             material: &|_, default| default.to_owned(),
+            y_offset: &|_| 0,
         }
     }
 

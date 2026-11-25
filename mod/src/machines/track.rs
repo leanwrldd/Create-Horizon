@@ -24,7 +24,8 @@
 //!   Create's blockstate expects it.
 //! - A block placed by `setblock` or a structure joins the graph only once something next to it is built through the
 //!   item, or never: `onPlace` is not a hook.
-//! - No tilt/smoothing (`TrackBlockEntityTilt`), no portal tracks, no girder on curves, no fake track markers,
+//! - The tilt (`TrackBlockEntityTilt`) is kept and applied as Create does (the angle, each curve's `Smoothing`, the graph's
+//!   y offsets), but the track's model is not tilted (a chunk model can't be), and no portal tracks, no fake track markers,
 //!   no wrench pick-up of a curve's items (`onSneakWrenched`), no `getRequiredItems` for schematics.
 //! - A curve's items drop for a survival player breaking an end, not for explosions.
 
@@ -40,6 +41,7 @@ use create_kinetics::rules::trains::railways::Railways;
 use create_kinetics::rules::trains::propagator::TrackWorld;
 use create_kinetics::rules::trains::track_block::{self as rules, CONNECTIONS, MATERIAL, TRACK, TrackView};
 use create_kinetics::rules::trains::track_shape::TrackShape;
+use create_kinetics::rules::trains::track_tilt;
 use create_kinetics::rules::trains::vec::{Vec3, block_containing};
 use create_kinetics::{Dir, Pos};
 use crate::compat::{
@@ -123,7 +125,13 @@ pub fn read_connection(tag: &Tag, local_to: Pos) -> Option<BezierConnection> {
         Some(Tag::String(m)) => m.to_string_lossy(),
         _ => MATERIAL.to_owned(),
     };
-    Some(BezierConnection::new(positions, starts, axes, normals, flag(tag, "Primary"), flag(tag, "Girder"), material))
+    let mut bc = BezierConnection::new(positions, starts, axes, normals, flag(tag, "Primary"), flag(tag, "Girder"), material);
+    // `NBTHelper.intFromCompound`: `{V: int}`.
+    bc.smoothing = pair(tag, "Smoothing", |t| match t.get("V") {
+        Some(Tag::Int(v)) => Some(*v),
+        _ => None,
+    });
+    Some(bc)
 }
 
 /// `BezierConnection.write(localTo)`.
@@ -143,6 +151,14 @@ pub fn write_connection(bc: &BezierConnection, local_to: Pos) -> Tag {
     c.insert("Axes".into(), Tag::List(bc.axes.iter().map(|v| vec_tag(*v)).collect()));
     c.insert("Normals".into(), Tag::List(bc.normals.iter().map(|v| vec_tag(*v)).collect()));
     c.insert("Material".into(), Tag::String(bc.material.as_str().into()));
+    if let Some(smoothing) = bc.smoothing {
+        let ints = smoothing.map(|v| {
+            let mut entry = Compound::new();
+            entry.insert("V".into(), Tag::Int(v));
+            Tag::Compound(entry)
+        });
+        c.insert("Smoothing".into(), Tag::List(ints.to_vec()));
+    }
     Tag::Compound(c)
 }
 
@@ -179,6 +195,12 @@ pub fn add_connection(host: &mut dyn Host, pos: Pos, bc: &BezierConnection) {
 /// `TrackBlockEntity.removeConnection`: drops the curve to `target`; the last one gone lets `turn` fall back.
 pub fn remove_connection(host: &mut dyn Host, pos: Pos, target: Pos) {
     let mut curves = connections_at(&*host, pos);
+    if curves.iter().any(|c| c.key() == target) && is_tilted(&*host, pos) {
+        // `captureSmoothingHandles`, and `tick`'s `undoSmoothing` a tick later.
+        let dimension = host.dimension();
+        lock(&PREVIOUS).insert((dimension, pos), track_tilt::capture_handles(&curves));
+        lock(&UNDO).push((dimension, pos));
+    }
     let before = curves.len();
     curves.retain(|c| c.key() != target);
     if curves.len() == before {
@@ -190,6 +212,102 @@ pub fn remove_connection(host: &mut dyn Host, pos: Pos, target: Pos) {
         host.set_block_property(pos, "turn", "false");
     }
     host.block_entity_sync(pos);
+}
+
+// --- the tilt (`TrackBlockEntityTilt`) -----------------------------------------------------------------------------
+
+/// `TrackBlockEntity.write`'s `Smoothing`: the angle of a tilted block, in degrees.
+pub const SMOOTHING: &str = "Smoothing";
+
+/// `TrackBlockEntityTilt.previousSmoothingHandles`, kept by level and position from `removeConnection` until `undoSmoothing`.
+static PREVIOUS: LazyLock<Mutex<HashMap<(&'static str, Pos), Vec<(Vec3, i32)>>>> = LazyLock::new(Mutex::default);
+/// Tilted blocks that lost a curve: `undoSmoothing` looks at them at the next tick (Create runs it every tick on every one).
+static UNDO: Mutex<Vec<(&'static str, Pos)>> = Mutex::new(Vec::new());
+
+/// `smoothingAngle` of a block entity's data.
+pub fn tilt_angle(nbt: &Compound) -> Option<f64> {
+    match util::get(nbt, SMOOTHING) {
+        Some(Tag::Double(bits)) => Some(f64::from_bits(*bits)),
+        _ => None,
+    }
+}
+
+/// `TrackBlockEntity.isTilted`.
+pub fn is_tilted(host: &dyn Host, pos: Pos) -> bool {
+    host.mod_block_entity(pos).is_some_and(|e| tilt_angle(&e.nbt).is_some())
+}
+
+/// `TrackBlockEntityTilt.tryApplySmoothing` for the block at `pos`: a flat block between two curves, one falling away and one
+/// climbing, is tilted (`track_tilt::try_apply_smoothing` says how); its curves are replaced by the two raised ones and the graph
+/// is made again there.
+pub fn apply_tilt(host: &mut dyn Host, pos: Pos) {
+    if is_tilted(&*host, pos) {
+        return;
+    }
+    let Some(shape) = shape_at(&*host, pos) else { return };
+    let curves = connections_at(&*host, pos);
+    let Some(smoothed) = track_tilt::try_apply_smoothing(&shape.axes(), false, &curves) else { return };
+    // `removeInboundConnections(false)`, `connections.clear()`.
+    cut_curves(host, pos, false);
+    host.change_mod_block_entity(pos, &mut |e| {
+        write_connections(&mut e.nbt, pos, &[]);
+        e.nbt.insert(SMOOTHING.into(), Tag::Double(smoothed.angle.to_bits()));
+    });
+    let dimension = host.dimension();
+    for bc in &smoothed.curves {
+        let other = bc.key();
+        if host.block(other) != TRACK {
+            continue;
+        }
+        add_connection(host, pos, bc);
+        add_connection(host, other, &bc.secondary());
+        queue_retrack(dimension, other);
+    }
+    host.block_entity_sync(pos);
+    queue_retrack(dimension, pos);
+}
+
+/// `TrackBlockEntityTilt.undoSmoothing`: a tilted block that lost a curve (and no longer has two) goes flat again, its curves
+/// restored to the original ends.
+fn undo_tilt(host: &mut dyn Host, pos: Pos) {
+    let dimension = host.dimension();
+    let curves = connections_at(&*host, pos);
+    let has_previous = lock(&PREVIOUS).contains_key(&(dimension, pos));
+    if host.block(pos) != TRACK || !track_tilt::should_undo(is_tilted(&*host, pos), has_previous, curves.len()) {
+        return;
+    }
+    let valid: Vec<BezierConnection> = curves
+        .into_iter()
+        .filter(|bc| host.block(bc.key()) == TRACK && connections_at(&*host, bc.key()).iter().any(|c| c.key() == pos))
+        .collect();
+    cut_curves(host, pos, false);
+    host.change_mod_block_entity(pos, &mut |e| {
+        write_connections(&mut e.nbt, pos, &[]);
+        util::remove(&mut e.nbt, SMOOTHING);
+    });
+    for bc in &valid {
+        let restored = track_tilt::restore_to_original_curve(bc);
+        add_connection(host, pos, &restored);
+        add_connection(host, restored.key(), &restored.secondary());
+        queue_retrack(dimension, restored.key());
+    }
+    host.block_entity_sync(pos);
+    lock(&PREVIOUS).remove(&(dimension, pos));
+    queue_retrack(dimension, pos);
+}
+
+/// The blocks that lost a curve while tilted, looked at once a tick.
+fn run_undos(host: &mut dyn Host) {
+    let dimension = host.dimension();
+    let mine: Vec<Pos> = {
+        let mut list = lock(&UNDO);
+        let (mine, rest): (Vec<_>, Vec<_>) = list.drain(..).partition(|(d, _)| *d == dimension);
+        *list = rest;
+        mine.into_iter().map(|(_, pos)| pos).collect()
+    };
+    for pos in mine {
+        undo_tilt(host, pos);
+    }
 }
 
 // --- TrackWorld over the host ----------------------------------------------------------------------------------
@@ -223,10 +341,15 @@ impl TrackWorld for HostTracks<'_> {
         let has_be = has_turn(self.host, pos);
         let curves = if has_be && !ignore_turns { connections_at(self.host, pos) } else { Vec::new() };
         let host = self.host;
+        // `getYOffsetAt`: only a tilted block offsets its ends, by its curves' smoothing (or what it kept of a curve that left).
+        let tilted = has_be && is_tilted(host, pos);
+        let all = if tilted { connections_at(host, pos) } else { Vec::new() };
+        let previous = if tilted { lock(&PREVIOUS).get(&(host.dimension(), pos)).cloned().unwrap_or_default() } else { Vec::new() };
+        let y_offset = |end: Vec3| track_tilt::y_offset_for_axis_end(tilted, &all, &previous, end);
         let material = |v: Vec3, default: &str| {
             if host.block(block_containing(v)) == TRACK { MATERIAL.to_owned() } else { default.to_owned() }
         };
-        let view = TrackView { pos, shape, has_be, dimension: self.dimension, curves: &curves, material: &material };
+        let view = TrackView { pos, shape, has_be, dimension: self.dimension, curves: &curves, material: &material, y_offset: &y_offset };
         rules::track_ends(&view, ignore_turns, connected_to)
     }
 }
@@ -263,6 +386,8 @@ struct DimState {
     partners: HashMap<Pos, Vec<Pos>>,
     added: VecDeque<Pos>,
     removed: VecDeque<Pos>,
+    /// Blocks whose ends changed under them (a tilt): taken out of the graphs by what they had, then added again.
+    retrack: VecDeque<Pos>,
     /// Positions to add after a load, and those whose chunk wasn't there yet.
     rebuild: VecDeque<Pos>,
     waiting: Vec<Pos>,
@@ -298,6 +423,16 @@ pub fn queue_added(dimension: &str, pos: Pos) {
     let st = states.entry(dimension.to_owned()).or_default();
     if !st.added.contains(&pos) {
         st.added.push_back(pos);
+    }
+}
+
+/// A track block's ends moved (a tilt was applied or let go): its graph nodes are taken out and made again at the next tick
+/// (`onRailRemoved` then `onRailAdded`).
+pub fn queue_retrack(dimension: &str, pos: Pos) {
+    let mut states = lock(&STATE);
+    let st = states.entry(dimension.to_owned()).or_default();
+    if !st.retrack.contains(&pos) {
+        st.retrack.push_back(pos);
     }
 }
 
@@ -356,18 +491,20 @@ fn tick(host: &mut dyn Host) {
     let queued = lock(&STATE).remove(&dimension);
     let mut st = queued.unwrap_or_default();
     // What was queued before this world's first sync is kept across the reset a new world makes.
-    let (added, removed) = (std::mem::take(&mut st.added), std::mem::take(&mut st.removed));
+    let (added, removed, retrack) = (std::mem::take(&mut st.added), std::mem::take(&mut st.removed), std::mem::take(&mut st.retrack));
     if st.token == 0 || now < st.time || now % 20 == 0 {
         sync(host, &mut st, now);
     }
     st.added.extend(added);
     st.removed.extend(removed);
+    st.retrack.extend(retrack);
     run(&*host, &mut st, id, now);
     let mut states = lock(&STATE);
     // Anything queued meanwhile (by a hook the work called) joins what is there.
     if let Some(late) = states.remove(&dimension) {
         st.added.extend(late.added);
         st.removed.extend(late.removed);
+        st.retrack.extend(late.retrack);
     }
     states.insert(dimension, st);
 }
@@ -386,6 +523,15 @@ fn run(host: &dyn Host, st: &mut DimState, id: u32, now: i64) {
             st.dirty = true;
         }
         st.rails.nets.on_rail_removed(&world, pos, &ends);
+    }
+    for _ in 0..BUDGET {
+        let Some(pos) = st.retrack.pop_front() else { break };
+        if host.block(pos) != TRACK {
+            continue;
+        }
+        let ends = st.known.remove(&pos).unwrap_or_default();
+        st.rails.nets.on_rail_removed(&world, pos, &ends);
+        add_now(&world, st, pos);
     }
     for _ in 0..BUDGET {
         let Some(pos) = st.added.pop_front() else { break };
@@ -567,5 +713,6 @@ impl Hooks for Tracks {
             return;
         }
         tick(host);
+        run_undos(host);
     }
 }

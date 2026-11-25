@@ -6,9 +6,10 @@
 //! `getNormal`, the bounds, the segment iterator (`Bezierator`, as [`BezierConnection::segments`]),
 //! `rasterise` (the columns the curve crosses), `secondary`, `equalsSansMaterial`, the item costs.
 //!
-//! Left out (render and world side, for the glue): the baked render transforms (`SegmentAngles`,
-//! `GirderAngles`), spawning items and particles, `addItemsToPlayer`, the NBT and packet formats, and
-//! `yOffsetAt` (it needs `TrackBlockEntityTilt.compareHandles`; `smoothing` is kept as data).
+//! `yOffsetAt` is [`BezierConnection::y_offset_at`] (with `track_tilt.rs`'s `compareHandles`).
+//!
+//! Left out (render and world side, for the glue): spawning items and particles, `addItemsToPlayer`, the NBT and packet
+//! formats. The baked render transforms (`SegmentAngles`, `GirderAngles`) are in `track_render.rs`.
 //!
 //! Known differences: `Mth.atan2` is a lookup-table approximation in Minecraft; `f64::atan2` is used.
 
@@ -105,6 +106,18 @@ impl BezierConnection {
 
     pub fn is_primary(&self) -> bool {
         self.primary
+    }
+
+    /// `yOffsetAt(end)`: the smoothing of the end that is at `end` (`TrackBlockEntityTilt.compareHandles`), 0 without any.
+    pub fn y_offset_at(&self, end: Vec3) -> i32 {
+        let Some(smoothing) = self.smoothing else { return 0 };
+        if super::track_tilt::compare_handles(self.starts[0], end) {
+            smoothing[0]
+        } else if super::track_tilt::compare_handles(self.starts[1], end) {
+            smoothing[1]
+        } else {
+            0
+        }
     }
 
     /// `coupleEquals`: equal, or each vector within 1e-6 (`closerThan`).

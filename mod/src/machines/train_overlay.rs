@@ -22,8 +22,16 @@
 //! - The overlay as an instance is lit by the track block's light with a floor of 4 (an unreadable light would hide it).
 //! - The station's assembly spots are drawn as four coloured boxes with the model's texture (a model can't be tinted all over); the
 //!   flag's `LerpedFloat` runs on the frame's clock, not the client tick.
-//! - A tilted track's overlay shift (`TrackBlockEntityTilt`) isn't there (no tilt is ported).
-//! - `TrackBlockOutline`'s selection box for straight track and the curve's break progress (`CurvedTrackInteraction`) aren't ported.
+//! - A tilted track's overlay shift (`TrackBlockEntityTilt`) isn't there; the tilted track's model isn't tilted (a chunk model can't be).
+//! - **Straight track's selection box** (`TrackBlockOutline.drawCustomBlockSelection`, `rules::trains::track_outline`) is drawn as world lines
+//!   over the block under the cursor, white or red while holding track as Create colours it; Horizon can't cancel the vanilla outline, so
+//!   both show.
+//! - **Breaking a curve** (`CurvedTrackInteraction.clientTick`, `rules::trains::curve_interaction`): holding attack on the picked curve builds
+//!   the progress; the crack stage goes to the server (`create:curve_break`, which sets it as `destroyBlockProgress`), and a full
+//!   progress sends `create:curve_destroy`; a sneaking Wrench click sends the same with the pick-up flag (`track_curve.rs` answers both).
+//!   Left out: the hit sound, the particle and the swing (no client call for them), creative speed (the client can't read the game mode:
+//!   it uses the survival rate, the server still doesn't drop items for creative), and the cancelling of the vanilla attack on the block
+//!   behind the curve (`onClickInput`; a click with a track item in hand on a curve is cancelled without Create's message).
 
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
@@ -33,11 +41,14 @@ use create_kinetics::rules::trains::bezier::BezierConnection;
 use create_kinetics::rules::trains::graph::EdgePointType;
 use create_kinetics::rules::trains::graph_helper::with_graph_location;
 use create_kinetics::rules::trains::targeting::{BezierTrackPointLocation, TargetingState};
+use create_kinetics::rules::deployer;
+use create_kinetics::rules::trains::curve_interaction::{self as breaking, BreakProgress, CurveBreakStage, CurveDestroy};
 use create_kinetics::rules::trains::track_block::{TRACK, nearest_track_axis};
+use create_kinetics::rules::trains::track_outline;
 use create_kinetics::rules::trains::track_overlay::{
     self as rules, Chain, CurveClick, CurvePick, CurveUse, Flag, Hover, Op, OverlaySpot, OverlayType, Preview,
 };
-use create_kinetics::rules::trains::vec::{Vec3, add, scale};
+use create_kinetics::rules::trains::vec::{Vec3, add, block_containing, scale};
 use crate::compat::{
     Adapter, BlockEntityDraw, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, CubeFace, EquipmentSlot, Hooks, Host,
     ItemStack, NetFromServerEvent, StandaloneModelsEvent, WorldPrimitivesEvent,
@@ -114,6 +125,13 @@ struct Client {
     /// `TRACKS_WITH_TURNS`: the curves each track block entity that was drawn holds (primary ones), by dimension and position.
     tracks: HashMap<(&'static str, Pos), Vec<BezierConnection>>,
     pick: Option<CurvePick>,
+    /// `CurvedTrackInteraction`'s `breakProgress` and the last crack stage sent.
+    breaking: BreakProgress,
+    sent_stage: Option<(Pos, i32)>,
+    /// The straight track block under the cursor: its outline lines and colour (`drawCustomBlockSelection`).
+    outline: Option<(Vec<[Vec3; 2]>, u32)>,
+    /// Whether the main hand holds track (the curve's outline turns red).
+    holding_track: bool,
     shown: Option<Shown>,
     key: Option<Key>,
     checked_at: i64,
@@ -202,6 +220,7 @@ pub(crate) fn client_tick(host: &mut dyn mod_api::ClientHost) {
     let now = util::game_time(&adapter);
     let dimension = adapter.dimension();
 
+    let attack = adapter.client_host().is_some_and(|h| h.is_key_down("key.mouse.left"));
     let stack = held(&adapter);
     let item = stack.as_ref().map(|s| s.item.to_string()).unwrap_or_default();
     let ty = edge_type(&item);
@@ -213,8 +232,8 @@ pub(crate) fn client_tick(host: &mut dyn mod_api::ClientHost) {
     let hit = adapter.raycast(REACH as f32);
     let aimed_sqr = hit.as_ref().map_or(f64::MAX, |h| distance_sqr(view.eye, [h.x, h.y, h.z]));
 
-    // `TrackBlockOutline.pickCurves`: only where something uses the answer.
-    let pick = if ty.is_some() || (relocating && wrench) {
+    // `TrackBlockOutline.pickCurves`: every tick (the break, the outline and the clicks all read it).
+    let pick = {
         let range = aimed_sqr.min(REACH) + 1.0;
         let target = add(view.eye, scale(view.look, range));
         let client = lock(&CLIENT);
@@ -225,10 +244,11 @@ pub(crate) fn client_tick(host: &mut dyn mod_api::ClientHost) {
             .flat_map(|((_, pos), list)| list.iter().map(move |bc| (*pos, bc)))
             .collect();
         rules::pick_curves(&curves, view.eye, target, aimed_sqr)
-    } else {
-        None
     };
     lock(&CLIENT).pick = pick;
+    let holding_track = item == TRACK;
+    straight_outline(&adapter, hit.as_ref().map(|h| ([h.block_x, h.block_y, h.block_z], h.block.as_str())), pick.is_some(), holding_track);
+    break_tick(&mut adapter, attack, pick, &item);
 
     let hover = hovered(&adapter, &view, hit.as_ref().map(|h| ([h.block_x, h.block_y, h.block_z], h.block.as_str())), stack.as_ref(), pick);
     held_overlay(&adapter, ty, &item, hover.clone(), now);
@@ -244,6 +264,71 @@ pub(crate) fn client_tick(host: &mut dyn mod_api::ClientHost) {
     if client.preview.as_ref().is_some_and(|(_, at)| now - *at > PREVIEW_KEEPS) {
         client.preview = None;
     }
+}
+
+/// `TrackBlockOutline.drawCustomBlockSelection`: the lines of the straight track block under the cursor (not while a curve is picked,
+/// which takes the cursor's hit away in Create).
+fn straight_outline(host: &dyn Host, hit: Option<(Pos, &str)>, curve_picked: bool, holding_track: bool) {
+    let outline = hit.filter(|(_, block)| *block == TRACK && !curve_picked).and_then(|(pos, _)| {
+        let shape = world::shape_at(host, pos)?;
+        let tilted = world::is_tilted(host, pos);
+        let colour = track_outline::colour(holding_track, track_outline::can_connect_from(shape, tilted));
+        Some((track_outline::selection_lines(shape, pos), colour))
+    });
+    let mut client = lock(&CLIENT);
+    client.outline = outline;
+    client.holding_track = holding_track;
+}
+
+/// `CurvedTrackInteraction.clientTick`: the break progress of the picked curve; what it asks of the world is sent to the server.
+fn break_tick(host: &mut Adapter<'_>, attack: bool, pick: Option<CurvePick>, item: &str) {
+    let destroy_progress = if attack && pick.is_some() {
+        let in_tag = |tag: &str| Host::block_name_in_tag(&*host, TRACK, tag).unwrap_or(false);
+        let held = (!item.is_empty()).then_some(item);
+        let speed = deployer::mining_speed(held, TRACK, in_tag);
+        // `SharedProperties.stone` with `strength(0.8)`.
+        deployer::destroy_progress(speed, 0.8, deployer::has_correct_tool(held, TRACK, in_tag))
+    } else {
+        0.0
+    };
+    let input = breaking::Input {
+        may_build: true,
+        attack_down: attack,
+        picked: pick.map(|p| p.block),
+        block_is_air: pick.is_some_and(|p| host.block(p.block) != TRACK),
+        creative: false,
+        destroy_progress,
+    };
+    let effects = lock(&CLIENT).breaking.tick(&input);
+    for effect in effects {
+        match effect {
+            breaking::Effect::Crack(block, stage) => {
+                let changed = {
+                    let mut client = lock(&CLIENT);
+                    let new = Some((block, stage));
+                    let changed = client.sent_stage != new && !(stage < 0 && client.sent_stage.is_none());
+                    client.sent_stage = if stage < 0 { None } else { new };
+                    changed
+                };
+                if changed {
+                    let _ = Host::net_send_to_server(host, breaking::CHANNEL_STAGE, &CurveBreakStage { block, stage }.encode());
+                }
+            }
+            breaking::Effect::Destroy => {
+                if let Some(pick) = pick {
+                    send_destroy(host, &pick, false);
+                }
+            }
+            // Horizon has no client call for the sound, the particle or the swing.
+            breaking::Effect::HitSound | breaking::Effect::Particle | breaking::Effect::Swing => {}
+        }
+    }
+}
+
+/// `new CurvedTrackDestroyPacket(pos, curveTarget, BlockPos.containing(vec), wrench)`.
+fn send_destroy(host: &mut Adapter<'_>, pick: &CurvePick, wrench: bool) {
+    let message = CurveDestroy { block: pick.block, curve: pick.curve, sound_source: block_containing(pick.anchor), wrench };
+    let _ = Host::net_send_to_server(host, breaking::CHANNEL_DESTROY, &message.encode());
 }
 
 /// What the cursor is on, as `TrackTargetingClient` and `relocateClient` read it: the block, the side, and a curve segment.
@@ -343,14 +428,28 @@ fn send_hover(host: &mut Adapter<'_>, view: &View, hover: Option<Hovered>, now: 
 
 /// What a click on the picked curve is for with this item in the main hand, as `CurvedTrackInteraction.onClickInput` and
 /// `TrainRelocator.onClicked` decide it.
-fn curve_use(item: &str, relocating: bool) -> Option<CurveUse> {
-    if edge_type(item).is_some() {
-        Some(CurveUse::Select)
+fn curve_use(item: &str, relocating: bool, sneaking: bool) -> Option<Take> {
+    if item == TRACK {
+        // `onClickInput`: track in hand on a curve says "turn_start" and does nothing.
+        Some(Take::Refuse)
+    } else if edge_type(item).is_some() {
+        Some(Take::Send(CurveUse::Select))
     } else if relocating && item == util::WRENCH {
-        Some(CurveUse::Relocate)
+        Some(Take::Send(CurveUse::Relocate))
+    } else if item == util::WRENCH && sneaking {
+        Some(Take::PickUp)
     } else {
         None
     }
+}
+
+/// What a taken click does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Take {
+    Send(CurveUse),
+    /// The Wrench picks the curve up (`CurvedTrackDestroyPacket` with `wrench`).
+    PickUp,
+    Refuse,
 }
 
 /// A right click, or one aimed at nothing, while a curve segment is under the cursor: it is the curve's. Cancelled on the client and sent
@@ -365,13 +464,22 @@ fn curve_clicked(host: &mut dyn mod_api::ClientHost, main_hand: bool) -> bool {
     };
     let Some(pick) = pick else { return false };
     let item = held(&adapter).map(|s| s.item.to_string()).unwrap_or_default();
-    let Some(purpose) = curve_use(&item, relocating) else { return false };
+    let Some(purpose) = curve_use(&item, relocating, Host::sneaking(&adapter)) else { return false };
     // The block hook, the item hook and the off hand's turn of one click: the first sends, the rest only take it.
     if sent_at == Some(now) || !main_hand {
         return sent_at == Some(now);
     }
-    let click = CurveClick { purpose, block: pick.block, curve: pick.curve, segment: pick.segment, front: rules::curve_front(view.look, pick.direction) };
-    let _ = Host::net_send_to_server(&mut adapter, rules::CHANNEL_CURVE, &click.encode());
+    match purpose {
+        Take::Send(purpose) => {
+            let click = CurveClick { purpose, block: pick.block, curve: pick.curve, segment: pick.segment, front: rules::curve_front(view.look, pick.direction) };
+            let _ = Host::net_send_to_server(&mut adapter, rules::CHANNEL_CURVE, &click.encode());
+        }
+        Take::PickUp => {
+            send_destroy(&mut adapter, &pick, true);
+            lock(&CLIENT).breaking = BreakProgress::default();
+        }
+        Take::Refuse => {}
+    }
     lock(&CLIENT).curve_sent_at = Some(now);
     true
 }
@@ -412,8 +520,14 @@ pub(crate) fn submit_custom_geometry(_: &dyn mod_api::ClientHost, event: &mut mo
 fn lines(event: &mut WorldPrimitivesEvent<'_>) {
     let client = lock(&CLIENT);
     if let Some(pick) = client.pick {
+        let colour = if client.holding_track { rules::OUTLINE_TRACK_HELD } else { rules::OUTLINE_PLAIN };
         for [a, b] in rules::curve_outline(&pick) {
-            event.primitives.line(a, b, rules::OUTLINE_PLAIN, 2.0);
+            event.primitives.line(a, b, colour, 2.0);
+        }
+    }
+    if let Some((lines, colour)) = &client.outline {
+        for [a, b] in lines {
+            event.primitives.line(*a, *b, *colour, 2.0);
         }
     }
     if let Some((preview, _)) = &client.preview {
