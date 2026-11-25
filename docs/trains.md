@@ -392,10 +392,38 @@ Differences and what is left out:
   track block needs `connectToPortal` on its tick, `BoundLocation` / `BoundDimension` in its block entity and the `bound_ends` in `getConnected`,
   anchors need to be kept in both dimensions, and the cutoff (`portal_cutoff.rs`) applied to what is drawn and to the carriage's collision.
 
+## Glue part 6b: screens, map markers and the train display (not played)
+
+Rules in `station_screen.rs` and `station_marker.rs`; glue in `mod/src/machines/station_screen.rs` (the client's screens) and
+`track_station.rs` / `trains.rs` (the server's half).
+
+- **`StationScreen`, `AssemblyScreen`, `AbstractStationScreen`, `StationEditPacket`, `TrainEditPacket`, `TrainIconType`**: right-clicking
+  a Train Station opens a mod screen (`create:station_open`, then `create:station_view` every 5 ticks while it changes; the client says
+  `create:station_edit`). `station_screen.rs` holds `tickTrainDisplay` (the train sliding in and out over 80 ticks), `updateAssemblyTooltip`,
+  the text fields (a click selects all, Enter sends the name), the door control, the icon strip and widths, the assembly window's texts
+  and wrapping, and the wire messages. The server applies edits through the existing `plan_edit` (`apply_edit`, quiet when the name or
+  door did not change), a train edit only for the train at the open station within 20 blocks. `enterAssemblyMode` now disassembles a
+  present train first, as Java does (the Disassemble button is the assembly button). The last assembly failure and carriage index are kept
+  per station for the assembly window. The screen opens as the assembly screen when the station is assembling.
+- **Not as in Create**: flat rectangles and words instead of textures (art is not committed), the 3D station and flag in the corner are not
+  drawn, the Color on Maps scroll never shows (`mapModsPresent`: no such mods on Horizon), and `AssemblyScreen`'s icon scroll is dead code in
+  6.0.10 (`displayedTrain` is never assigned), so it is ported as `icon_step` only; `/train icon <traditional|electric|modern>` sets the
+  icon. Computer behaviour is not ported. `/station` and its commands still work.
+- **Train display**: "Players Seated" in the Train Status source now counts the players on the carriages' seats
+  (`trains::count_passengers`). Create's `submitPredictions` reads no passengers, so the departure board is unchanged.
+- **Station markers** (`StationMarker`, `StationMapData`, `MapItemSavedDataMixin`, `getPositionForMapMarker`): the rules are ported and tested
+  (`StationMarkers`: add with the 63 pixel window and half-pixel rounding, toggle, the 256 tracked limit, `checkStations`, save and load).
+  **Not glued**, because Horizon cannot show them as Create does: `map_decorations` is a client hook with no text (the name under the
+  icon), nothing is saved in the map's data, the station icon (`textures/map/decorations/station.png`) is Create's art that would have to be
+  imported as an atlas sprite, and the mod forwards no `map_decorations` hook yet. What glue would still need: the filled-map click in
+  `right_click_block` (`StationBlock.useItemOn`), a per-map store (an attachment keyed by map id) feeding `StationMarkers`, and a client
+  `map_decorations` that turns `decorations()` into `MapDecoration`s.
+
 ## Next
 
-1. Play-test glue parts 3, 4, 4b, 4c and 5 (HANDOFF.md lists what to watch).
-2. `TrainDisplay`, map markers (see glue part 4), gluing portals (see glue part 4c), the station screens.
+1. Play-test glue parts 3, 4, 4b, 4c, 5 and 6b (HANDOFF.md lists what to watch; for 6b: right-click a station, rename, assemble and
+   disassemble through the buttons, the door control, the train name).
+2. Gluing portals (see glue part 4c) and the station map markers (see glue part 6b).
 3. The girder and tilt of a curve (`GirderAngles`, `TrackBlockEntityTilt`, `yOffsetAt`), `TrackBlockOutline`'s selection box for straight
    track, `CurvedTrackInteraction`'s break progress and the Wrench's pick-up of a curve.
 4. The Blaze Burner's Train Hat (needs the burner's head drawn in a carriage first), the hat on mobs whose heads aren't known (Create reads

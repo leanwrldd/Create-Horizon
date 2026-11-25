@@ -37,6 +37,7 @@ use create_kinetics::rules::trains::graph::{EdgePointType, TrackNodeLocation};
 use create_kinetics::rules::trains::train_doors::DoorControl;
 use create_kinetics::rules::trains::graph_helper::TrackQuery;
 use create_kinetics::rules::trains::propagator::TrackWorld;
+use create_kinetics::rules::trains::station_screen::{Message as ScreenMessage, StationView};
 use create_kinetics::rules::trains::station::{
     AssemblyError, AssemblyScan, PlacePointsError, assembly_direction, bogey_point_offsets, place_travelling_points,
     scan_assembly,
@@ -46,8 +47,8 @@ use create_kinetics::rules::trains::vec::{Vec3, block_containing};
 use create_kinetics::Pos;
 use crate::compat::{
     AnalogOutputEvent, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent, Compound, Flow, HasAnalogOutputEvent, Hooks,
-    Host, LevelHost, NativeCommand, NativeServerPlayer, PerformCommandEvent, RegisterCommandsEvent, RightClickBlockEvent, Tag,
-    UseItemOnEvent,
+    Host, LevelHost, LevelTickPostEvent, NativeCommand, NativeServerPlayer, NetFromClientEvent, PerformCommandEvent, PlayerTickEvent,
+    RegisterCommandsEvent, RightClickBlockEvent, Tag, UseItemOnEvent,
 };
 
 use super::diodes_signal as signal;
@@ -283,6 +284,26 @@ fn door_control(host: &dyn Host, pos: Pos) -> DoorControl {
     DoorControl::read(saved.as_deref())
 }
 
+/// `StationBlockEntity.lastException` and `failedCarriageIndex`, by dimension and station: what the assembly screen shows.
+static FAILURES: LazyLock<Mutex<HashMap<(String, Pos), (String, i32)>>> = LazyLock::new(Mutex::default);
+
+/// The text of an `AssemblyException`.
+fn failure_text(error: &AssemblyError) -> String {
+    match error {
+        AssemblyError::Structure { message } => message.clone(),
+        other => {
+            let (key, args) = rules::assembly_error_message(other);
+            let args: Vec<String> = args.iter().map(ToString::to_string).collect();
+            rules::format_message(&key, &args)
+        }
+    }
+}
+
+/// `failedCarriageIndex = carriage; lastException = exception`.
+pub(super) fn remember_failure(dimension: &str, pos: Pos, error: &AssemblyError, carriage: i32) {
+    net::lock(&FAILURES).insert((dimension.to_owned(), pos), (failure_text(error), carriage));
+}
+
 fn say_error(host: &mut dyn Host, uuid: u128, error: &AssemblyError) {
     let (key, args) = rules::assembly_error_message(error);
     let args: Vec<String> = args.iter().map(ToString::to_string).collect();
@@ -309,6 +330,8 @@ fn update_station(host: &dyn Host, pos: Pos, change: impl FnOnce(&mut create_kin
 /// `StationBlockEntity.assemble`: the bogeys are checked and the wheel points put on the graph here, the train made by `train_assemble.rs`.
 fn assemble(host: &mut dyn Host, uuid: u128, pos: Pos) -> bool {
     let dimension = host.dimension();
+    // `lastException = null; failedCarriageIndex = -1`.
+    net::lock(&FAILURES).remove(&(dimension.to_owned(), pos));
     let Some(entity) = host.mod_block_entity(pos) else { return false };
     let target = net::load(&entity.nbt, EdgePointType::Station, pos);
     // `refreshAssemblyInfo`.
@@ -321,6 +344,7 @@ fn assemble(host: &mut dyn Host, uuid: u128, pos: Pos) -> bool {
     let offsets = match bogey_point_offsets(&scan.bogey_locations, |i| scan.bogey_types[i].wheel_point_spacing) {
         Ok(offsets) => offsets,
         Err(error) => {
+            remember_failure(dimension, pos, &error, -1);
             say_error(host, uuid, &error);
             return false;
         }
@@ -443,7 +467,7 @@ fn drop_schedule(host: &mut dyn Host, uuid: u128, pos: Pos) {
 }
 
 /// `StationEditPacket.applySettings`.
-fn apply_edit(host: &mut dyn Host, uuid: u128, pos: Pos, edit: &StationEdit) {
+fn apply_edit(host: &mut dyn Host, uuid: u128, pos: Pos, edit: &StationEdit, chatty: bool) {
     let is_station = host.block(pos) == STATION;
     let steps = rules::plan_edit(edit, is_station, assembling(&*host, pos));
     let mut assembled = false;
@@ -458,8 +482,12 @@ fn apply_edit(host: &mut dyn Host, uuid: u128, pos: Pos, edit: &StationEdit) {
                     });
                     host.block_entity_sync(pos);
                 }
-                net::tell(host, uuid, format!("Onboard Door Control: {}", mode.long()));
+                if chatty {
+                    net::tell(host, uuid, format!("Onboard Door Control: {}", mode.long()));
+                }
             }
+            // The screen sends the name whenever it closes: nothing to do when it is the one the station has.
+            EditStep::Rename(name) if !chatty && name == station_name(&*host, pos) => {}
             EditStep::Rename(name) => {
                 host.change_mod_block_entity(pos, &mut |e| {
                     e.nbt.insert(NAME.into(), Tag::String(name.as_str().into()));
@@ -468,7 +496,9 @@ fn apply_edit(host: &mut dyn Host, uuid: u128, pos: Pos, edit: &StationEdit) {
                     net::tell(host, uuid, "The station isn't on the track yet; the name is kept");
                 }
                 host.block_entity_sync(pos);
-                net::tell(host, uuid, format!("The station is now called '{name}'"));
+                if chatty {
+                    net::tell(host, uuid, format!("The station is now called '{name}'"));
+                }
             }
             EditStep::Assemble => assembled = assemble(host, uuid, pos),
             EditStep::Disassemble => {
@@ -486,6 +516,10 @@ fn apply_edit(host: &mut dyn Host, uuid: u128, pos: Pos, edit: &StationEdit) {
                 if assembling(&*host, pos) {
                     continue;
                 }
+                // `enterAssemblyMode`: `tryDisassembleTrain(sender)` first.
+                if super::train_assemble::disassemble(host, Some(uuid), pos) {
+                    net::tell(host, uuid, "The train is back in blocks");
+                }
                 if !can_enter_assembly(&*host, pos) {
                     net::tell(host, uuid, "Cannot build trains on curved or diagonal tracks (or the station has no track)");
                     return;
@@ -499,6 +533,127 @@ fn apply_edit(host: &mut dyn Host, uuid: u128, pos: Pos, edit: &StationEdit) {
                     net::tell(host, uuid, "Assembly mode off");
                 }
             }
+        }
+    }
+}
+
+// --- the screens: what the server tells them and what they say --------------------------------------------------------------
+
+/// The channel a client's screens speak on (`StationEditPacket`, `TrainEditPacket.Serverbound`).
+pub const EDIT_CHANNEL: &str = "create:station_edit";
+/// The channels the server answers on: the first opens the screen (`x y z`, then the view), the second only updates it.
+pub const OPEN_CHANNEL: &str = "create:station_open";
+pub const VIEW_CHANNEL: &str = "create:station_view";
+/// How often (in ticks) an open screen's view is looked at again.
+const VIEW_EVERY: i64 = 5;
+
+/// A player's open screen: the station and the last view sent.
+struct Viewer {
+    dimension: &'static str,
+    pos: Pos,
+    sent: String,
+}
+
+static VIEWERS: LazyLock<Mutex<HashMap<u128, Viewer>>> = LazyLock::new(Mutex::default);
+static INBOX: LazyLock<Mutex<HashMap<u128, Vec<ScreenMessage>>>> = LazyLock::new(Mutex::default);
+
+/// What the screen reads off the station (`StationBlockEntity`'s `bogeyCount`, `trainPresent`, `lastException`, the station's
+/// train) at `pos`.
+fn view_of(host: &dyn Host, pos: Pos) -> Option<StationView> {
+    let entity = host.mod_block_entity(pos)?;
+    let target = net::load(&entity.nbt, EdgePointType::Station, pos);
+    let dimension = host.dimension();
+    let assembly = lock_assemblies().get(&(dimension, pos)).map(|a| a.scan.bogey_count() as i32);
+    let failure = net::lock(&FAILURES).get(&(dimension.to_owned(), pos)).cloned();
+    let mut view = StationView {
+        name: station_name(host, pos),
+        assembling: assembling(host, pos),
+        door_control: door_control(host, pos),
+        bogey_count: assembly.unwrap_or(0),
+        on_curve: target.is_on_curve(),
+        orthogonal: target.is_orthogonal(),
+        exception: failure,
+        ..StationView::default()
+    };
+    if let Some((state, info)) = trains::station_train(dimension, target.id) {
+        view.train_present = state.train_present;
+        view.train_can_disassemble = state.can_disassemble;
+        view.train_has_schedule = state.has_schedule;
+        view.train_has_auto_schedule = state.has_auto_schedule;
+        view.train_backwards = state.backwards;
+        view.train = Some(info);
+    }
+    Some(view)
+}
+
+/// Opens the screen on the player's client; false when the station has no state to show.
+fn open_screen(host: &mut dyn Host, uuid: u128, pos: Pos) -> bool {
+    let Some(view) = view_of(&*host, pos) else { return false };
+    let text = view.encode();
+    let data = format!("{}\u{1f}{}\u{1f}{}\u{1f}{}", pos[0], pos[1], pos[2], text);
+    if host.net_send_to_player(uuid, OPEN_CHANNEL, data.as_bytes()).is_err() {
+        return false;
+    }
+    net::lock(&VIEWERS).insert(uuid, Viewer { dimension: host.dimension(), pos, sent: text });
+    true
+}
+
+/// Every few ticks, each open screen is sent the station's state when it changed.
+fn push_views(host: &mut dyn Host) {
+    if util::game_time(&*host) % VIEW_EVERY != 0 {
+        return;
+    }
+    let dimension = host.dimension();
+    let watching: Vec<(u128, Pos)> = net::lock(&VIEWERS).iter().filter(|(_, v)| v.dimension == dimension).map(|(u, v)| (*u, v.pos)).collect();
+    for (uuid, pos) in watching {
+        // A station that was broken closes nothing on its own: the viewer is dropped.
+        let Some(view) = (host.block(pos) == STATION).then(|| view_of(&*host, pos)).flatten() else {
+            net::lock(&VIEWERS).remove(&uuid);
+            continue;
+        };
+        let text = view.encode();
+        let changed = net::lock(&VIEWERS).get(&uuid).is_some_and(|v| v.sent != text);
+        if !changed {
+            continue;
+        }
+        if host.net_send_to_player(uuid, VIEW_CHANNEL, text.as_bytes()).is_err() {
+            net::lock(&VIEWERS).remove(&uuid);
+            continue;
+        }
+        if let Some(v) = net::lock(&VIEWERS).get_mut(&uuid) {
+            v.sent = text;
+        }
+    }
+}
+
+/// How far from the station a screen's edits are still taken (`BlockEntityConfigurationPacket.canInteract`: 20 blocks).
+const EDIT_REACH: f64 = 20.0;
+
+/// `StationEditPacket.applySettings` and `TrainEditPacket.handleSided` for what the player's open screen says.
+fn handle_screen_message(host: &mut dyn Host, player: &NativeServerPlayer, message: ScreenMessage) {
+    let uuid = player.uuid;
+    let viewing = net::lock(&VIEWERS).get(&uuid).map(|v| (v.dimension, v.pos));
+    let Some((dimension, pos)) = viewing.filter(|(d, _)| *d == host.dimension()) else { return };
+    match message {
+        ScreenMessage::Closed => {
+            net::lock(&VIEWERS).remove(&uuid);
+        }
+        ScreenMessage::Station { pos: at, edit } => {
+            let centre = util::centre(pos);
+            let near = (0..3).map(|i| (player.position[i] - centre[i]).powi(2)).sum::<f64>().sqrt();
+            if at != pos || near > EDIT_REACH || host.block(pos) != STATION {
+                return;
+            }
+            apply_edit(host, uuid, pos, &edit, false);
+        }
+        ScreenMessage::Train(edit) => {
+            let Some(target) = host.mod_block_entity(pos).map(|e| net::load(&e.nbt, EdgePointType::Station, pos)) else { return };
+            let Some((_, info)) = trains::station_train(dimension, target.id) else { return };
+            if info.id != edit.id {
+                return;
+            }
+            let Ok(id) = edit.id.parse::<u128>() else { return };
+            trains::edit_train(dimension, id, &edit);
         }
     }
 }
@@ -614,8 +769,11 @@ impl Hooks for Stations {
             return Flow::Cancel;
         }
         net::lock(&OPEN).insert(player.uuid, (host.dimension(), pos));
-        for line in describe(&*host, pos) {
-            net::tell(host, player.uuid, line);
+        // `StationBlock.displayScreen`: the screen opens on the client, which is then sent the station's state while it is open.
+        if !open_screen(host, player.uuid, pos) {
+            for line in describe(&*host, pos) {
+                net::tell(host, player.uuid, line);
+            }
         }
         Flow::Cancel
     }
@@ -662,6 +820,34 @@ impl Hooks for Stations {
         Flow::Continue
     }
 
+    /// What the station screens say (`create:station_edit`), kept for the player's own tick.
+    fn net_from_client(&self, _: &mut dyn Host, event: &mut NetFromClientEvent<'_>) {
+        if event.channel != EDIT_CHANNEL {
+            return;
+        }
+        let Some(message) = std::str::from_utf8(event.data).ok().and_then(ScreenMessage::decode) else { return };
+        let mut inbox = net::lock(&INBOX);
+        let queue = inbox.entry(event.player).or_default();
+        if queue.len() < 16 {
+            queue.push(message);
+        }
+    }
+
+    fn player_tick(&self, host: &mut dyn Host, _: &mut PlayerTickEvent) {
+        let Some(player) = host.acting_player() else { return };
+        let messages = net::lock(&INBOX).remove(&player.uuid).unwrap_or_default();
+        for message in messages {
+            handle_screen_message(host, &player, message);
+        }
+    }
+
+    fn level_tick_post(&self, host: &mut dyn Host, _: &mut LevelTickPostEvent<'_>) {
+        if host.window() {
+            return;
+        }
+        push_views(host);
+    }
+
     fn register_commands(&self, _: &mut dyn Host, event: &mut RegisterCommandsEvent<'_>) {
         event.commands.push(NativeCommand::new("station"));
         event.commands.push(NativeCommand::new("station <text:text>"));
@@ -687,7 +873,7 @@ impl Hooks for Stations {
                         net::tell(host, uuid, line);
                     }
                 }
-                Some(edit) => apply_edit(host, uuid, pos, &edit),
+                Some(edit) => apply_edit(host, uuid, pos, &edit, true),
             },
         }
         Flow::Cancel

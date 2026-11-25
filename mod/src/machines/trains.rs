@@ -42,7 +42,9 @@ use create_kinetics::rules::trains::carriage::{Carriage, CarriageBogey};
 use create_kinetics::rules::trains::carriage_contraption as cc;
 use create_kinetics::rules::collider::{Rotation, StructurePose};
 use create_kinetics::rules::trains::carriage_pose::{self as pose, CarriagePose, Motion};
+use create_kinetics::rules::trains::assembly::StationTrainState;
 use create_kinetics::rules::trains::graph::{EdgePointType, Uuid};
+use create_kinetics::rules::trains::station_screen::{self as screens, TrainEdit, TrainInfo};
 use create_kinetics::rules::trains::network::TrackGraph;
 use create_kinetics::rules::trains::railways::Railways;
 use create_kinetics::rules::trains::schedule::Schedule;
@@ -1313,6 +1315,48 @@ pub fn resume_schedule(dimension: &str, train: Uuid) -> bool {
 // --- the stations' questions -----------------------------------------------------------------------------------------------------------
 
 
+/// What a station's screens know of its train (`getImminent()`): how it stands at the station, and what the screen shows of it.
+pub fn station_train(dimension: &str, station: Uuid) -> Option<(StationTrainState, TrainInfo)> {
+    let imminent = world::with_railways(dimension, |r| r.station_train_state(station, &|_| None).imminent_train).flatten()?;
+    // `canDisassemble` reads each carriage's pose as it was last put.
+    let poses: BTreeMap<i32, (f32, f32)> = carriage_poses(dimension, imminent);
+    world::with_railways(dimension, |r| {
+        let state = r.station_train_state(station, &|c: &Carriage| poses.get(&c.id).copied());
+        let train = r.trains.get(&state.imminent_train?)?;
+        let info = TrainInfo {
+            id: train.id.to_string(),
+            name: train.name.clone(),
+            icon: train.icon.clone(),
+            spacings: train.carriages.iter().map(|c| c.bogey_spacing).collect(),
+            double_ended: train.double_ended,
+            distance: train.navigation.distance_to_destination as f32,
+            map_color: train.map_color_index,
+        };
+        Some((state, info))
+    })
+    .flatten()
+}
+
+/// `TrainEditPacket.handleSided`: the train's name, icon and map colour.
+pub fn edit_train(dimension: &str, train: Uuid, edit: &TrainEdit) {
+    let done = world::with_railways(dimension, |r| {
+        r.trains
+            .get_mut(&train)
+            .map(|t| screens::apply_train_edit(&mut t.name, &mut t.icon, &mut t.map_color_index, edit))
+            .is_some()
+    })
+    .unwrap_or(false);
+    if done {
+        with_dim(dimension, |d| d.dirty());
+    }
+}
+
+/// `train.countPlayerPassengers()`: the players on the seats of the train's carriages.
+pub fn count_passengers(host: &dyn Host, dimension: &str, train: Uuid) -> i32 {
+    let carriages: Vec<i32> = lock(&DIMS).get(dimension).map(|d| d.carriages.keys().filter(|(t, _)| *t == train).map(|(_, c)| *c).collect()).unwrap_or_default();
+    carriages.into_iter().map(|c| passengers::count_player_passengers(&riders_of(host, dimension, train, c))).sum()
+}
+
 /// The train standing at a station, if any.
 pub fn train_at(dimension: &str, station: Uuid) -> Option<Uuid> {
     lock(&DIMS).get(dimension).and_then(|d| d.present.get(&station).copied())
@@ -1449,6 +1493,24 @@ fn command(host: &mut dyn Host, uuid: u128, rest: &str) {
             with_dim(dimension, |d| d.dirty());
             say(host, uuid, format!("The train is now called '{name}'"));
         }
+        "icon" => {
+            let Some(id) = nearest_train(dimension, player.position, 24.0) else {
+                say(host, uuid, "No train within 24 blocks");
+                return;
+            };
+            let word: Vec<&str> = words.collect();
+            let Some(icon) = screens::icon_by_word(&word.join(" ")) else {
+                let all: Vec<&str> = screens::ICON_TYPES.iter().map(|i| i.id.trim_start_matches("create:")).collect();
+                say(host, uuid, format!("/train icon <{}>", all.join(" | ")));
+                return;
+            };
+            // `AssemblyScreen`'s icon scroll: only the icon changes.
+            let current = world::with_railways(dimension, |r| r.trains.get(&id).map(|t| (t.name.clone(), t.map_color_index))).flatten();
+            if let Some((name, map_color)) = current {
+                edit_train(dimension, id, &TrainEdit { id: id.to_string(), name, icon: icon.id.to_owned(), map_color });
+                say(host, uuid, format!("The train's icon is now '{}'", icon.id.trim_start_matches("create:")));
+            }
+        }
         "schedule" => {
             let Some(id) = nearest_train(dimension, player.position, 24.0) else {
                 say(host, uuid, "No train within 24 blocks");
@@ -1466,7 +1528,7 @@ fn command(host: &mut dyn Host, uuid: u128, rest: &str) {
                 None => say(host, uuid, "Hold a Schedule"),
             }
         }
-        _ => say(host, uuid, "/train [info | drive | conductor | name <text> | schedule]"),
+        _ => say(host, uuid, "/train [info | drive | conductor | name <text> | icon <type> | schedule]"),
     }
 }
 
