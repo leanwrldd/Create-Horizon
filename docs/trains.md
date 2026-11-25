@@ -351,8 +351,8 @@ the edge point items, the curve under the cursor and the relocation preview), `t
 Differences and what is left out:
 - The graphs aren't on clients: the held overlay is checked against them only where the client can read the server's (single-player, a LAN
   host); elsewhere it shows on any track. The relocation preview is the server's, so it works everywhere.
-- The overlay instance's light is the track block's with a floor of 4; the flag's `LerpedFloat` runs on the frame's clock; a tilted track's shift and
-  the girder under a curve aren't drawn (neither is ported). `TrackBlockOutline`'s outline of straight track under the cursor isn't drawn.
+- The overlay instance's light is the track block's with a floor of 4; the flag's `LerpedFloat` runs on the frame's clock; a tilted track's shift isn't
+  drawn (glue part 6 has the girder and the outline).
 - **The hat on a mob needs the mob's head**: Create reads it off the live model parts (`TrainHatInfo`); a layer sees only a humanoid's, so
   only the zombie family, skeletons, villagers, the trader, the illagers and players get one, with head cubes taken from the vanilla models (not read
   from Horizon's) and the villagers' renderer scale of `0.9375`. Mobs with a `train_hat_info` file (a pig, a witch, a piglin ...) go without. The
@@ -392,12 +392,49 @@ Differences and what is left out:
   track block needs `connectToPortal` on its tick, `BoundLocation` / `BoundDimension` in its block entity and the `bound_ends` in `getConnected`,
   anchors need to be kept in both dimensions, and the cutoff (`portal_cutoff.rs`) applied to what is drawn and to the carriage's collision.
 
+## Glue part 6: tilt, girder, the straight outline, breaking a curve (not played)
+
+Rules in `track_tilt.rs`, `track_render.rs` (`baked_girders`), `track_outline.rs`, `curve_interaction.rs` (and `bezier.rs`' `y_offset_at`,
+`track_block.rs`' `TrackView::y_offset`, `graph_helper.rs`' smoothing read); glue in `machines/track.rs`, `track_item.rs`, `track_draw.rs`,
+`train_overlay.rs` and the new `track_curve.rs`.
+
+- **Tilt** (`TrackBlockEntityTilt`): `try_apply_smoothing` is ported whole (the block must be flat, one axis, no portal, exactly two curves that
+  go opposite ways with one falling and one climbing away; the high curve's end is raised by the slope and gets the smoothing offset in 16ths,
+  both axes lean, the angle is saved as the block entity's `Smoothing`, each curve's as `Smoothing: [{V}, {V}]`). `track.rs` applies it to both
+  ends after a curve is placed (`apply_tilt`), keeps the handles of a curve that leaves a tilted block (`captureSmoothingHandles`) and lets go of
+  the tilt a tick later when the block no longer has two curves (`undo_tilt`, `restoreToOriginalCurve`). The graph reads it: `yOffsetAt` for
+  curve ends, `getYOffsetForAxisEnd` for the straight ends (`HostTracks::connected`), the smoothing of the far end in `bezier_graph_location_at`;
+  a changed block's nodes are taken out and made again (`queue_retrack`). A tilted block refuses to start or end a curve (`track.turn_start`).
+- **Girder**: `GirderAngles` gives each piece two beams and four caps; `track_draw.rs` draws a curve saved with `Girder` (the three
+  `metal_girder/segment_*` models are imported by `track.py`). No curve is placed with one yet.
+- **Straight track's selection box** (`TrackBlockOutline.walkShapes`): the shapes of `TrackVoxelShapes` and `AllShapes.TRACK_*` as boxes, their
+  edges as `VoxelShape.forAllEdges` finds them, the transforms as `walkShapes` makes them; drawn as world lines under the cursor, coloured as
+  `renderShape` does while holding track.
+- **Breaking a curve** (`CurvedTrackInteraction`): the client's progress (`BreakProgress`, `clientTick`) and the destroy and Wrench packets
+  (`CurvedTrackDestroyPacket`, `create:curve_destroy`; the crack stage as `create:curve_break`). `track_curve.rs` checks the sender as
+  `BlockEntityConfigurationPacket.handle` and `applySettings` do, cuts the curve at both ends, gives the Wrench's items to the player or drops
+  them along the curve, plays the sounds.
+
+Differences and what is left out:
+- **The track's model is not tilted**: `TrackModel` turns a chunk model's quads, which a mod can't do. `tilt_point` is the ported transform, unused.
+  A tilted block's graph and curves are right, the block itself draws flat. The overlay shift of a tilted track (`TrackBlock.prepareTrackOverlay`) is not there.
+- The vanilla selection outline can't be cancelled, so the straight outline draws over it; the vanilla attack on the block behind a picked
+  curve isn't cancelled (`onClickInput`), and a track item clicked on a curve is cancelled without Create's message.
+- Break progress: no hit sound, particle or swing on the client, creative speed isn't known to the client (survival rate; the server still gives
+  creative no drops), the destroy particles are left out, `RULE_DOBLOCKDROPS` is not read.
+- The `Smoothing` entry's key `V` (`NBTHelper.intToCompound`) is from memory of catnip, which isn't in the source tree.
+- Portal tracks (`boundLocation`) never smooth; the light of each girder piece isn't kept.
+- To check in game: a curve out of a flat block into a climbing curve on one side and a falling one on the other (the block's `Smoothing` in
+  `data get block`, a train crossing it, no graph errors), breaking one of the two curves (the tilt is undone a tick later), a Wrench sneak-click
+  on a curve (items in the inventory, sound), holding attack on a curve (crack grows, the curve breaks with the drops along it), the outline of
+  straight, diagonal, sloped, crossing and portal track, white or red while holding track, and no panic in `latest.log`.
+
 ## Next
 
-1. Play-test glue parts 3, 4, 4b, 4c and 5 (HANDOFF.md lists what to watch).
+1. Play-test glue parts 3, 4, 4b, 4c, 5 and 6 (HANDOFF.md lists what to watch).
 2. `TrainDisplay`, map markers (see glue part 4), gluing portals (see glue part 4c), the station screens.
-3. The girder and tilt of a curve (`GirderAngles`, `TrackBlockEntityTilt`, `yOffsetAt`), `TrackBlockOutline`'s selection box for straight
-   track, `CurvedTrackInteraction`'s break progress and the Wrench's pick-up of a curve.
+3. (Glue part 6 did the girder and tilt of a curve, the straight outline and the break and Wrench pick-up of a curve.) What is left of them:
+   tilting the track's model, the overlay shift of a tilted track, placing a curve with a girder, the client's hit sound and particles.
 4. The Blaze Burner's Train Hat (needs the burner's head drawn in a carriage first), the hat on mobs whose heads aren't known (Create reads
    `train_hat_info`), the lead seating on a carriage seat (`structure_click.rs`'s `sit` needs the player's entity id to call
    `seat::leashed_by`, then `seat::sit_mob_on_structure`).

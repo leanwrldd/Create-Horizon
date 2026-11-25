@@ -7,7 +7,7 @@
 //! blocks say through [`TrackQuery`] (the axes of a block, where its centre sits, the curve it holds toward a
 //! position); the walk and the lookups in the graph are here.
 //!
-//! Left out: the tilt `smoothing` of a curve's end (`bc.smoothing`) isn't read, as `bezier.rs` keeps it as data only.
+//! A curve's end that is tilted (`bc.smoothing`) is looked up with its offset, as `getBezierGraphLocationAt` does.
 
 use super::bezier::BezierConnection;
 use super::graph::{EdgePointType, TrackNodeLocation};
@@ -158,7 +158,10 @@ pub fn bezier_graph_location_at(
     if !bc.is_primary() {
         return None;
     }
-    let target_location = TrackNodeLocation::new(bc.starts[1], world.dimension());
+    let mut target_location = TrackNodeLocation::new(bc.starts[1], world.dimension());
+    if let Some(smoothing) = bc.smoothing {
+        target_location.y_offset_pixels = smoothing[1];
+    }
     for location in world.connected(pos, true, None) {
         let Some(graph_id) = nets.get_graph(&location.loc) else { continue };
         let graph = nets.graphs.get(&graph_id)?;

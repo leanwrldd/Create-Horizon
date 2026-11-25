@@ -125,6 +125,11 @@ fn start(host: &mut dyn Host, player: &NativeServerPlayer, pos: Pos) -> Option<F
         say(host, player.uuid, "track.junction_start");
         return Some(Flow::Cancel);
     }
+    // `TrackBlockItem.useOn`: a tilted block can't start a curve either.
+    if world::is_tilted(&*host, pos) {
+        say(host, player.uuid, "track.turn_start");
+        return Some(Flow::Cancel);
+    }
     let look = world::look_of(player.yaw, player.pitch);
     set_pending(player.uuid, Some(rules::select(pos, shape, look)));
     host.play_sound("minecraft:entity.item_frame.add_item", util::centre(pos), BLOCKS, 0.75, 1.0);
@@ -169,7 +174,7 @@ fn connect(host: &mut dyn Host, player: &NativeServerPlayer, from: ConnectingFro
         axis2,
         normal2,
         end2,
-        target_tilted: false,
+        target_tilted: world::is_tilted(&*host, pos2),
         curve_start1: &start1,
         curve_start2: &start2,
         max_length: MAX_LENGTH,
@@ -233,6 +238,9 @@ fn connect(host: &mut dyn Host, player: &NativeServerPlayer, from: ConnectingFro
     if let Some(bc) = &info.curve {
         world::add_connection(host, info.target_pos1, bc);
         world::add_connection(host, info.target_pos2, &bc.secondary());
+        // `TrackPlacement.placeTracks`: both ends try to smooth.
+        world::apply_tilt(host, info.target_pos1);
+        world::apply_tilt(host, info.target_pos2);
     }
     for block in &plan.blocks {
         world::queue_added(&dimension, block.pos);

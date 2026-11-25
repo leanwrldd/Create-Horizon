@@ -6,13 +6,15 @@
 //!
 //! The draw is kept (`draw.keep()`): it only changes when the block entity's data does.
 //!
-//! Known differences from Create: the girder under a curve (`GirderAngles`) isn't drawn (no curve is made with one), the
-//! tie and rails take the light of the block entity's cell rather than of their own, and the lines are drawn in the
+//! A curve with a girder also draws its beams (`GirderAngles`: `rules::trains::track_render::baked_girders`, the three
+//! `metal_girder/segment_*` models). No curve is made with one yet, but a saved one (`Girder`) is drawn.
+//!
+//! Known differences from Create: the tie and rails take the light of the block entity's cell rather than of their own, and the lines are drawn in the
 //! order Create's `TrackRenderer` takes (a tie, then the left rail piece, then the right).
 
 use create_kinetics::rules::trains::bezier::BezierConnection;
 use create_kinetics::rules::trains::track_block::TRACK;
-use create_kinetics::rules::trains::track_render::{Pose, baked_segments};
+use create_kinetics::rules::trains::track_render::{Pose, baked_girders, baked_segments};
 use crate::compat::{
     BlockEntityDraw, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, Hooks, Host, StandaloneModelsEvent,
 };
@@ -23,6 +25,10 @@ use super::track as world;
 const TIE: &str = "create:block/track/tie";
 const LEFT: &str = "create:block/track/segment_left";
 const RIGHT: &str = "create:block/track/segment_right";
+/// `AllPartialModels.GIRDER_SEGMENT_MIDDLE`, `_TOP` and `_BOTTOM`.
+const GIRDER_MIDDLE: &str = "create:block/metal_girder/segment_middle";
+const GIRDER_TOP: &str = "create:block/metal_girder/segment_top";
+const GIRDER_BOTTOM: &str = "create:block/metal_girder/segment_bottom";
 
 struct Draw;
 
@@ -52,6 +58,14 @@ fn place(host: &dyn Host, draw: &mut BlockEntityDraw, pose: &Pose, model: &str) 
 
 /// `TrackRenderer.renderBezierTurn`.
 fn curve(host: &dyn Host, draw: &mut BlockEntityDraw, bc: &BezierConnection) {
+    // `renderGirder` first: for each piece, per side, the middle and then the top and bottom caps.
+    for piece in baked_girders(bc) {
+        for side in 0..2 {
+            place(host, draw, &piece.beams[side], GIRDER_MIDDLE);
+            place(host, draw, &piece.caps[0][side], GIRDER_TOP);
+            place(host, draw, &piece.caps[1][side], GIRDER_BOTTOM);
+        }
+    }
     for piece in baked_segments(bc) {
         place(host, draw, &piece.tie, TIE);
         place(host, draw, &piece.rails[0], LEFT);
@@ -61,7 +75,7 @@ fn curve(host: &dyn Host, draw: &mut BlockEntityDraw, bc: &BezierConnection) {
 
 impl Hooks for Draw {
     fn standalone_models(&self, event: &mut StandaloneModelsEvent<'_>) {
-        for model in [TIE, LEFT, RIGHT] {
+        for model in [TIE, LEFT, RIGHT, GIRDER_MIDDLE, GIRDER_TOP, GIRDER_BOTTOM] {
             event.models.push(model.to_owned());
         }
     }
