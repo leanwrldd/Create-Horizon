@@ -15,8 +15,11 @@
 //!   and the other conditions' `cargoVersion` checks).
 //! - `MountedItemStorageWrapper` walks its storages in a `HashMap`'s order; here the storages come in the order of their
 //!   position in the carriage, and a slot's place in `fuel` is the place of the same slot in the walk.
-//! - The storages Create mounts that have no copy here (the Depot, the Toolbox, the Creative Crate, the fallback for
-//!   other mods' inventories) are not in the list the glue builds.
+//! - The Depot (`DepotMountedStorage`: one slot, the held item), the Toolbox (`ToolboxMountedStorage`: its 32 slots) and
+//!   the Creative Crate (`CreativeCrateMountedStorage`: two slots, an endless supply in the first and a slot that takes
+//!   anything in the second) are storages too: [`cargo_slots`], [`items_path`] and [`is_bottomless`] say how the glue
+//!   reads them from a carriage's blocks. The fallback for other mods' inventories (`FallbackMountedStorageType`) has no
+//!   copy: Horizon has no way to ask a block of another mod for its slots.
 //! - `Train.burnFuel` also puts the container item of a fuel (a lava bucket's bucket) back with
 //!   `ItemHandlerHelper.insertItemStacked(fuelItems, ..)`: [`consume_fuel`].
 
@@ -34,6 +37,39 @@ pub fn is_internal(block: &str) -> bool {
 /// (`create:vault`, the Item Vault's storage).
 pub fn can_use_for_fuel(block: &str) -> bool {
     !is_internal(block) && block != "create:item_vault"
+}
+
+/// `DepotMountedStorageType`: a Depot is one slot, the item it holds (`DepotMountedStorage.fromDepot`).
+pub const DEPOT_SLOTS: usize = 1;
+
+/// The slots a block contributes to a carriage's storage (`MountedStorageManager`): the vault, chest and simple storages
+/// of `portable_interface::slots_of_block`, and the Depot, the Toolbox and the Creative Crate the Portable Storage
+/// Interface here doesn't reach. The Creative Crate's two slots are `BottomlessItemHandler`'s.
+pub fn cargo_slots(block: &str) -> Option<usize> {
+    if let Some(n) = crate::rules::portable_interface::slots_of_block(block) {
+        return Some(n);
+    }
+    if block == "create:depot" {
+        Some(DEPOT_SLOTS)
+    } else if crate::rules::toolbox::is_toolbox(block) {
+        Some(crate::rules::toolbox::SLOTS)
+    } else if block == "create:creative_crate" {
+        Some(crate::rules::creative_crate::SLOTS)
+    } else {
+        None
+    }
+}
+
+/// Where a block's saved slots are: the `Items` list of its data, or `Inventory.Items` for a Toolbox (its
+/// `ToolboxInventory` is saved as a compound of its own).
+pub fn items_path(block: &str) -> &'static [&'static str] {
+    if crate::rules::toolbox::is_toolbox(block) { &["Inventory", "Items"] } else { &["Items"] }
+}
+
+/// The Creative Crate's handler never runs out and voids what is put in (`BottomlessItemHandler`): what a burn takes
+/// from it, and what the fuel's container is put into it, leave it as it was.
+pub fn is_bottomless(block: &str) -> bool {
+    block == "create:creative_crate"
 }
 
 /// What the glue knows of one stack in a slot.
@@ -135,8 +171,26 @@ pub fn refresh(state: &mut CargoState, now: Contents, silent: bool) -> bool {
 /// What `Train.burnFuel` does to the storage when it burns the item of fuel slot `slot` of the carriage: one item
 /// leaves it, and the item's container (`getCraftingRemainingItem`: the bucket of a lava bucket) is put back into
 /// the fuel storages (`insertItemStacked`); what doesn't fit is lost, as in Java. `fuel_block` says whether the
-/// storage at a position is a fuel storage. False when the slot is empty or there is no such slot.
-pub fn consume_fuel(inventory: &mut Inventory, fuel_block: &dyn Fn(Pos) -> bool, slot: usize, remainder: Option<&Stack>) -> bool {
+/// storage at a position is a fuel storage, `bottomless` whether it is a Creative Crate (its slots are put back as they
+/// were: the supply doesn't shrink and the void slot keeps nothing). False when the slot is empty or there is no such slot.
+pub fn consume_fuel(
+    inventory: &mut Inventory,
+    fuel_block: &dyn Fn(Pos) -> bool,
+    bottomless: &dyn Fn(Pos) -> bool,
+    slot: usize,
+    remainder: Option<&Stack>,
+) -> bool {
+    let before = inventory.slots.clone();
+    let done = consume_fuel_in(inventory, fuel_block, slot, remainder);
+    for (i, old) in before.into_iter().enumerate() {
+        if bottomless(old.block) {
+            inventory.slots[i] = old;
+        }
+    }
+    done
+}
+
+fn consume_fuel_in(inventory: &mut Inventory, fuel_block: &dyn Fn(Pos) -> bool, slot: usize, remainder: Option<&Stack>) -> bool {
     let positions: Vec<usize> = inventory.slots.iter().enumerate().filter(|(_, s)| fuel_block(s.block)).map(|(i, _)| i).collect();
     let Some(&at) = positions.get(slot) else { return false };
     if inventory.extract(at, 1, false).is_none() {
@@ -247,15 +301,15 @@ mod tests {
     #[test]
     fn burning_takes_one_item() {
         let mut inv = Inventory { slots: vec![empty([0, 0, 0], 0), slot([0, 0, 0], 1, "coal", 3)] };
-        assert!(consume_fuel(&mut inv, &|_| true, 1, None));
+        assert!(consume_fuel(&mut inv, &|_| true, &|_| false, 1, None));
         assert_eq!(inv.slots[1].stack.as_ref().map(|s| s.count), Some(2));
         // The last one empties the slot.
         let mut inv = Inventory { slots: vec![slot([0, 0, 0], 0, "coal", 1)] };
-        assert!(consume_fuel(&mut inv, &|_| true, 0, None));
+        assert!(consume_fuel(&mut inv, &|_| true, &|_| false, 0, None));
         assert!(inv.slots[0].stack.is_none());
         // Nothing to take from an empty slot or a slot that isn't there.
-        assert!(!consume_fuel(&mut inv, &|_| true, 0, None));
-        assert!(!consume_fuel(&mut inv, &|_| true, 5, None));
+        assert!(!consume_fuel(&mut inv, &|_| true, &|_| false, 0, None));
+        assert!(!consume_fuel(&mut inv, &|_| true, &|_| false, 5, None));
     }
 
     #[test]
@@ -264,10 +318,39 @@ mod tests {
         let chest_pos = [0, 0, 0];
         let mut inv = Inventory { slots: vec![empty(vault, 0), slot(chest_pos, 0, "lava_bucket", 1), empty(chest_pos, 1)] };
         let bucket = Stack { key: "bucket".into(), count: 1, max: 1 };
-        assert!(consume_fuel(&mut inv, &|p| p == chest_pos, 0, Some(&bucket)));
+        assert!(consume_fuel(&mut inv, &|p| p == chest_pos, &|_| false, 0, Some(&bucket)));
         // The lava bucket's own slot is the first empty slot of the fuel storage now.
         assert_eq!(inv.slots[1].stack.as_ref().map(|s| s.key.as_str()), Some("bucket"));
         assert!(inv.slots[0].stack.is_none());
+    }
+
+    #[test]
+    fn the_depot_the_toolbox_and_the_crate_are_storages() {
+        assert_eq!(cargo_slots("create:depot"), Some(1));
+        assert_eq!(cargo_slots("create:white_toolbox"), Some(32));
+        assert_eq!(cargo_slots("create:creative_crate"), Some(2));
+        assert_eq!(cargo_slots("minecraft:chest"), Some(27));
+        assert_eq!(cargo_slots("create:item_vault"), Some(20));
+        assert_eq!(cargo_slots("create:weighted_ejector"), None);
+        assert_eq!(items_path("create:red_toolbox"), &["Inventory", "Items"]);
+        assert_eq!(items_path("create:depot"), &["Items"]);
+        assert!(is_bottomless("create:creative_crate") && !is_bottomless("create:depot"));
+        // All three burn: only the vault and the dispenser don't.
+        assert!(can_use_for_fuel("create:depot") && can_use_for_fuel("create:creative_crate"));
+        assert!(can_use_for_fuel("create:blue_toolbox"));
+    }
+
+    #[test]
+    fn a_creative_crate_gives_fuel_without_running_out_and_voids_the_bucket() {
+        let crate_pos = [0, 0, 0];
+        let chest_pos = [1, 0, 0];
+        let mut inv = Inventory { slots: vec![slot(crate_pos, 0, "lava_bucket", 64), empty(crate_pos, 1), empty(chest_pos, 0)] };
+        let bucket = Stack { key: "bucket".into(), count: 1, max: 1 };
+        assert!(consume_fuel(&mut inv, &|_| true, &|p| p == crate_pos, 0, Some(&bucket)));
+        // The supply is whole, the void slot is empty, and the bucket went into the void (the first empty slot).
+        assert_eq!(inv.slots[0].stack.as_ref().map(|s| s.count), Some(64));
+        assert!(inv.slots[1].stack.is_none());
+        assert!(inv.slots[2].stack.is_none());
     }
 
     #[test]
@@ -276,7 +359,7 @@ mod tests {
         let vault = [9, 9, 9];
         let chest_pos = [0, 0, 0];
         let mut inv = Inventory { slots: vec![slot(vault, 0, "coal", 5), slot(chest_pos, 0, "coal", 2)] };
-        assert!(consume_fuel(&mut inv, &|p| p == chest_pos, 0, None));
+        assert!(consume_fuel(&mut inv, &|p| p == chest_pos, &|_| false, 0, None));
         assert_eq!(inv.slots[0].stack.as_ref().map(|s| s.count), Some(5));
         assert_eq!(inv.slots[1].stack.as_ref().map(|s| s.count), Some(1));
     }

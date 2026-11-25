@@ -34,9 +34,13 @@ use create_kinetics::{Axis, Dir, Kind, Node, Pos, looking};
 use crate::compat::{
     BlockEntityEvent, BlockEntityRenderBoundingBoxEvent, BlockEntitySubmitEvent, BlockEntityTickEvent,
     BlockEntityTicksEvent, BlockEntityUpdateTagEvent, BlockSignalEvent, BlockStateId, Compound,
-    DestroyBlockEvent, Flow, Hooks, Host, IsSignalSourceEvent, LevelHost, ModBlockEntity,
-    RightClickBlockEvent, StandaloneModelsEvent, StateForPlacementEvent, Tag, UseItemOnEvent,
+    DestroyBlockEvent, Flow, Hooks, Host, IsSignalSourceEvent, LevelHost, ModBlockEntity, NativeCommand,
+    PerformCommandEvent, RegisterCommandsEvent, RightClickBlockEvent, StandaloneModelsEvent,
+    StateForPlacementEvent, Tag, UseItemOnEvent,
 };
+use create_kinetics::rules::trains::train_doors::{DoorControl, elevator_door_contact};
+
+use super::train_doors;
 
 use super::actor;
 use super::actor_draw;
@@ -100,6 +104,8 @@ static COLUMNS: LazyLock<Mutex<HashMap<Key, Column>>> = LazyLock::new(Mutex::def
 static SEEN: LazyLock<Mutex<HashMap<(String, Pos), i64>>> = LazyLock::new(Mutex::default);
 /// The floor the cabin of each column stands at, once it has arrived: that contact powers.
 static ARRIVED: LazyLock<Mutex<HashMap<Key, i32>>> = LazyLock::new(Mutex::default);
+/// The Elevator Contact each player last clicked, for `/elevator doors` (Create opens `ElevatorContactScreen` on it).
+static OPEN: LazyLock<Mutex<HashMap<u128, (String, Pos)>>> = LazyLock::new(Mutex::default);
 
 /// `ElevatorColumn.get(level, coords) != null`: some Elevator Contact has registered a floor in the
 /// column (the Redstone Contact's Wrench uses it).
@@ -471,6 +477,7 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, offset: f32, initial:
     let dimension = host.dimension().to_owned();
     // `Contraption.stop`: the actors on the cabin stop first.
     actor::stop(host, pos, nbt);
+    train_doors::forget_elevator(&dimension, pos);
     let grid = (offset + 0.5).floor().max(0.0) as i32;
     if let Some(live) = engine::live(&dimension, pos, nbt) {
         let anchor = live.moving.anchor;
@@ -590,9 +597,14 @@ fn tick_pulley(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
             out
         };
         let pose = psi_motion::Pose::Translating { origin: &origin };
-        let (_, _, cabin_arrived) = elevator::replay_as(snapshot, rpm, now - snapshot.time, held_now);
+        let (_, cabin_speed, cabin_arrived) = elevator::replay_as(snapshot, rpm, now - snapshot.time, held_now);
         actor::note_elevator(&dimension, pos, cabin_arrived);
         let acted = actor::tick(host, pos, entity, &pose, now, Carrier::Controlled, Structure::Elevator);
+        // The cabin's doors (`SlidingDoorMovementBehaviour`): the door control of the contact at the column's target floor.
+        let current = lock(&COLUMNS).get(&key).and_then(Column::targeted);
+        let contact = elevator_door_contact(current, state.min_contact_y, state.max_contact_y, (state.column.x, state.column.z));
+        let mode = contact.and_then(|at| train_doors::mode_at(&*host, at));
+        train_doors::tick_elevator(host, pos, entity, &pose, now, f64::from(cabin_speed).abs(), held_now, cabin_arrived, mode);
         let want = psi_motion::tick(host, pos, &live.moving, &pose, now) | acted;
         if want != held_now {
             let (at_now, speed, _) = elevator::replay_as(snapshot, rpm, now - snapshot.time, held_now);
@@ -866,9 +878,68 @@ impl Hooks for Elevators {
         })
     }
 
-    /// `ElevatorPulleyBlock.useItemOn`: an empty hand starts the cabin or sets it down.
+    fn register_commands(&self, _: &mut dyn Host, event: &mut RegisterCommandsEvent<'_>) {
+        event.commands.push(NativeCommand::new("elevator"));
+        event.commands.push(NativeCommand::new("elevator <text:text>"));
+    }
+
+    /// `/elevator doors <all|north|east|south|west|none>`: the door control of the Elevator Contact clicked last
+    /// (`ElevatorContactEditPacket`'s `doorControls.set`, set from `ElevatorContactScreen`'s button).
+    fn perform_command(&self, host: &mut dyn Host, event: &mut PerformCommandEvent<'_>) -> Flow {
+        let line = event.command.trim();
+        let Some(rest) = (if line == "elevator" { Some("") } else { line.strip_prefix("elevator ") }) else {
+            return Flow::Continue;
+        };
+        let uuid = event.player.uuid;
+        let opened = lock(&OPEN).get(&uuid).cloned();
+        let Some((_, pos)) = opened.filter(|(d, p)| *d == host.dimension() && host.block(*p) == CONTACT) else {
+            super::train_net::tell(host, uuid, "Right-click an Elevator Contact first");
+            return Flow::Cancel;
+        };
+        let mut words = rest.split_whitespace();
+        match (words.next(), words.next()) {
+            (None, _) => {
+                let mode = train_doors::mode_at(&*host, pos).unwrap_or_default();
+                super::train_net::tell(host, uuid, format!("Elevator Contact: Onboard Door Control: {} (/elevator doors <all | north | east | south | west | none>)", mode.long()));
+            }
+            (Some("doors"), Some(word)) => match DoorControl::parse(word) {
+                Some(mode) => {
+                    // `be.doorControls.set(mode)`: saved, and told to the clients, only when it changes.
+                    if train_doors::mode_at(&*host, pos) != Some(mode) {
+                        host.change_mod_block_entity(pos, &mut |e| {
+                            e.nbt.insert(train_doors::DOOR_CONTROL.into(), Tag::String(mode.constant().into()));
+                        });
+                    }
+                    super::train_net::tell(host, uuid, format!("Onboard Door Control: {}", mode.long()));
+                }
+                None => super::train_net::tell(host, uuid, "doors <all | north | east | south | west | none>"),
+            },
+            _ => super::train_net::tell(host, uuid, "Unknown elevator command (doors <all | north | east | south | west | none>)"),
+        }
+        Flow::Cancel
+    }
+
+    /// `ElevatorPulleyBlock.useItemOn`: an empty hand starts the cabin or sets it down. An empty hand on an Elevator Contact
+    /// is `ElevatorContactBlock.useItemOn` (it opens the contact's screen): it picks the contact `/elevator doors` sets.
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
         let pos = event.pos;
+        if host.block(pos) == CONTACT {
+            let Some(player) = host.acting_player() else { return Flow::Continue };
+            if player.sneaking || player.game_mode == util::SPECTATOR {
+                return Flow::Continue;
+            }
+            if host.held_stack(player.uuid).is_some_and(|stack| stack.count > 0) {
+                return Flow::Continue;
+            }
+            if !util::first_click(&*host, player.uuid, pos) {
+                return Flow::Cancel;
+            }
+            let dimension = host.dimension().to_owned();
+            lock(&OPEN).insert(player.uuid, (dimension, pos));
+            let mode = train_doors::mode_at(&*host, pos).unwrap_or_default();
+            super::train_net::tell(host, player.uuid, format!("Elevator Contact: Onboard Door Control: {} (/elevator doors <all | north | east | south | west | none>)", mode.long()));
+            return Flow::Cancel;
+        }
         if host.block(pos) != PULLEY {
             return Flow::Continue;
         }

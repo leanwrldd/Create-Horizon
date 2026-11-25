@@ -55,7 +55,7 @@ pub(crate) struct Items {
     templates: HashMap<String, ItemStack>,
 }
 
-fn key_of(stack: &ItemStack) -> String {
+pub(crate) fn key_of(stack: &ItemStack) -> String {
     format!("{}|{}|{:?}", stack.item, stack.damage, stack.extra)
 }
 
@@ -70,15 +70,40 @@ fn slot_index(entry: &Tag) -> Option<usize> {
 /// The combined inventory of a structure: each storage block's slots, the blocks in order of
 /// their position in the structure.
 pub(crate) fn items_of(host: &dyn Host, moving: &Moving) -> Items {
+    items_of_with(host, moving, &rules::slots_of_block, &|_| &["Items"])
+}
+
+/// The saved list of slots at `path` of a block's data (`Items`, or `Inventory.Items` for a Toolbox).
+fn list_at<'a>(data: &'a Compound, path: &[&str]) -> Option<&'a Vec<Tag>> {
+    let (last, parents) = path.split_last()?;
+    let mut at = data;
+    for key in parents {
+        let Some(Tag::Compound(inner)) = util::get(at, key) else { return None };
+        at = inner;
+    }
+    match util::get(at, last) {
+        Some(Tag::List(list)) => Some(list),
+        _ => None,
+    }
+}
+
+/// [`items_of`] for a different set of storage blocks: `slots_of` says how many slots a block has, `path_of` where its
+/// saved slots are (a train's carriages also count the Depot, the Toolbox and the Creative Crate).
+pub(crate) fn items_of_with(
+    host: &dyn Host,
+    moving: &Moving,
+    slots_of: &dyn Fn(&str) -> Option<usize>,
+    path_of: &dyn Fn(&str) -> &'static [&'static str],
+) -> Items {
     let mut templates: HashMap<String, ItemStack> = HashMap::new();
     let mut blocks: BTreeMap<Pos, (usize, Vec<Option<Stack>>)> = BTreeMap::new();
     for block in &moving.blocks {
-        let Some(count) = rules::slots_of_block(&block.state.name) else {
+        let Some(count) = slots_of(&block.state.name) else {
             continue;
         };
         let mut slots: Vec<Option<Stack>> = vec![None; count];
         if let Some(data) = &block.data
-            && let Some(Tag::List(list)) = util::get(data, "Items")
+            && let Some(list) = list_at(data, path_of(&block.state.name))
         {
             for entry in list {
                 let (Some(index), Some(stack)) = (slot_index(entry), util::stack_of(entry)) else {
@@ -122,6 +147,17 @@ impl Items {
 
 /// Writes the inventory's slots into the blocks' saved `Items`.
 pub(crate) fn apply_items(moving: &mut Moving, items: &Items) {
+    apply_items_with(moving, items, &|_| &["Items"]);
+}
+
+/// [`apply_items`] for storages saved at another path. Entries of the saved list past the slots the inventory has for a
+/// block (a Depot's eight output slots, behind its one stored slot) are kept as they were.
+pub(crate) fn apply_items_with(moving: &mut Moving, items: &Items, path_of: &dyn Fn(&str) -> &'static [&'static str]) {
+    let mut managed: BTreeMap<Pos, usize> = BTreeMap::new();
+    for slot in &items.inventory.slots {
+        let n = managed.entry(slot.block).or_default();
+        *n = (*n).max(slot.index + 1);
+    }
     let mut by_block: BTreeMap<Pos, Vec<Tag>> = BTreeMap::new();
     for slot in &items.inventory.slots {
         let entries = by_block.entry(slot.block).or_default();
@@ -132,11 +168,32 @@ pub(crate) fn apply_items(moving: &mut Moving, items: &Items) {
         entries.push(Tag::Compound(tag));
     }
     for block in &mut moving.blocks {
-        let Some(entries) = by_block.remove(&block.local) else {
+        let Some(mut entries) = by_block.remove(&block.local) else {
             continue;
         };
+        let count = managed.get(&block.local).copied().unwrap_or(0);
+        let path = path_of(&block.state.name);
         let data = block.data.get_or_insert_with(Compound::new);
-        data.insert("Items".into(), Tag::List(entries));
+        // Keep what lies past the managed slots.
+        if let Some(old) = list_at(data, path) {
+            entries.extend(old.iter().filter(|e| slot_index(e).is_some_and(|i| i >= count)).cloned());
+        }
+        set_list_at(data, path, entries);
+    }
+}
+
+fn set_list_at(data: &mut Compound, path: &[&str], list: Vec<Tag>) {
+    match path {
+        [] => {}
+        [last] => {
+            data.insert((*last).into(), Tag::List(list));
+        }
+        [first, rest @ ..] => {
+            let entry = data.entry((*first).into()).or_insert_with(|| Tag::Compound(Compound::new()));
+            if let Tag::Compound(inner) = entry {
+                set_list_at(inner, rest, list);
+            }
+        }
     }
 }
 

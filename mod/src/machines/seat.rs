@@ -9,8 +9,8 @@
 //! entity. Type-checked and unit-tested only: not yet played.
 //!
 //! Known differences from Create, for the README:
-//! - Mobs that walk or fall onto a seat don't sit (`updateEntityAfterFallOn`, `getLeashed`): the
-//!   hook for that doesn't exist. Only a player's click seats anyone.
+//! - Mobs that walk or fall onto a seat don't sit (`updateEntityAfterFallOn`): the hook for that doesn't exist. A
+//!   player's click seats the player, or a mob they lead (`SeatBlock.getLeashed`: [`leashed_by`]).
 //! - A rider is taken off a seat that was broken or recoloured to nothing within a few ticks; a
 //!   seat whose rider the server can't see (a player missing from `server_players`) keeps its marker
 //!   until the next click on that seat replaces it. A marker saved with the world while someone sits
@@ -39,6 +39,7 @@
 use std::sync::Mutex;
 
 use create_kinetics::rules::seat::{self as rules, Click, Rider};
+use create_kinetics::rules::trains::train_passengers::{Candidate, LeashCandidate, first_leashed, leash_search_box};
 use create_kinetics::Pos;
 use crate::compat::{Compound, Flow, Hooks, Host, LevelTickPostEvent, RightClickBlockEvent, Tag};
 
@@ -157,6 +158,37 @@ pub(super) fn riders_at(host: &dyn Host, dimension: &str, pos: Pos) -> Vec<u128>
         .collect()
 }
 
+/// `SeatBlock.getLeashed`: the first mob within ten blocks of the player that is on the player's lead and can be picked
+/// up, as its entity id and uuid. `player_entity` is the player's entity id.
+pub(super) fn leashed_by(host: &mut dyn Host, player: u128, player_entity: i32) -> Option<(u32, u128)> {
+    let _ = player;
+    let me = u32::try_from(player_entity).ok()?;
+    let player_ref = host.entity(me)?;
+    let [lo, hi] = leash_search_box(host.entity_bounding_box(player_ref)?);
+    let dimension = host.dimension().to_owned();
+    let mut found: Vec<(u32, String, bool, bool)> = Vec::new();
+    for id in host.entities_in(&dimension, lo, hi) {
+        let Some(entity) = host.entity(id) else { continue };
+        let Some(kind) = host.entity_kind(entity) else { continue };
+        // `mob.getLeashHolder() == player`: the holder is read from the game's own lead.
+        let led = matches!(entity.leash_holder(host.new_host()), Some(mod_api::LeashHolder::Entity(holder)) if holder.id() == me);
+        found.push((id, kind.clone(), led, host.living(entity).is_some()));
+    }
+    let candidates: Vec<LeashCandidate<'_>> = found
+        .iter()
+        .map(|(_, kind, led, living)| LeashCandidate {
+            // `instanceof Mob`: a boat takes a lead too but is not living, and a player or armor stand is never led.
+            mob: *living && kind != "minecraft:player" && kind != "minecraft:armor_stand",
+            led_by_player: *led,
+            candidate: Candidate { kind, player: kind == "minecraft:player", living: *living, ignored: false },
+        })
+        .collect();
+    let index = first_leashed(&candidates)?;
+    let id = found[index].0;
+    let uuid = host.entity(id).and_then(|e| host.entity_uuid(e))?;
+    Some((id, uuid))
+}
+
 impl Hooks for Seats {
     /// `SeatBlock.useItemOn`.
     fn right_click_block(&self, host: &mut dyn Host, event: &mut RightClickBlockEvent) -> Flow {
@@ -182,10 +214,12 @@ impl Hooks for Seats {
                 Flow::Cancel
             }
             Click::Sit => {
+                // `sitDown(level, pos, getLeashed(level, player).or(player))`: a mob on the player's lead sits instead.
+                let who = leashed_by(host, player.uuid, player.entity_id).map_or((player.uuid, None), |(id, uuid)| (uuid, Some(id)));
                 if let Ok(mut book) = BOOK.lock()
-                    && !book.pending.iter().any(|r| r.player == player.uuid && r.pos == pos)
+                    && !book.pending.iter().any(|r| r.player == who.0 && r.pos == pos)
                 {
-                    book.pending.push(Request { dimension: dimension.to_owned(), pos, player: player.uuid, mob: None, moving: None });
+                    book.pending.push(Request { dimension: dimension.to_owned(), pos, player: who.0, mob: who.1, moving: None });
                 }
                 Flow::Cancel
             }

@@ -466,8 +466,8 @@ impl TrainWorld for World {
     fn dimension_loaded(&self, dimension: u32) -> bool {
         dimension == self.dimension
     }
-    fn port_packages(&self, _: Pos, _: u32) -> Vec<String> {
-        Vec::new()
+    fn port_packages(&self, port: Pos, dimension: u32) -> Vec<String> {
+        super::train_mail::waiting(port, dimension)
     }
     fn count_player_passengers(&self, train: Uuid) -> i32 {
         self.players.get(&train).copied().unwrap_or(0)
@@ -909,6 +909,24 @@ fn apply_events(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, rai
                     rt.cargo_silent = true;
                     push_structure(host, dimension, rt);
                     dim.dirty = true;
+                }
+            }
+            // `GlobalStation.runMailTransfer`: packages between the train's carriages and the Postboxes of its station.
+            TrainEvent::MailTransfer { train, station } => {
+                let Some(ids) = rails.trains.get(&train).map(|t| t.carriages.iter().map(|c| c.id).collect::<Vec<_>>()) else { continue };
+                let mut taken: Vec<(Key, CarriageRt)> =
+                    ids.iter().filter_map(|id| dim.carriages.remove(&(train, *id)).map(|rt| ((train, *id), rt))).collect();
+                let changed = {
+                    let mut structures: Vec<&mut super::contraption::Moving> = taken.iter_mut().map(|(_, rt)| &mut rt.structure).collect();
+                    super::train_mail::transfer(host, station, &mut structures)
+                };
+                for (index, (key, mut rt)) in taken.into_iter().enumerate() {
+                    if changed.contains(&index) {
+                        rt.cargo_dirty = true;
+                        push_structure(host, dimension, &rt);
+                        dim.dirty = true;
+                    }
+                    dim.carriages.insert(key, rt);
                 }
             }
             _ => {}
