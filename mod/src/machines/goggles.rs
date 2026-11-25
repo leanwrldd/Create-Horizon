@@ -85,7 +85,7 @@ fn read_lang(host: &dyn Host, path: &str, into: &mut BTreeMap<String, String>) {
     }
 }
 
-pub(super) fn lang(host: &dyn Host) -> Arc<Lang> {
+pub(crate) fn lang(host: &dyn Host) -> Arc<Lang> {
     let version = host.block_sprites_version();
     let mut cached = LANG.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some((had, lang)) = cached.as_ref() {

@@ -11,7 +11,7 @@ use create_kinetics::Dir;
 use create_kinetics::belt::{Ending, Part as BeltPart, Slope as BeltSlope};
 use create_kinetics::rules::fluid_tank::Part as TankPart;
 use create_kinetics::rules::ponder_belt::{self as belt_items, Action as BeltAction, Segment as BeltSegment};
-use create_kinetics::rules::ponder_fluid::{self as tank_fluid, Op as FluidOp, Saved as SavedTank};
+use create_kinetics::rules::ponder_fluid::{self as tank_fluid, Kind as VesselKind, Op as FluidOp, Saved as SavedTank, Vessel};
 use create_kinetics::rules::arm::Phase as ArmPhase;
 use create_kinetics::rules::arm_points::{Mode as ArmMode, Point as ArmPoint, PointType as ArmPointType};
 use create_kinetics::rules::ponder_anim::{self as anim, Instruction};
@@ -22,12 +22,18 @@ use create_kinetics::rules::ponder_particles::{
 };
 
 use crate::machines::funnel as create_funnel;
+use crate::machines::tunnel_world;
 
+use create_kinetics::rules::ponder_crafter::{Action as CrafterAction, Target as CrafterTarget, Timeline as CrafterTimeline};
+
+use super::crafters;
 use super::scene::Pos;
 use super::screen::Showing;
 
 /// The longest an item or block break particle lives: `(int)(4 / 0.1)` ticks.
 const GLUE_LIFE: f32 = 40.0;
+/// The first link a stack a crafter passed on takes: the scene's own count from 1 stays below.
+const CRAFTED_LINKS: u32 = 1_000_000;
 /// The longest any emitted particle lives (the large smoke: `(int)(8 / 0.2) * 2.5`).
 const EMITTED_LIFE: f32 = 200.0;
 
@@ -227,6 +233,8 @@ struct SceneFile {
     arms: Vec<(Pos, Vec<(String, String, Pos)>)>,
     /// The scene's Fluid Tank blocks.
     tanks: Vec<SavedTank>,
+    /// The scene's Display Boards: the controller block and the board's size.
+    boards: Vec<(Pos, i32, i32)>,
     duration: u32,
     scale: f32,
     offset: f32,
@@ -244,6 +252,7 @@ impl FromJson for SceneFile {
             models: field_or(value, "models"),
             arms: field_or(value, "arms"),
             tanks: field_or(value, "tanks"),
+            boards: field_or(value, "boards"),
             duration: field(value, "duration")?,
             scale: field(value, "scale")?,
             offset: field(value, "offset")?,
@@ -323,9 +332,22 @@ enum Event {
     /// The last is the radius of the random offset each particle's motion takes (`VecHelper.offsetRandomly`).
     /// The last says the offset is across only (`jittered_across`: a press's item particles).
     Particles(ParticleKind, [f32; 3], [f32; 3], bool, f32, u32, f32, bool),
+    /// `setDisplayBoardText` and `dyeDisplayBoard` on the board whose controller is here.
+    Board(Pos, usize, BoardEdit),
+    /// What a scene did to its Mechanical Crafters (`rules::ponder_crafter`): one action for each block it names.
+    Crafter(Vec<CrafterAction<ItemStack>>),
     /// `flashDisplayLink`: the bulb of the links here glows from now (`LinkWithBulbBlockEntity.pulse`).
     Pulse(Vec<Pos>),
     Marker,
+}
+
+/// What a scene set on one line of a Display Board.
+#[derive(Clone)]
+pub enum BoardEdit {
+    /// The line's text: literal pieces, language keys and item names (`kind`, text), as the language words them.
+    Text(Vec<(String, String)>),
+    /// The line's dye (`None`: white).
+    Dye(Option<String>),
 }
 
 pub struct Scene {
@@ -345,6 +367,12 @@ pub struct Scene {
     belt_stacks: Vec<String>,
     /// Each block's speed over time: from the tick, in rpm.
     speed_log: BTreeMap<Pos, Vec<(f32, f32)>>,
+    /// The Mechanical Crafters' replay, when the scene instructs any.
+    crafters: Option<CrafterTimeline<ItemStack>>,
+    /// The scene's Display Boards: where each is controlled and its size.
+    boards: BTreeMap<Pos, (i32, i32)>,
+    /// The Item Drains, Spouts and Basins a scene can fill (`rules::ponder_fluid::Vessel`).
+    vessels: BTreeMap<Pos, VesselKind>,
     duration: f32,
     center: [f32; 3],
     dimension: f32,
@@ -516,6 +544,8 @@ struct VisibleBlock {
     press: Option<(f32, i32)>,
     /// What scene instructions set in the block entity's data, in order.
     nbt: Vec<(String, Tag)>,
+    /// The lines a scene wrote on a Display Board, in order (a controller's own).
+    board: Vec<(usize, BoardEdit)>,
     /// A funnel's last flap: the tick and whether it went outward.
     flap: Option<(f32, bool)>,
     /// The stage of the breaking texture over the block.
@@ -558,6 +588,78 @@ impl Scene {
         markers.sort_by(f32::total_cmp);
         markers.dedup();
         events.sort_by(|(a, _), (b, _)| a.total_cmp(b));
+        // `setKineticSpeed` and its relatives, as a log: what each block turned at, from when.
+        let mut speed_log: BTreeMap<Pos, Vec<(f32, f32)>> =
+            file.speeds.iter().map(|&(pos, rpm)| (pos, vec![(-1.0, rpm)])).collect();
+        for (at, event) in &events {
+            if let Event::Speed(positions, factor, base) = event {
+                for &pos in positions {
+                    let log = speed_log.entry(pos).or_default();
+                    let rpm = log.last().map_or(0.0, |&(_, rpm)| rpm).mul_add(*factor, *base);
+                    log.push((*at, rpm));
+                }
+            }
+        }
+        // The Mechanical Crafters run Create's own logic in a scene, so they are replayed from the first tick; what
+        // they put on a Depot or a Belt and what they eject join the scene's items.
+        let crafters = {
+            let blocks: BTreeMap<Pos, usize> = file.blocks.iter().copied().collect();
+            let mut scenery = crafters::Scenery {
+                palette: &file.palette,
+                blocks: &blocks,
+                changes: BTreeMap::new(),
+                toggles: BTreeMap::new(),
+                speeds: &speed_log,
+            };
+            let mut actions: crafters::Actions = Vec::new();
+            let depot = |pos: &Pos| {
+                blocks.get(pos).and_then(|&state| file.palette.get(state)).is_some_and(|(id, _)| id == "create:depot")
+            };
+            for (at, event) in &events {
+                let at = *at as i64;
+                match event {
+                    Event::Block(positions, state) => {
+                        for &pos in positions {
+                            scenery.changes.entry(pos).or_default().push((at, Some(*state)));
+                        }
+                    }
+                    Event::Restore(positions) => {
+                        for &pos in positions {
+                            scenery.changes.entry(pos).or_default().push((at, None));
+                        }
+                    }
+                    Event::Toggle(positions) => {
+                        for &pos in positions {
+                            scenery.toggles.entry(pos).or_default().push(at);
+                        }
+                    }
+                    Event::Crafter(rows) => actions.extend(rows.iter().cloned().map(|row| (at, row))),
+                    Event::Nbt(positions, entries) => {
+                        for (key, tag) in entries {
+                            if key == "Cover"
+                                && let Tag::Byte(covered) = tag
+                            {
+                                actions.extend(
+                                    positions.iter().map(|&pos| (at, CrafterAction::Cover { pos, covered: *covered != 0 })),
+                                );
+                            }
+                        }
+                    }
+                    Event::BeltPut(_, _, pos) if depot(pos) => actions.push((at, CrafterAction::Occupy { pos: *pos })),
+                    Event::BeltRemove(pos) => actions.push((at, CrafterAction::Clear { pos: *pos })),
+                    _ => {}
+                }
+            }
+            crafters::replay(&scenery, &actions, i64::from(file.duration.max(1)))
+        };
+        if let Some(timeline) = &crafters {
+            // An ejected stack drops from the crafter's front; a scene's `modifyEntities(ItemEntity.class, ..)` clears it.
+            for dropped in &timeline.drops {
+                let point = crafters::eject_point(dropped.pos, dropped.facing);
+                events.push((dropped.tick as f32, Event::Item(dropped.stack.item.to_string(), point, [0.0, -0.04, 0.0], 25.0, 0)));
+            }
+            events.sort_by(|(a, _), (b, _)| a.total_cmp(b));
+        }
         // An item entity lives until a scene discards it (its link, or every item with 0).
         let discards: Vec<(f32, u32)> = events
             .iter()
@@ -618,7 +720,7 @@ impl Scene {
                 belt_stacks.len() - 1
             }) as u32
         };
-        let belt_actions: Vec<(i64, BeltAction)> = events
+        let mut belt_actions: Vec<(i64, BeltAction)> = events
             .iter()
             .filter_map(|(at, event)| {
                 let action = match event {
@@ -633,17 +735,15 @@ impl Scene {
                 Some((*at as i64, action))
             })
             .collect();
-        // `setKineticSpeed` and its relatives, as a log: what each block turned at, from when.
-        let mut speed_log: BTreeMap<Pos, Vec<(f32, f32)>> =
-            file.speeds.iter().map(|&(pos, rpm)| (pos, vec![(-1.0, rpm)])).collect();
-        for (at, event) in &events {
-            if let Event::Speed(positions, factor, base) = event {
-                for &pos in positions {
-                    let log = speed_log.entry(pos).or_default();
-                    let rpm = log.last().map_or(0.0, |&(_, rpm)| rpm).mul_add(*factor, *base);
-                    log.push((*at, rpm));
+        if let Some(timeline) = &crafters {
+            // What a crafter passed to a Depot or a Belt rests or rides there like an item the scene put.
+            for (n, output) in timeline.outputs.iter().enumerate() {
+                if matches!(output.kind, CrafterTarget::Depot | CrafterTarget::Belt) {
+                    let link = CRAFTED_LINKS + n as u32;
+                    belt_actions.push((output.tick, BeltAction::Put { link, stack: stack_of(&output.stack.item), pos: output.at }));
                 }
             }
+            belt_actions.sort_by_key(|(at, _)| *at);
         }
         let tanks = {
             let creative = |pos: Pos| {
@@ -658,6 +758,13 @@ impl Scene {
         Self {
             events,
             markers,
+            crafters,
+            boards: file.boards.iter().map(|&(pos, x, y)| (pos, (x, y))).collect(),
+            vessels: file
+                .blocks
+                .iter()
+                .filter_map(|&(pos, state)| Some((pos, VesselKind::of(&file.palette.get(state)?.0)?)))
+                .collect(),
             tanks,
             belts,
             belt_actions,
@@ -722,8 +829,10 @@ impl Scene {
         let mut arms = BTreeMap::<Pos, (Vec<ArmInstruction>, Option<&str>)>::new();
         let mut data = BTreeMap::<Pos, Vec<(String, Tag)>>::new();
         let mut flaps = BTreeMap::<Pos, (f32, bool)>::new();
+        let mut boards = BTreeMap::<Pos, Vec<(usize, BoardEdit)>>::new();
         let mut cracks = BTreeMap::<Pos, i32>::new();
         let mut tanks = self.tanks.clone();
+        let mut vessels = BTreeMap::<Pos, Vessel>::new();
         let mut has_reveals = false;
         let mut frame = Frame::default();
         for (index, (at, event)) in self.events.iter().enumerate() {
@@ -835,14 +944,17 @@ impl Scene {
                     for &pos in positions {
                         let stored = data.entry(pos).or_default();
                         for (key, tag) in entries {
-                            stored.retain(|(known, _)| known != key);
-                            stored.push((key.clone(), tag.clone()));
+                            set_nbt(stored, key, tag, *at as i64);
                         }
                     }
                 }
                 Event::Fluid(positions, op) => {
                     for &pos in positions {
-                        tank_fluid::apply(&mut tanks, pos, op);
+                        if let Some(&kind) = self.vessels.get(&pos) {
+                            vessels.entry(pos).or_insert_with(|| Vessel::new(kind)).apply(op);
+                        } else {
+                            tank_fluid::apply(&mut tanks, pos, op);
+                        }
                     }
                 }
                 Event::Flap(pos, outward) => {
@@ -953,8 +1065,26 @@ impl Scene {
                         }
                     }
                 }
+                Event::Board(pos, line, edit) => boards.entry(*pos).or_default().push((*line, edit.clone())),
+                Event::Crafter(_) => {}
                 Event::Marker => {}
             }
+        }
+        // Each crafter shows what the replay of its chain left in it at this tick.
+        if let Some(timeline) = &self.crafters {
+            for &pos in timeline.states.keys() {
+                let stored = data.entry(pos).or_default();
+                for (key, tag) in crafters::tags(timeline, pos, tick.floor() as i64) {
+                    stored.retain(|(known, _)| *known != key);
+                    stored.push((key, tag));
+                }
+            }
+        }
+        // An Item Drain, a Spout or a Basin a scene filled shows its tanks as the block saves them.
+        for (pos, vessel) in &vessels {
+            let stored = data.entry(*pos).or_default();
+            stored.retain(|(known, _)| known != "fluids");
+            stored.push(("fluids".to_owned(), vessel_tag(vessel)));
         }
         // Each tank block shows what the structure file and the fluid instructions left in it.
         for (pos, part) in &tanks {
@@ -1031,6 +1161,7 @@ impl Scene {
                         (reach.angles(steps, tick), held.map(str::to_owned))
                     }),
                     nbt: data.get(&pos).cloned().unwrap_or_default(),
+                    board: boards.get(&pos).cloned().unwrap_or_default(),
                     flap: flaps.get(&pos).copied(),
                     crack: cracks.get(&pos).copied(),
                     press: presses.get(&pos).map(|&(at, mode)| {
@@ -1093,6 +1224,9 @@ impl Scene {
                     }
                     for (key, tag) in &visible.nbt {
                         entity.nbt.insert(key.as_str().into(), tag.clone());
+                    }
+                    if let Some(&(x, y)) = self.boards.get(&visible.pos) {
+                        crate::machines::flap_display::write_board(&mut entity.nbt, &display_board(host, x, y, &visible.board));
                     }
                     if let Some((at, outward)) = visible.flap {
                         // `FunnelBlockEntity.flap(inward)`: `FlapTick` is the scene tick the flap began.
@@ -1369,6 +1503,10 @@ fn decode(row: &[Value], palette: &mut Vec<State>) -> Option<(f32, Event)> {
         "red" => 0xFFED_715E,
         "green" => 0xFF95_C971,
         "medium" => 0xFFE6_B873,
+        // `PonderPalette.INPUT`, `OUTPUT` and `BLACK`, from the Ponder library.
+        "input" => 0xFF7F_CDE0,
+        "output" => 0xFFDD_C166,
+        "black" => 0xFF22_1111,
         _ => 0xFFF4_E9D4,
     };
     let event = match op {
@@ -1461,10 +1599,47 @@ fn decode(row: &[Value], palette: &mut Vec<State>) -> Option<(f32, Event)> {
             read(row, 2)?,
             FluidOp::from_row(row.get(3)?.as_str()?, row.get(4)?.as_str()?, read(row, 5)?)?,
         ),
+        "crafter" => Event::Crafter(crafter_actions(row)?),
+        "board" => {
+            let positions: Vec<Pos> = read(row, 3)?;
+            let edit = match row.get(2)?.as_str()? {
+                "text" => BoardEdit::Text(
+                    row.get(5)?
+                        .as_array()?
+                        .iter()
+                        .map(|part| Some((part.get(0)?.as_str()?.to_owned(), part.get(1)?.as_str()?.to_owned())))
+                        .collect::<Option<_>>()?,
+                ),
+                "dye" => BoardEdit::Dye(Some(row.get(5)?.as_str()?.to_owned()).filter(|dye| dye != "white")),
+                _ => return None,
+            };
+            Event::Board(*positions.first()?, read(row, 4)?, edit)
+        }
         "marker" => Event::Marker,
         _ => return None,
     };
     Some((tick, event))
+}
+
+/// `[tick, "crafter", kind, positions, item, count]`: an action for each of the crafters it names (`connect` names
+/// the two that are joined).
+fn crafter_actions(row: &[Value]) -> Option<Vec<CrafterAction<ItemStack>>> {
+    let kind = row.get(2)?.as_str()?;
+    let positions: Vec<Pos> = read(row, 3)?;
+    let id: String = read(row, 4)?;
+    let count: u32 = read(row, 5)?;
+    let stack = || ItemStack::new(&id, count.max(1));
+    let one = || ItemStack::new(&id, 1);
+    Some(match kind {
+        "connect" => vec![CrafterAction::Connect { first: *positions.first()?, second: *positions.get(1)? }],
+        "result" => positions.into_iter().map(|pos| CrafterAction::Result { pos, stack: stack() }).collect(),
+        "insert" => positions.into_iter().map(|pos| CrafterAction::Insert { pos, stack: one() }).collect(),
+        "set" => positions.into_iter().map(|pos| CrafterAction::Set { pos, stack: one() }).collect(),
+        "stack" => positions.into_iter().map(|pos| CrafterAction::Stacked { pos, stack: one(), count }).collect(),
+        "check" => positions.into_iter().map(|pos| CrafterAction::Check { pos }).collect(),
+        "eject" => positions.into_iter().map(|pos| CrafterAction::Eject { pos }).collect(),
+        _ => return None,
+    })
 }
 
 /// `{key: [type, value]}` as block entity data: `i` an int, `f` a float, `b` a boolean, `s` a string (an enum is its
@@ -1485,11 +1660,143 @@ fn nbt_entries(value: &Value) -> Option<Vec<(String, Tag)>> {
                     "" => Tag::Compound(crate::Compound::new()),
                     id => crate::util::stack_tag(&ItemStack::new(id, 1)),
                 },
+                // `TransportedItemStack.serializeNBT` of a stack on a Depot: at its start, put there from above.
+                "held" => held_tag(value.as_str()?),
+                // A side's filter: `{side: item}`, an empty id for none.
+                "filters" => Tag::Compound(
+                    value
+                        .as_object()?
+                        .iter()
+                        .map(|(side, id)| {
+                            let stack = match id.as_str()? {
+                                "" => Tag::Compound(crate::Compound::new()),
+                                id => crate::util::stack_tag(&ItemStack::new(id, 1)),
+                            };
+                            Some((side.as_str().into(), stack))
+                        })
+                        .collect::<Option<_>>()?,
+                ),
+                "items" => Tag::List(
+                    value.as_array()?.iter().map(|id| Some(crate::util::stack_tag(&ItemStack::new(id.as_str()?, 1)))).collect::<Option<_>>()?,
+                ),
                 _ => return None,
             };
             Some((key.clone(), tag))
         })
         .collect()
+}
+
+/// A Display Board as a scene left it: each line's text worded from the language (`FlapDisplayBlockEntity.applyTextManually`
+/// in a virtual world refreshes the flaps at once, so none is left spinning) and its dye.
+fn display_board(host: &dyn Host, x_size: i32, y_size: i32, edits: &[(usize, BoardEdit)]) -> create_kinetics::rules::flap_display::Board {
+    use create_kinetics::rules::flap_display::Board;
+    let lang = crate::machines::goggles::lang(host);
+    let mut board = Board::new(x_size, y_size);
+    for (line, edit) in edits {
+        match edit {
+            BoardEdit::Text(parts) => {
+                let text: String = parts
+                    .iter()
+                    .map(|(kind, text)| match kind.as_str() {
+                        "lang" => lang.translate(text, &[]),
+                        "name" => lang.item_name(text),
+                        _ => text.clone(),
+                    })
+                    .collect();
+                board.apply_text_manually(*line, Some(&text), 0);
+                if let Some(layout) = board.lines.get_mut(*line) {
+                    for section in &mut layout.sections {
+                        section.prev.clone_from(&section.text);
+                        section.since = None;
+                    }
+                }
+            }
+            BoardEdit::Dye(dye) => {
+                if let Some(colour) = board.colour.get_mut(*line) {
+                    colour.clone_from(dye);
+                }
+            }
+        }
+    }
+    board
+}
+
+/// One key a scene set in a block entity's data, with what it implies: a Basin's output stacks fly for ten ticks
+/// from when they were set, and a Brass Tunnel's filters are kept by side (each instruction sets one side) and open
+/// the sides they are on.
+fn set_nbt(stored: &mut Vec<(String, Tag)>, key: &str, tag: &Tag, at: i64) {
+    let mut put = |stored: &mut Vec<(String, Tag)>, key: &str, tag: Tag| {
+        stored.retain(|(known, _)| known != key);
+        stored.push((key.to_owned(), tag));
+    };
+    match (key, tag) {
+        ("VisualizedItems", _) => {
+            put(stored, "VisualizedSince", Tag::Long(at));
+            put(stored, key, tag.clone());
+        }
+        ("Filters", Tag::Compound(sides)) => {
+            let mut filters = match stored.iter().find(|(known, _)| known == key) {
+                Some((_, Tag::Compound(filters))) => filters.clone(),
+                _ => crate::Compound::new(),
+            };
+            for (side, stack) in sides {
+                match stack {
+                    Tag::Compound(stack) if stack.is_empty() => {
+                        filters.remove(side);
+                    }
+                    _ => {
+                        filters.insert(side.clone(), stack.clone());
+                    }
+                }
+            }
+            // The slots a filter sits on are the tunnel's open sides (`BrassTunnelBlockEntity.sides`).
+            let mut known = crate::Compound::new();
+            if let Some((_, open)) = stored.iter().find(|(known, _)| known == tunnel_world::SIDES) {
+                known.insert(tunnel_world::SIDES.into(), open.clone());
+            }
+            let mut open = tunnel_world::dirs_of(&known, tunnel_world::SIDES);
+            for dir in sides.keys().filter_map(|side| create_kinetics::Dir::from_name(&side.to_string_lossy())) {
+                if !open.contains(&dir) {
+                    open.push(dir);
+                }
+            }
+            put(stored, tunnel_world::SIDES, tunnel_world::dirs_tag(&open));
+            put(stored, key, Tag::Compound(filters));
+        }
+        _ => put(stored, key, tag.clone()),
+    }
+}
+
+/// The `fluids` list of an Item Drain, a Spout or a Basin: each tank's `Fluid` and `Amount`, `minecraft:empty` when bare.
+fn vessel_tag(vessel: &Vessel) -> Tag {
+    Tag::List(
+        vessel
+            .tanks
+            .iter()
+            .map(|(fluid, amount)| {
+                let mut tank = crate::Compound::new();
+                let fluid = fluid.as_deref().filter(|_| *amount > 0).unwrap_or("minecraft:empty");
+                tank.insert("Fluid".into(), Tag::String(fluid.into()));
+                tank.insert("Amount".into(), Tag::Int((*amount).max(0)));
+                Tag::Compound(tank)
+            })
+            .collect(),
+    )
+}
+
+/// A Depot's `HeldItem` for a stack a scene put on it (`new TransportedItemStack(stack).serializeNBT(..)`): `Item` and the
+/// fields `TransportedItemStack` starts with, which `depot::draw` reads (it came in from above, so it rests in the middle).
+fn held_tag(id: &str) -> Tag {
+    let mut held = crate::Compound::new();
+    held.insert("Item".into(), crate::util::stack_tag(&ItemStack::new(id, 1)));
+    for key in ["Pos", "PrevPos", "Offset", "PrevOffset"] {
+        crate::set_float(&mut held, key, 0.0);
+    }
+    held.insert("InSegment".into(), Tag::Int(0));
+    held.insert("Angle".into(), Tag::Int(0));
+    // `Direction.UP.get3DDataValue()`.
+    held.insert("InDirection".into(), Tag::Int(1));
+    Tag::Compound(held)
 }
 
 fn resolve(
@@ -1592,4 +1899,139 @@ fn resolve(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(json: &str) -> Vec<Value> {
+        serde_json::from_str::<Value>(json).unwrap().as_array().unwrap().clone()
+    }
+
+    fn actions(json: &str) -> Vec<CrafterAction<ItemStack>> {
+        match decode(&row(json), &mut Vec::new()) {
+            Some((_, Event::Crafter(actions))) => actions,
+            _ => panic!("not a crafter row"),
+        }
+    }
+
+    #[test]
+    fn a_crafter_row_is_an_action_for_each_crafter_it_names() {
+        let planks = ItemStack::new("minecraft:oak_planks", 1);
+        assert_eq!(
+            actions(r#"[12, "crafter", "insert", [[1,1,2],[2,1,2]], "minecraft:oak_planks", 1]"#),
+            vec![
+                CrafterAction::Insert { pos: [1, 1, 2], stack: planks.clone() },
+                CrafterAction::Insert { pos: [2, 1, 2], stack: planks.clone() },
+            ]
+        );
+        assert_eq!(
+            actions(r#"[1, "crafter", "stack", [[3,2,5]], "minecraft:iron_ingot", 4]"#),
+            vec![CrafterAction::Stacked { pos: [3, 2, 5], stack: ItemStack::new("minecraft:iron_ingot", 1), count: 4 }]
+        );
+        assert_eq!(
+            actions(r#"[1, "crafter", "result", [[1,1,2]], "minecraft:oak_door", 3]"#),
+            vec![CrafterAction::Result { pos: [1, 1, 2], stack: ItemStack::new("minecraft:oak_door", 3) }]
+        );
+        assert_eq!(
+            actions(r#"[1, "crafter", "connect", [[2,2,2],[1,2,2]], "", 0]"#),
+            vec![CrafterAction::Connect { first: [2, 2, 2], second: [1, 2, 2] }]
+        );
+        assert_eq!(actions(r#"[1, "crafter", "check", [[6,3,2]], "", 0]"#), vec![CrafterAction::Check { pos: [6, 3, 2] }]);
+        assert_eq!(actions(r#"[1, "crafter", "eject", [[2,2,5]], "", 0]"#), vec![CrafterAction::Eject { pos: [2, 2, 5] }]);
+        assert!(decode(&row(r#"[1, "crafter", "shake", [[2,2,5]], "", 0]"#), &mut Vec::new()).is_none());
+    }
+
+    #[test]
+    fn a_board_row_is_a_text_or_a_dye_for_a_line() {
+        let text = decode(
+            &row(r#"[5, "board", "text", [[3,2,3]], 1, [["lit","1024 "],["lang","create.generic.unit.stress"]]]"#),
+            &mut Vec::new(),
+        );
+        match text {
+            Some((_, Event::Board(pos, 1, BoardEdit::Text(parts)))) => {
+                assert_eq!(pos, [3, 2, 3]);
+                assert_eq!(
+                    parts,
+                    vec![
+                        ("lit".to_owned(), "1024 ".to_owned()),
+                        ("lang".to_owned(), "create.generic.unit.stress".to_owned())
+                    ]
+                );
+            }
+            _ => panic!("not a board text"),
+        }
+        assert!(matches!(
+            decode(&row(r#"[5, "board", "dye", [[3,2,3]], 0, "pink"]"#), &mut Vec::new()),
+            Some((_, Event::Board(_, 0, BoardEdit::Dye(Some(dye))))) if dye == "pink"
+        ));
+        assert!(matches!(
+            decode(&row(r#"[5, "board", "dye", [[3,2,3]], 0, "white"]"#), &mut Vec::new()),
+            Some((_, Event::Board(_, 0, BoardEdit::Dye(None))))
+        ));
+    }
+
+    fn entries(json: &str) -> Vec<(String, Tag)> {
+        nbt_entries(&serde_json::from_str::<Value>(json).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_depots_held_stack_is_what_its_renderer_reads() {
+        let held = entries(r#"{"HeldItem": ["held", "minecraft:clay_ball"]}"#);
+        let Some((_, Tag::Compound(held))) = held.first() else { panic!("no held item") };
+        let stack = crate::util::get(held, "Item").and_then(crate::util::stack_of).unwrap();
+        assert_eq!(&*stack.item, "minecraft:clay_ball");
+        assert_eq!(crate::util::int(held, "InDirection"), 1);
+        assert_eq!(crate::util::int(held, "Angle"), 0);
+    }
+
+    #[test]
+    fn a_basins_output_stacks_are_a_list_and_remember_when_they_were_set() {
+        let items = entries(r#"{"VisualizedItems": ["items", ["minecraft:bricks", "create:brass_ingot"]]}"#);
+        let Some((key, tag)) = items.first() else { panic!("no items") };
+        let mut stored = Vec::new();
+        set_nbt(&mut stored, key, tag, 120);
+        let Some((_, Tag::List(list))) = stored.iter().find(|(known, _)| known == "VisualizedItems") else {
+            panic!("no list")
+        };
+        assert_eq!(list.len(), 2);
+        assert!(matches!(stored.iter().find(|(known, _)| known == "VisualizedSince"), Some((_, Tag::Long(120)))));
+    }
+
+    #[test]
+    fn a_tunnels_filters_are_kept_by_side_and_open_the_side_they_sit_on() {
+        let mut stored = Vec::new();
+        for (json, at) in [
+            (r#"{"Filters": ["filters", {"west": "minecraft:copper_ingot"}]}"#, 1),
+            (r#"{"Filters": ["filters", {"north": "minecraft:iron_ingot"}]}"#, 2),
+            (r#"{"Filters": ["filters", {"west": ""}]}"#, 3),
+        ] {
+            for (key, tag) in entries(json) {
+                set_nbt(&mut stored, &key, &tag, at);
+            }
+        }
+        let Some((_, Tag::Compound(filters))) = stored.iter().find(|(known, _)| known == "Filters") else {
+            panic!("no filters")
+        };
+        assert!(crate::util::get(filters, "west").is_none());
+        assert!(crate::util::get(filters, "north").and_then(crate::util::stack_of).is_some());
+        let mut nbt = crate::Compound::new();
+        for (key, tag) in &stored {
+            nbt.insert(key.as_str().into(), tag.clone());
+        }
+        let open = tunnel_world::dirs_of(&nbt, tunnel_world::SIDES);
+        assert!(open.contains(&Dir::West) && open.contains(&Dir::North) && open.len() == 2);
+    }
+
+    #[test]
+    fn a_vessels_tanks_are_saved_the_way_its_block_saves_them() {
+        let mut basin = Vessel::new(VesselKind::Basin);
+        basin.apply(&FluidOp::Fill { fluid: "create:chocolate".into(), amount: 750 });
+        let Tag::List(tanks) = vessel_tag(&basin) else { panic!("no list") };
+        assert_eq!(tanks.len(), 4);
+        assert_eq!(tanks[0].get("Fluid"), Some(&Tag::String("create:chocolate".into())));
+        assert_eq!(tanks[0].get("Amount"), Some(&Tag::Int(750)));
+        assert_eq!(tanks[1].get("Fluid"), Some(&Tag::String("minecraft:empty".into())));
+    }
 }

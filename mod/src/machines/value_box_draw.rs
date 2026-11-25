@@ -216,7 +216,7 @@ impl Hooks for Draw {
                 let Some(stack) = vb::filter_item(nbt, def, side) else {
                     continue;
                 };
-                let pose = vb::with_props_nbt(host, event.pos, event.block, Some(nbt), |p: &Props| {
+                let pose = vb::with_state_nbt(host, event.state, event.pos, event.block, Some(nbt), |p: &Props| {
                     if (def.active)(p) && def.slot.exists(p, side) { def.slot.pose(p, side) } else { None }
                 });
                 let Some(pose) = pose else {

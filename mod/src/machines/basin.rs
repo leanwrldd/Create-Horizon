@@ -47,6 +47,7 @@ use create_kinetics::rules::basin::{
     self as rules, HeatCondition, HeatLevel, INPUT_SLOTS, SLOTS, SLOT_LIMIT, Spout, TANKS,
     TANK_CAPACITY,
 };
+use create_kinetics::rules::basin_output as rules_output;
 use create_kinetics::rules::potion_mixing::{self, Brew};
 use create_kinetics::rules::vanilla_recipes;
 use create_kinetics::Dir;
@@ -80,6 +81,10 @@ const FLUID_OVERFLOW: &str = "FluidOverflow";
 const MOVING: &str = "Moving";
 /// What clients draw: the non-empty stacks, as clients have no item slots.
 const DRAWN: &str = "DrawItems";
+/// The stacks the basin just gave out (`visualizedOutputItems`) and the tick they were given at. A Ponder scene sets them
+/// (`modifyBlockEntityNBT`); the game's own basin does not send them yet.
+const VISUALIZED: &str = "VisualizedItems";
+const VISUALIZED_SINCE: &str = "VisualizedSince";
 /// Set on a mixer or press two blocks up when the basin was emptied (`basinRemoved`); the
 /// operator clears it. Any `BasinOperatingBlockEntity` in this mod honours it.
 pub(crate) const OPERATOR_FLAG: &str = "BasinRemoved";
@@ -1380,6 +1385,47 @@ fn draw_fluids(host: &dyn Host, draw: &mut crate::compat::BlockEntityDraw, tanks
     y_max
 }
 
+/// `BasinRenderer.renderSafe`'s `visualizedOutputItems`: each stack falls out of the spout for ten ticks. Whether
+/// anything was drawn (the geometry then reads the time and must not be kept).
+fn draw_output(
+    host: &dyn Host,
+    draw: &mut crate::compat::BlockEntityDraw,
+    state: crate::compat::BlockStateId,
+    nbt: &Compound,
+    pos: [i32; 3],
+) -> bool {
+    let stacks = util::stacks_of(nbt, VISUALIZED);
+    let Some(facing) = host.block_state_property(state, "facing").as_deref().and_then(Dir::from_name) else {
+        return false;
+    };
+    if stacks.is_empty() {
+        return false;
+    }
+    // A scene counts its own ticks (`Since` is one of them).
+    let scene = crate::float(nbt, crate::ponder::TICK);
+    let now = scene.unwrap_or(draw.game_time as f32 + draw.partial);
+    let Some(progress) = rules_output::progress(now - util::long(nbt, VISUALIZED_SINCE) as f32) else {
+        return false;
+    };
+    let facing_pos = util::add(pos, facing.normal());
+    let to_basin = scene.is_none() && host.block(facing_pos) == ID;
+    let Some(flight) = rules_output::flight(facing, progress, to_basin) else {
+        // Still drawing nothing now, but the progress will change.
+        return true;
+    };
+    for stack in &stacks {
+        draw.push();
+        draw.translate(flight.mouth);
+        draw.translate([0.0, flight.fall, 0.0]);
+        draw.translate(flight.out);
+        draw.rotate_about([0.0, 1.0, 0.0], flight.yaw, [0.0; 3]);
+        draw.rotate_about([1.0, 0.0, 0.0], flight.roll, [0.0; 3]);
+        host.draw_item(draw, stack, DisplayContext::Ground, None, 0);
+        draw.pop();
+    }
+    true
+}
+
 /// `BasinRenderer.renderSafe`'s ingredients: in a ring a little above the floor, each stack tilted
 /// and a copy more for every eight items.
 fn draw_items(
@@ -1568,8 +1614,11 @@ impl Hooks for Basin {
         let draw = &mut *event.draw;
         let top = draw_fluids(host, draw, &tanks);
         draw_items(host, draw, &items, top, seed, moving);
-        // Nothing here reads the partial tick or the game time: the whirl turns through `spin`.
-        draw.keep();
+        let flying = draw_output(host, draw, event.state, &event.entity.nbt, event.pos);
+        // Nothing here reads the partial tick or the game time but the stacks flying out: the whirl turns through `spin`.
+        if !flying {
+            draw.keep();
+        }
     }
 
     /// `BasinBlock.useItemOn`: a bucket fills or empties it, a sponge drains it, and an empty hand

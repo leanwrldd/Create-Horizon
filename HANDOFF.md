@@ -116,12 +116,16 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
   `tools` has no disassembler, the constants are in `highlight_box`), nixie text, the postbox flag, the controls'
   `Disabled`, a press's item particles, the display link's bulb pulse and the fluid pipe's `getAxisState`;
   `propagatePipeChange` is counted as having nothing to draw (the pipes' flow isn't drawn). `python -m unittest
-  tools/test_ponder.py` checks the generator's pure parts. Left (`ponder_storyboards.py` prints what it skips):
-  Mechanical Crafter inventories, `setCraftingResult` and `connectCrafterInvs` (needs `rules::crafter_grid::World`
-  run inside the replay), display board text and dye (item names come from the client's language files),
-  `VisualizedItems` on a basin and a depot's `HeldItem` (nothing draws them), brass tunnel modes and filters (not
-  drawn), item drain, basin, spout and hose pulley fluid, parrots, carts, `hideElement` (parrots and carts only),
-  `chaseBoundingBoxOutline`, trains;
+  tools/test_ponder.py` checks the generator's pure parts. Then (unplayed, skips 560 to 426): the Mechanical Crafters
+  run in the replay (`rules/ponder_crafter.rs` drives `crafter_grid` tick by tick; `ponder/crafters.rs` is the glue;
+  inventory puts, `setCraftingResult`, `connectCrafterInvs`, `checkCompletedRecipe`, `ejectWholeGrid`, covers, redstone
+  from toggled neighbours; results go to a Depot or Belt as scene items, ejects drop as item entities; the crafter
+  renderer counts from the scene tick), Display Board text and dye (parts worded from the client's language at draw time),
+  a basin's `VisualizedItems` (`rules/basin_output.rs`) and a depot's `HeldItem`, Brass Tunnel mode and filters (filter
+  items drawn by the value box renderer from the state it is given), fluid in Item Drains, Spouts and Basins
+  (`ponder_fluid::Vessel`), and `chaseBoundingBoxOutline` (drawn at its final box, the chase not animated). Left
+  (`ponder_storyboards.py` prints what it skips): hose pulley fluid (needs the world's water replayed), water wheel
+  materials, millstone input, factory gauge and package scenes, parrots, carts, `hideElement`, trains;
 - minecart contraptions (blocked: nothing can draw a structure on a vanilla minecart);
 - merged 2026-11-23, unplayed: clicking levers, doors, trapdoors, gates, seats, Deployers and Controls on a moving
   structure (`006778e`); items carrying frequencies and orders, the gauge click picking the panel, arrows, `/gauge move`

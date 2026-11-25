@@ -204,3 +204,173 @@ mod tests {
         assert_eq!(Op::from_row("pour", "", 1), None);
     }
 }
+
+/// A block with fluid tanks that is not a Fluid Tank: what a scene's `fill` and `drain` reach through its capability.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// An Item Drain (`SmartFluidTankBehaviour.single(this, 1500)`) or a Spout (`single(this, 1000)`): one tank.
+    Single(i32),
+    /// A Basin: two input tanks and two output tanks of 1000 (`SmartFluidTankBehaviour(INPUT | OUTPUT, this, 2, 1000)`).
+    Basin,
+}
+
+impl Kind {
+    /// The kind of a block id, `None` for any other.
+    pub fn of(block: &str) -> Option<Self> {
+        match block {
+            "create:item_drain" => Some(Kind::Single(1500)),
+            "create:spout" => Some(Kind::Single(1000)),
+            "create:basin" => Some(Kind::Basin),
+            _ => None,
+        }
+    }
+}
+
+/// A tank's fluid and amount.
+pub type Tank = (Option<String>, i32);
+
+/// The tanks of one such block as a scene left them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Vessel {
+    pub kind: Kind,
+    pub tanks: Vec<Tank>,
+}
+
+impl Vessel {
+    pub fn new(kind: Kind) -> Self {
+        let count = match kind {
+            Kind::Single(_) => 1,
+            Kind::Basin => 4,
+        };
+        Vessel { kind, tanks: vec![(None, 0); count] }
+    }
+
+    const TANK: i32 = 1000;
+
+    fn capacity(&self, index: usize) -> i32 {
+        match self.kind {
+            Kind::Single(capacity) => capacity,
+            Kind::Basin => {
+                let _ = index;
+                Self::TANK
+            }
+        }
+    }
+
+    /// The tanks a fill goes to: all of a single's, the input tanks of a Basin (its output tanks forbid insertion).
+    fn inputs(&self) -> std::ops::Range<usize> {
+        match self.kind {
+            Kind::Single(_) => 0..1,
+            Kind::Basin => 0..2,
+        }
+    }
+
+    /// The tanks a drain takes from: the output tanks of a Basin (its input tanks forbid extraction).
+    fn outputs(&self) -> std::ops::Range<usize> {
+        match self.kind {
+            Kind::Single(_) => 0..1,
+            Kind::Basin => 2..4,
+        }
+    }
+
+    /// `IFluidHandler.fill(stack, EXECUTE)`: into a tank that already holds the fluid, else the first with room, then
+    /// on to the next while some is left (`SmartFluidTankBehaviour`'s handler); how much went in.
+    pub fn fill(&mut self, fluid: &str, amount: i32) -> i32 {
+        let mut left = amount.max(0);
+        let range = self.inputs();
+        let holding = range.clone().filter(|&i| self.tanks[i].0.as_deref() == Some(fluid) && self.tanks[i].1 > 0);
+        let rest = range.clone().filter(|&i| self.tanks[i].1 == 0);
+        let order: Vec<usize> = holding.chain(rest).collect();
+        for index in order {
+            if left == 0 {
+                break;
+            }
+            let room = self.capacity(index) - self.tanks[index].1;
+            let put = left.min(room.max(0));
+            if put > 0 {
+                self.tanks[index].0 = Some(fluid.to_owned());
+                self.tanks[index].1 += put;
+                left -= put;
+            }
+        }
+        amount.max(0) - left
+    }
+
+    /// `IFluidHandler.drain(amount, EXECUTE)`: from the first tank with something in it; how much came out.
+    pub fn drain(&mut self, amount: i32) -> i32 {
+        for index in self.outputs() {
+            if self.tanks[index].1 > 0 {
+                let taken = amount.max(0).min(self.tanks[index].1);
+                self.tanks[index].1 -= taken;
+                if self.tanks[index].1 == 0 {
+                    self.tanks[index].0 = None;
+                }
+                return taken;
+            }
+        }
+        0
+    }
+
+    /// What a scene's instruction does (`CreativeSmartFluidTank.setContainedFluid` is for a Creative Fluid Tank only).
+    pub fn apply(&mut self, op: &Op) {
+        match op {
+            Op::Fill { fluid, amount } => {
+                self.fill(fluid, *amount);
+            }
+            Op::Drain { amount } => {
+                self.drain(*amount);
+            }
+            Op::Set { .. } => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod vessel_tests {
+    use super::*;
+
+    fn fill(fluid: &str, amount: i32) -> Op {
+        Op::Fill { fluid: fluid.into(), amount }
+    }
+
+    #[test]
+    fn an_item_drain_holds_1500_and_gives_back_what_it_holds() {
+        let mut drain = Vessel::new(Kind::of("create:item_drain").unwrap());
+        drain.apply(&fill("minecraft:water", 1800));
+        assert_eq!(drain.tanks, vec![(Some("minecraft:water".to_owned()), 1500)]);
+        drain.apply(&Op::Drain { amount: 500 });
+        assert_eq!(drain.tanks[0].1, 1000);
+        drain.apply(&Op::Drain { amount: 5000 });
+        assert_eq!(drain.tanks, vec![(None, 0)]);
+    }
+
+    #[test]
+    fn a_spout_refuses_a_second_fluid_while_it_holds_one() {
+        let mut spout = Vessel::new(Kind::of("create:spout").unwrap());
+        assert_eq!(spout.fill("create:chocolate", 1000), 1000);
+        assert_eq!(spout.fill("minecraft:lava", 1000), 0);
+        assert_eq!(spout.tanks[0], (Some("create:chocolate".to_owned()), 1000));
+    }
+
+    #[test]
+    fn a_basin_fills_its_input_tanks_and_the_second_fluid_takes_the_other() {
+        let mut basin = Vessel::new(Kind::Basin);
+        basin.apply(&fill("create:chocolate", 600));
+        basin.apply(&fill("minecraft:milk", 1000));
+        basin.apply(&fill("create:chocolate", 700));
+        assert_eq!(basin.tanks[0], (Some("create:chocolate".to_owned()), 1000));
+        assert_eq!(basin.tanks[1], (Some("minecraft:milk".to_owned()), 1000));
+        // Both are full of something else now: the rest has nowhere to go.
+        assert_eq!(basin.fill("minecraft:water", 100), 0);
+        // The output tanks are empty and nothing drains from the inputs.
+        basin.apply(&Op::Drain { amount: 500 });
+        assert_eq!(basin.tanks[0].1, 1000);
+        assert_eq!(basin.tanks[2], (None, 0));
+    }
+
+    #[test]
+    fn only_these_blocks_are_vessels() {
+        assert_eq!(Kind::of("create:basin"), Some(Kind::Basin));
+        assert_eq!(Kind::of("create:fluid_tank"), None);
+    }
+}
