@@ -1,6 +1,7 @@
 //! Client-side Ponder hooks. Inventory Ponder keeps the underlying menu open.
 
 mod archive;
+mod crafters;
 mod archive_models;
 mod render;
 mod scene;

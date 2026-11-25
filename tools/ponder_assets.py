@@ -112,6 +112,16 @@ def tank_data(raw):
     return list(rows.values())
 
 
+def board_data(raw):
+    """Each Display Board's controller as `[pos, x size, y size]` (`FlapDisplayBlockEntity.write`): the block whose
+    `Controller` is set holds the text of the whole board."""
+    nbt = read_nbt(raw)
+    palette = [entry["Name"] for entry in nbt["palette"]]
+    return [[list(entry["pos"]), entry["nbt"].get("XSize", 1), entry["nbt"].get("YSize", 1)]
+            for entry in nbt["blocks"]
+            if palette[entry["state"]] == "create:display_board" and entry.get("nbt", {}).get("Controller")]
+
+
 def model_resolver(jar):
     entries = set(jar.namelist())
 
@@ -319,7 +329,8 @@ def import_ponder(jar, content):
                 end += 100
         arms = arm_points(jar.read(f"assets/create/ponder/{path}.nbt"))
         tanks = tank_data(jar.read(f"assets/create/ponder/{path}.nbt"))
-        timeline = dict(size=size, palette=palette, blocks=blocks, speeds=speeds, events=events, models=fallback, arms=arms, tanks=tanks, duration=max(80, end),
+        boards = board_data(jar.read(f"assets/create/ponder/{path}.nbt"))
+        timeline = dict(size=size, palette=palette, blocks=blocks, speeds=speeds, events=events, models=fallback, arms=arms, tanks=tanks, boards=boards, duration=max(80, end),
                         bounds=scene.pop("bounds"), scale=scene.pop("scale"), offset=scene.pop("offset"))
         (output / scene["file"]).write_text(json.dumps(timeline, separators=(",", ":")), encoding="utf-8")
     (output / "catalog.json").write_text(json.dumps(catalogue, separators=(",", ":")), encoding="utf-8")

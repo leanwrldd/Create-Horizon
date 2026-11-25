@@ -151,12 +151,14 @@ UNKNOWN = object()
 # `FluidStack`'s first argument: Create's own fluids and the vanilla ones the storyboards use, as (name, id). A flowing
 # fluid is its source here: the scene shows the fluid, not its level.
 FLUIDS = {"AllFluids.CHOCOLATE": ("chocolate", "create:chocolate"), "AllFluids.HONEY": ("honey", "create:honey"),
-          "Fluids.WATER": ("water", "minecraft:water"), "Fluids.LAVA": ("lava", "minecraft:lava"),
+          "NeoForgeMod.MILK": ("milk", "neoforge:milk"), "Fluids.WATER": ("water", "minecraft:water"), "Fluids.LAVA": ("lava", "minecraft:lava"),
           "Fluids.FLOWING_LAVA": ("lava", "minecraft:lava")}
 
 
 def fluid_of(source):
     """The fluid a `new FluidStack(...)` expression names."""
+    if (milk := re.search(r"\bNeoForgeMod\.MILK\b", source)):
+        return FLUIDS["NeoForgeMod.MILK"]
     match = re.search(r"\b(AllFluids|Fluids)\.([A-Z_]+)", source)
     if not match:
         return None
@@ -168,6 +170,24 @@ def fluid_of(source):
 
 # The Fluid Tank blocks the fluid instructions can act on (`FluidTankBlockEntity`, `CreativeFluidTankBlockEntity`).
 TANKS = {"create:fluid_tank", "create:creative_fluid_tank"}
+# The other blocks a scene fills and drains through their fluid capability (`rules::ponder_fluid::Vessel`).
+VESSELS = {"create:item_drain", "create:spout", "create:basin"}
+# `BrassTunnelBlockEntity.SelectionMode`, in order: read from the source when the storyboards are generated.
+SELECTION_MODES = ["SPLIT", "FORCED_SPLIT", "ROUND_ROBIN", "FORCED_ROUND_ROBIN", "PREFER_NEAREST", "RANDOMIZE", "SYNCHRONIZE"]
+
+
+def selection_modes(create):
+    """The mode names in the enum's order, `SELECTION_MODES` when the source does not have them."""
+    path = create / "content/logistics/tunnel/BrassTunnelBlockEntity.java"
+    if path.exists():
+        match = re.search(r"enum SelectionMode[^{]*\{(.*?);", path.read_text(encoding="utf-8"), re.S)
+        if match:
+            return re.findall(r"^\s*([A-Z_]+)\(", match[1], re.M) or SELECTION_MODES
+    return SELECTION_MODES
+
+
+# The block a scene's crafter instructions act on (`MechanicalCrafterBlockEntity`).
+CRAFTER = "create:mechanical_crafter"
 
 
 class Links(list):
@@ -283,6 +303,9 @@ class Storyboard:
             if isinstance(left, tuple) and left[:1] == ("old",) and operator in {"+", "-"} \
                     and isinstance(right, int) and not isinstance(right, bool):
                 return ("old", left[1], left[2] + (right if operator == "+" else -right))
+            if operator == "+" and UNKNOWN not in (left, right) and (isinstance(left, str) or isinstance(right, str)) \
+                    and all(isinstance(v, (str, int, float)) and not isinstance(v, bool) for v in (left, right)):
+                return java_text(left) + java_text(right)
             if UNKNOWN not in (left, right):
                 operators = {
                     "+": lambda: left + right, "-": lambda: left - right,
@@ -313,6 +336,8 @@ class Storyboard:
                 self.env[name] = value
             return value
         if kind == "field_access":
+            if source == "CommonComponents.EMPTY":
+                return ("text", "")
             if ids := self.registry.items(node):
                 return ("id", ids[0], {})
             prefix, _, field_name = source.rpartition(".")
@@ -342,6 +367,9 @@ class Storyboard:
                 amount = args[1] if len(args) > 1 and isinstance(args[1], int) and not isinstance(args[1], bool) else 0
                 return ("fluid", fluid[0], amount, fluid[1])
             if name == "ItemStack" and args and isinstance(args[0], tuple) and args[0][0] == "id":
+                # `new ItemStack(item, count)`: the count is a fourth element, which a stack without one leaves out.
+                if len(args) == 2 and isinstance(args[1], int) and not isinstance(args[1], bool) and args[1] != 1:
+                    return (*args[0][:3], args[1])
                 return args[0]
             if name == "AABB":
                 if numbers(args, 6):
@@ -394,6 +422,35 @@ class Storyboard:
         if target_text == "FluidHelper" and name == "copyStackWithAmount" and len(values) == 2 \
                 and isinstance(values[0], tuple) and values[0][:1] == ("fluid",) and isinstance(values[1], int):
             return ("fluid", values[0][1], values[1], values[0][3])
+
+        # The boxes `chaseBoundingBoxOutline` outlines: shapes the storyboard asks for by name and what `AABB` does to one.
+        if name == "bounds" and not values:
+            # `AllShapes.CASING_13PX.get(direction).bounds()`: the casing 13 pixels tall.
+            if target_text.startswith("AllShapes.CASING_13PX.get("):
+                return ("aabb", (0, 0, 0), (1, 13 / 16, 1))
+            # A Shaft's shape (`SIX_VOXEL_POLE`): six pixels across the middle, the length of the block.
+            if "AllBlocks.SHAFT.getDefaultState()" in target_text and (axis := re.search(r"ShaftBlock\.AXIS, ?Axis\.([XYZ])", target_text)):
+                low, high = [0.375] * 3, [0.625] * 3
+                low["xyz".index(axis[1].lower())], high["xyz".index(axis[1].lower())] = 0, 1
+                return ("aabb", tuple(low), tuple(high))
+        if isinstance(value, tuple) and value[:1] == ("aabb",) and name in AABB_METHODS:
+            return aabb_method(value, name, values)
+        # Text a board shows: `Component.literal`, `CreateLang.translateDirect(key)`, `stack.getHoverName()` and `append`
+        # make a list of parts the player words from the language: `["lit", text]`, `["lang", key]`, `["name", item]`.
+        if target_text == "CreateLang" and name == "translateDirect" and len(values) == 1 and isinstance(values[0], str):
+            return ("lang", "create." + values[0])
+        if isinstance(value, tuple) and value[:1] == ("id",) and name in {"getHoverName", "asStack"} and not values:
+            return ("name", value[1]) if name == "getHoverName" else value
+        if isinstance(value, tuple) and value[:1] in {("text",), ("lang",), ("name",), ("parts",)} and name == "append" \
+                and len(values) == 1 and isinstance(values[0], tuple) and values[0][:1] in {("text",), ("lang",), ("name",), ("parts",)}:
+            return ("parts", text_parts(value) + text_parts(values[0]))
+
+        # `stack.copy()` is the stack; `stack.copyWithCount(n)` is the stack of `n`.
+        if isinstance(value, tuple) and value[:1] == ("id",) and name in {"copy", "copyWithCount"}:
+            if name == "copy" and not values:
+                return value
+            if name == "copyWithCount" and len(values) == 1 and isinstance(values[0], int) and not isinstance(values[0], bool):
+                return (*value[:3], values[0])
 
         # `PackageItem.containing(...)` picks a random style (`PackageStyles.getRandomBox`): the first one stands for it.
         if target_text == "PackageItem" and name == "containing":
@@ -621,6 +678,28 @@ class Storyboard:
                     return None
             elif owner == "NBTHelper" and name == "writeEnum" and len(args) == 3 and text(args[0]) == param:
                 entries[java_string(args[1])] = ["s", text(args[2]).split(".")[-1]]
+            # `put("HeldItem", new TransportedItemStack(stack).serializeNBT(..))`: a Depot holding the stack.
+            elif owner == param and name == "put" and len(args) == 2 and java_string(args[0]) == "HeldItem" \
+                    and text(args[1]).startswith("new TransportedItemStack("):
+                made = field(args[1], "object")
+                stack = self.value(field(made, "arguments").named_children[0]) if made is not None else UNKNOWN
+                if not (isinstance(stack, tuple) and stack[0] == "id"):
+                    return None
+                entries["HeldItem"] = ["held", stack[1]]
+            # `put("VisualizedItems", NBTHelper.writeCompoundList(List.of(IntAttached.with(n, stack)), ..))`: the stacks a
+            # Basin is giving out (`BasinBlockEntity.visualizedOutputItems`).
+            elif owner == param and name == "put" and len(args) == 2 and java_string(args[0]) == "VisualizedItems":
+                stacks = []
+                for attached in method_calls_all(args[1]):
+                    attached_name, attached_target, attached_args = invocation(attached)
+                    if text(attached_target) == "IntAttached" and attached_name == "with" and len(attached_args) == 2:
+                        stack = self.value(attached_args[1])
+                        if not (isinstance(stack, tuple) and stack[0] == "id"):
+                            return None
+                        stacks.append(stack[1])
+                if not stacks:
+                    return None
+                entries["VisualizedItems"] = ["items", stacks]
             elif owner == param and name == "put" and len(args) == 2 and args[1].type == "method_invocation" \
                     and text(field(args[1], "name")) == "saveOptional":
                 holder = field(args[1], "object")
@@ -656,6 +735,48 @@ class Storyboard:
             value = self.value(field(body, "right"))
             if left.startswith(param + ".") and left[len(param) + 1:] in keys and isinstance(value, bool):
                 return {keys[left[len(param) + 1:]]: ["b", value]}
+        return None
+
+    def crafter_rows(self, node, positions):
+        """Emits the `crafter` row for a `be -> ...` lambda that acts on the Mechanical Crafters at `positions`.
+
+        `getInventory().insertItem(0, stack, false)` puts one item in a crafter's slot (the slot holds one);
+        `getInventory().setItem(0, stack)` sets it; `insertItemStacked(handler, stack, false)` through the item handler
+        of a crafter spreads the stack over its joined crafters; `checkCompletedRecipe(true)` and `ejectWholeGrid()` are
+        the calls themselves. All of them need the blocks to be crafters, as the structure has them.
+        """
+        if not all(self.blocks.get(tuple(int(v) for v in pos)) == CRAFTER for pos in positions):
+            return False
+        body = re.sub(r"\s+", " ", text(node))
+        stacked = lambda name: self.env.get(name) if isinstance(self.env.get(name), tuple) and self.env[name][:1] == ("id",) else None
+        for pattern, kind in ((r"getInventory\(\) ?\.insertItem\( ?0, ?(\w+)(?:\.copy\(\))?, ?false ?\)", "insert"),
+                              (r"getInventory\(\) ?\.setItem\( ?0, ?(\w+) ?\)", "set"),
+                              (r"insertItemStacked\( ?\w+, ?(\w+), ?false ?\)", "stack")):
+            if (match := re.search(pattern, body)) and (stack := stacked(match[1])):
+                self.emit("crafter", kind, [list(pos) for pos in positions], stack[1], stack[3] if len(stack) > 3 else 1)
+                return True
+        for call, kind in (("checkCompletedRecipe(true)", "check"), ("ejectWholeGrid()", "eject")):
+            if call in body:
+                self.emit("crafter", kind, [list(pos) for pos in positions], "", 0)
+                return True
+        return False
+
+    def tunnel_entries(self, node, positions):
+        """Data for a Brass Tunnel's `be.getBehaviour(..)` statements: the mode (`ScrollOptionBehaviour.setValue` of a
+        `SelectionMode`'s ordinal, saved as `ScrollValue`) and a side's filter (`SidedFilteringBehaviour.setFilter`,
+        saved under `Filters` by side, an empty stack taking the filter off)."""
+        if not all(self.blocks.get(tuple(int(v) for v in pos)) == "create:brass_tunnel" for pos in positions):
+            return None
+        body = re.sub(r"\s+", " ", text(node))
+        if match := re.search(r"getBehaviour\(ScrollOptionBehaviour\.TYPE\) ?\.setValue\( ?\w*\.?SelectionMode\.(\w+)\.ordinal\(\) ?\)", body):
+            if match[1] in SELECTION_MODES:
+                return {"ScrollValue": ["i", SELECTION_MODES.index(match[1])]}
+        if match := re.search(r"getBehaviour\(SidedFilteringBehaviour\.TYPE\) ?\.setFilter\( ?Direction\.(\w+), ?([\w.]+) ?\)", body):
+            stack = self.env.get(match[2])
+            if match[2] == "ItemStack.EMPTY":
+                return {"Filters": ["filters", {match[1].lower(): ""}]}
+            if isinstance(stack, tuple) and stack[:1] == ("id",):
+                return {"Filters": ["filters", {match[1].lower(): stack[1]}]}
         return None
 
     def press_burst(self, node):
@@ -879,7 +1000,9 @@ class Storyboard:
         if name == "modifyBlockEntity" and len(args) == 3 and args[2].type == "lambda_expression":
             positions = [selected] if isinstance(selected, tuple) and numbers(selected, 3) else selected
             if isinstance(positions, list) and positions:
-                entries = self.entity_entries(args[2])
+                if self.crafter_rows(args[2], positions):
+                    return UNKNOWN
+                entries = self.tunnel_entries(args[2], positions) or self.entity_entries(args[2])
                 if entries:
                     self.emit("nbt", positions, entries)
                     return UNKNOWN
@@ -889,9 +1012,27 @@ class Storyboard:
                     return UNKNOWN
                 # Fluid in a Fluid Tank: the tank rules (`rules::ponder_fluid`) replay it.
                 fluid = self.fluid_op(args[2])
-                if fluid and all(self.blocks.get(tuple(int(v) for v in pos)) in TANKS for pos in positions):
+                if fluid and all(self.blocks.get(tuple(int(v) for v in pos)) in TANKS | VESSELS for pos in positions):
                     self.emit("fluid", positions, *fluid)
                     return UNKNOWN
+        # `setCraftingResult(crafter, stack)` is `setScriptedResult`; `connectCrafterInvs(a, b)` toggles the two crafters'
+        # joined inventory (`ConnectedInputHandler.toggleConnection`). The replay of the crafters is `rules::ponder_crafter`.
+        if name == "setCraftingResult" and numbers(selected, 3) and isinstance(section, tuple) and section[:1] == ("id",):
+            self.emit("crafter", "result", [list(selected)], section[1], section[3] if len(section) > 3 else 1)
+            return UNKNOWN
+        if name == "connectCrafterInvs" and numbers(selected, 3) and numbers(section, 3):
+            self.emit("crafter", "connect", [list(selected), list(section)], "", 0)
+            return UNKNOWN
+        # `setDisplayBoardText(board, line, text)` is `FlapDisplayBlockEntity.applyTextManually` and `dyeDisplayBoard`
+        # `setColour` (white clears it): the board's controller shows them.
+        if name == "setDisplayBoardText" and numbers(selected, 3) and isinstance(section, int) and len(values) == 3 \
+                and isinstance(values[2], tuple) and values[2][:1] in {("text",), ("lang",), ("name",), ("parts",)}:
+            self.emit("board", "text", [list(selected)], section, text_parts(values[2]))
+            return UNKNOWN
+        if name == "dyeDisplayBoard" and numbers(selected, 3) and isinstance(section, int) and len(values) == 3 \
+                and isinstance(values[2], str):
+            self.emit("board", "dye", [list(selected)], section, values[2])
+            return UNKNOWN
         # `flashDisplayLink(pos)` is `LinkWithBulbBlockEntity.pulse`: the bulb glows from now on.
         if name == "flashDisplayLink" and numbers(selected, 3):
             self.emit("pulse", [selected])
@@ -976,6 +1117,61 @@ def highlight_box(name, values):
     return (tuple(c - e for c, e in zip(centre, extent)), tuple(c + e for c, e in zip(centre, extent)))
 
 
+AABB_METHODS = {"move", "inflate", "deflate", "contract", "expandTowards", "getCenter"}
+
+
+def aabb_method(box, name, values):
+    """`AABB.move`, `inflate`, `deflate`, `contract`, `expandTowards` and `getCenter` of a `("aabb", low, high)`."""
+    _, low, high = box
+    if name == "getCenter" and not values:
+        return tuple((a + b) / 2 for a, b in zip(low, high))
+    if len(values) == 1 and isinstance(values[0], tuple) and numbers(values[0], 3):
+        values = list(values[0])
+    elif len(values) == 1 and isinstance(values[0], (int, float)) and not isinstance(values[0], bool) and name in {"inflate", "deflate"}:
+        values = [values[0]] * 3
+    if not numbers(values, 3):
+        return UNKNOWN
+    low, high = list(low), list(high)
+    for axis, amount in enumerate(values):
+        if name == "move":
+            low[axis] += amount
+            high[axis] += amount
+        elif name in {"inflate", "deflate"}:
+            amount = amount if name == "inflate" else -amount
+            low[axis] -= amount
+            high[axis] += amount
+        elif name == "expandTowards":
+            # Towards a negative amount the low side grows, towards a positive one the high side.
+            if amount < 0:
+                low[axis] += amount
+            else:
+                high[axis] += amount
+        else:
+            # `contract` shrinks: a negative amount raises the low side, a positive one lowers the high side.
+            if amount < 0:
+                low[axis] -= amount
+            else:
+                high[axis] -= amount
+    return ("aabb", tuple(low), tuple(high))
+
+
+def java_text(value):
+    """`"" + value` as Java writes it: a whole number without a point."""
+    if isinstance(value, float) and value == int(value):
+        return str(int(value))
+    return str(value)
+
+
+def text_parts(value):
+    """The parts of a board's text: `[["lit", text], ["lang", key], ["name", item]]`."""
+    kind = value[0]
+    if kind == "parts":
+        return value[1]
+    if kind == "text":
+        return [["lit", value[1]]] if value[1] else []
+    return [[kind if kind != "text" else "lit", value[1]]]
+
+
 def numbers(values, length):
     return isinstance(values, (list, tuple)) and len(values) == length and all(isinstance(value, (int, float)) for value in values)
 
@@ -1033,6 +1229,7 @@ def generate(create, jar, output, models_output):
     parse = lambda path: parser.parse(path.read_bytes()).root_node
     directory = create / "infrastructure/ponder"
     registry = Registry(create)
+    SELECTION_MODES[:] = selection_modes(create)
     index = registrations(parse(directory / "AllCreatePonderScenes.java"), registry)
     groups = tags(parse(directory / "AllCreatePonderTags.java"), registry)
     method_groups = {}

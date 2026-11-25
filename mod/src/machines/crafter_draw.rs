@@ -81,7 +81,8 @@ pub fn submit(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
     };
     let covered = util::boolean(nbt, COVERED);
     let draw = &mut *event.draw;
-    let now = draw.game_time as f32 + draw.partial;
+    // A Ponder scene counts from its own tick (`Since` is a scene tick there).
+    let now = crate::float(nbt, crate::ponder::TICK).unwrap_or(draw.game_time as f32 + draw.partial);
     let count_down = rules::estimated_count_down(
         util::int(nbt, ANCHOR),
         speed,

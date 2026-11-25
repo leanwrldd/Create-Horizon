@@ -78,6 +78,25 @@ pub fn with_props_nbt<R>(host: &dyn Host, pos: Pos, block: &str, nbt: Option<&Co
     f(&Props::new(block, &get))
 }
 
+/// [`with_props_nbt`] for a block entity that draws itself with the state it is given, which is not always the one at
+/// `pos` in the world (a Ponder scene's blocks are not in it).
+pub fn with_state_nbt<R>(
+    host: &dyn Host,
+    state: crate::compat::BlockStateId,
+    pos: Pos,
+    block: &str,
+    nbt: Option<&Compound>,
+    f: impl FnOnce(&Props) -> R,
+) -> R {
+    let get = |key: &str| -> Option<String> {
+        match key.strip_prefix("fact:") {
+            Some(fact) => fact_of(host, pos, block, nbt, fact),
+            None => host.block_state_property(state, key).map(str::to_owned),
+        }
+    };
+    f(&Props::new(block, &get))
+}
+
 /// [`with_props_nbt`] with the block entity read from the host, its data handed on too.
 pub fn with_props<R>(host: &dyn Host, pos: Pos, block: &str, f: impl FnOnce(&Props, Option<&Compound>) -> R) -> R {
     let entity = host.mod_block_entity(pos);

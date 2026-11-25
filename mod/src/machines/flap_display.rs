@@ -136,7 +136,7 @@ pub fn read_board(nbt: &Compound) -> Option<Board> {
     Some(board)
 }
 
-fn write_board(nbt: &mut Compound, board: &Board) {
+pub fn write_board(nbt: &mut Compound, board: &Board) {
     nbt.insert(CONTROLLER.into(), Tag::Byte(1));
     nbt.insert(X_SIZE.into(), Tag::Int(board.x_size));
     nbt.insert(Y_SIZE.into(), Tag::Int(board.y_size));
