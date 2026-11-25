@@ -64,6 +64,8 @@ pub const TIME: &str = "Time";
 pub const INITIAL_YAW: &str = "InitialYaw";
 pub const BOGEYS: &str = "Bogeys";
 pub const DERAILED: &str = "Derailed";
+/// The local positions of the burners that wear the Train Hat (`BlazeBurnerMovementBehaviour.shouldRenderHat`).
+pub const HATS: &str = "Hats";
 
 struct Draw;
 
@@ -131,6 +133,25 @@ pub fn write_pose(nbt: &mut Compound, motion: &Motion, initial_yaw: f32, spacing
     nbt.insert(BOGEYS.into(), Tag::List(list));
 }
 
+/// Saves which burners wear the hat; the pose's own write leaves it alone.
+pub fn write_hats(nbt: &mut Compound, hats: &[Pos]) {
+    let list = hats.iter().map(|p| Tag::IntArray(p.to_vec())).collect();
+    nbt.insert(HATS.into(), Tag::List(list));
+}
+
+fn hats_of(nbt: &Compound) -> Vec<Pos> {
+    match util::get(nbt, HATS) {
+        Some(Tag::List(list)) => list
+            .iter()
+            .filter_map(|t| match t {
+                Tag::IntArray(v) if v.len() == 3 => Some([v[0], v[1], v[2]]),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn motion_of(nbt: &Compound) -> Option<Motion> {
     Some(Motion {
         position: doubles_of(nbt, POSITION)?,
@@ -183,7 +204,7 @@ fn apply(draw: &mut BlockEntityDraw, ops: &[Op], pivot: [f32; 3]) {
     }
 }
 
-fn draw_structure(host: &dyn Host, draw: &mut BlockEntityDraw, parsed: &engine::Parsed) {
+fn draw_structure(host: &dyn Host, draw: &mut BlockEntityDraw, parsed: &engine::Parsed, hats: &[Pos]) {
     for block in &parsed.moving.blocks {
         draw.push();
         draw.translate([block.local[0] as f32, block.local[1] as f32, block.local[2] as f32]);
@@ -195,6 +216,8 @@ fn draw_structure(host: &dyn Host, draw: &mut BlockEntityDraw, parsed: &engine::
         } else {
             engine::draw_state(host, draw, &block.state);
         }
+        // The burner's head, in a hat when it conducts a train that has a schedule (`Hats`, written by `trains.rs`).
+        super::burner::draw_in_structure(host, draw, &block.state, block.local, hats.contains(&block.local));
         draw.pop();
     }
 }
@@ -362,7 +385,7 @@ fn submit(host: &dyn Host, event: &mut BlockEntitySubmitEvent<'_>) {
     // The structure, turned about its first block's middle (`applyLocalTransforms`).
     draw.push();
     apply(draw, &pose::carriage_ops(at.yaw, at.pitch, initial_yaw), CENTRE.map(|v| v as f32));
-    draw_structure(host, draw, &parsed);
+    draw_structure(host, draw, &parsed, &hats_of(nbt));
     draw.pop();
     // The bogeys (`translateBogey`) from the entity's position.
     let leading_upside_down = bogeys.iter().find(|b| b.leading).is_some_and(|b| b.upside_down);

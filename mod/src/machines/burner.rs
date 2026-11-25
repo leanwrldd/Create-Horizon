@@ -13,7 +13,8 @@
 //! - Flint and steel, shovels and soul sand do not wear or spend anything, and an egg thrown at
 //!   the burner (`BlazeBurnerHandler`) and a splash of water on a lit one are not handled (no
 //!   projectile hook).
-//! - Goggles on the burner (`BlazeBurnerBlock.useItemOn`), the train hat and the stock keeper's look are missing; the head always turns to the
+//! - Goggles on the burner (`BlazeBurnerBlock.useItemOn`) and the stock keeper's look are missing (the Train Hat is drawn on a carriage's
+//!   conducting burner and where `TrainHat` is in the data); the head always turns to the
 //!   burner's `facing` rather than to the nearest player, the head's rise over a basin is instant,
 //!   and the flame sprite does not scroll (`BlazeBurnerRenderer.renderShared`).
 //! - Capturing a Blaze works by right-clicking the mob or a spawner that can spawn Blazes (found
@@ -25,7 +26,7 @@ use create_kinetics::rules::basin::HeatLevel;
 use create_kinetics::rules::burner::{self as rules, Burner, FuelType, SPECIAL_BURN_TIME};
 use create_kinetics::Dir;
 use crate::compat::{
-    BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
+    BlockEntityDraw, BlockEntityEvent, BlockEntitySubmitEvent, BlockEntityTickEvent, BlockEntityTicksEvent,
     BlockEntityUpdateTagEvent, Compound, EquipmentSlot, Flow, Hooks, Host, InteractEntityEvent,
     ItemStack, LevelHost, RightClickBlockEvent, StandaloneModelsEvent, StateForPlacementEvent, Tag,
     UseItemOnEvent,
@@ -34,6 +35,8 @@ use crate::compat::{
 use crate::util;
 
 const ID: &str = "create:blaze_burner";
+/// `BlazeBurnerBlockEntity.hat`'s saved key.
+const TRAIN_HAT: &str = "TrainHat";
 const LIT: &str = "create:lit_blaze_burner";
 const EMPTY_ITEM: &str = "create:empty_blaze_burner";
 const BLAZE_CAKE: &str = "create:blaze_cake";
@@ -285,6 +288,89 @@ fn horizontal_angle(facing: Dir) -> f32 {
     }
 }
 
+/// What `BlazeBurnerRenderer.renderShared` takes: the heat, where the head faces, the render time, the block's hash, the head's
+/// lift and whether it wears the Train Hat.
+#[derive(Clone, Copy)]
+pub(super) struct Head {
+    pub heat: HeatLevel,
+    pub facing: Dir,
+    pub time: f32,
+    pub hash: f32,
+    pub animation: f32,
+    pub hat: bool,
+}
+
+/// `BlazeBurnerRenderer.renderShared`'s `hashCode % 13` input, from the block's position.
+pub(super) fn hash_of(x: i32, y: i32, z: i32) -> f32 {
+    (x.wrapping_mul(73_856_093) ^ y.wrapping_mul(19_349_663) ^ z.wrapping_mul(83_492_791)).unsigned_abs() as f32
+}
+
+/// The head, the Train Hat and the rods of a burner, in the block's own frame (`renderShared`).
+pub(super) fn draw_head(host: &dyn Host, draw: &mut BlockEntityDraw, head: &Head) {
+    let Head { heat, facing, time, hash, animation, hat } = *head;
+    let block_above = animation > 0.125;
+    let render_tick = time + (hash % 13.0) * 16.0;
+    let offset_mult = if heat.is_at_least(HeatLevel::Fading) { 64.0 } else { 16.0 };
+    let phase = (render_tick / 16.0) % (2.0 * std::f32::consts::PI);
+    let offset = phase.sin() / offset_mult;
+    let offset1 = (phase + std::f32::consts::PI).sin() / offset_mult;
+    let offset2 = (phase + std::f32::consts::FRAC_PI_2).sin() / offset_mult;
+    let head_y = offset - animation * 0.75;
+    let angle = (horizontal_angle(facing) + 180.0) % 360.0;
+    let light = draw.light;
+    draw.light = FULL_BRIGHT;
+    draw.push();
+    draw.translate([0.0, head_y, 0.0]);
+    draw.rotate_about([0.0, 1.0, 0.0], angle, CENTRE);
+    host.draw_model(draw, blaze_model(heat, block_above), 0xFF_FFFF);
+    draw.pop();
+    if hat {
+        // The hat sits up the head's height, scaled about the centre for the small head, turned half a turn past the head.
+        let placement = create_kinetics::rules::trains::schedule_hand::hat_placement(blaze_model(heat, block_above) == INERT);
+        draw.push();
+        draw.translate([0.0, head_y + placement.lift, 0.0]);
+        if let Some(scale) = placement.scale {
+            draw.translate(CENTRE);
+            draw.scale([scale; 3]);
+            draw.translate([-0.5; 3]);
+        }
+        draw.rotate_about([0.0, 1.0, 0.0], angle + 180.0, CENTRE);
+        draw.translate([0.5, 0.0, 0.5]);
+        host.draw_model(draw, create_kinetics::rules::trains::train_hat::MODEL, 0xFF_FFFF);
+        draw.pop();
+    }
+    if heat.is_at_least(HeatLevel::Fading) {
+        let (small, large) = if heat == HeatLevel::Seething { (SUPER_RODS, SUPER_RODS_2) } else { (RODS, RODS_2) };
+        draw.push();
+        draw.translate([0.0, offset1 + animation + 0.125, 0.0]);
+        host.draw_model(draw, small, 0xFF_FFFF);
+        draw.pop();
+        draw.push();
+        draw.translate([0.0, offset2 + animation - 3.0 / 16.0, 0.0]);
+        host.draw_model(draw, large, 0xFF_FFFF);
+        draw.pop();
+    }
+    draw.light = light;
+}
+
+/// `BlazeBurnerRenderer.renderInContraption`: a burner on a moving structure (the block entity doesn't render there), at least
+/// the idle head, no lift. The head faces the block's own facing (Create turns it to the nearest player, or the way a train goes).
+pub(super) fn draw_in_structure(host: &dyn Host, draw: &mut BlockEntityDraw, state: &create_kinetics::rules::contraption::State, local: [i32; 3], hat: bool) {
+    if !state.is(ID) {
+        return;
+    }
+    let Some(mut heat) = state.get("blaze").and_then(HeatLevel::from_name) else { return };
+    if heat == HeatLevel::None {
+        return;
+    }
+    if !heat.is_at_least(HeatLevel::Fading) {
+        heat = HeatLevel::Fading;
+    }
+    let facing = state.dir("facing").unwrap_or(Dir::South);
+    let time = draw.game_time as f32 + draw.partial;
+    draw_head(host, draw, &Head { heat, facing, time, hash: hash_of(local[0], local[1], local[2]), animation: 0.0, hat });
+}
+
 /// `BlazeBurnerRenderer.getBlazeModel`.
 fn blaze_model(heat: HeatLevel, block_above: bool) -> &'static str {
     if heat.is_at_least(HeatLevel::Seething) {
@@ -348,7 +434,13 @@ impl Hooks for BlazeBurner {
 
     /// Clients draw from the block's state alone.
     fn block_entity_update_tag(&self, event: &mut BlockEntityUpdateTagEvent<'_>) -> Option<Compound> {
-        (event.entity.id == ID).then(Compound::new)
+        (event.entity.id == ID).then(|| {
+            let mut tag = Compound::new();
+            if util::boolean(&event.entity.nbt, TRAIN_HAT) {
+                tag.insert(TRAIN_HAT.into(), Tag::Byte(1));
+            }
+            tag
+        })
     }
 
     /// `BlazeBurnerRenderer.renderShared`: the head bobs over the cage, the rods circle it.
@@ -378,41 +470,9 @@ impl Hooks for BlazeBurner {
         };
         // `headAnimation * .175`: the head lifts when a basin is above a burner that heats it.
         let animation = if above && heat.is_at_least(HeatLevel::Fading) { 0.175 } else { 0.0 };
-        let block_above = animation > 0.125;
-        let hash = (x.wrapping_mul(73_856_093) ^ y.wrapping_mul(19_349_663) ^ z.wrapping_mul(83_492_791))
-            .unsigned_abs() as f32;
-        let render_tick = time + (hash % 13.0) * 16.0;
-        let offset_mult = if heat.is_at_least(HeatLevel::Fading) { 64.0 } else { 16.0 };
-        let phase = (render_tick / 16.0) % (2.0 * std::f32::consts::PI);
-        let offset = phase.sin() / offset_mult;
-        let offset1 = (phase + std::f32::consts::PI).sin() / offset_mult;
-        let offset2 = (phase + std::f32::consts::FRAC_PI_2).sin() / offset_mult;
-        let head_y = offset - animation * 0.75;
-        let angle = (horizontal_angle(facing) + 180.0) % 360.0;
-
-        let light = draw.light;
-        draw.light = FULL_BRIGHT;
-        draw.push();
-        draw.translate([0.0, head_y, 0.0]);
-        draw.rotate_about([0.0, 1.0, 0.0], angle, CENTRE);
-        host.draw_model(draw, blaze_model(heat, block_above), 0xFF_FFFF);
-        draw.pop();
-        if heat.is_at_least(HeatLevel::Fading) {
-            let (small, large) = if heat == HeatLevel::Seething {
-                (SUPER_RODS, SUPER_RODS_2)
-            } else {
-                (RODS, RODS_2)
-            };
-            draw.push();
-            draw.translate([0.0, offset1 + animation + 0.125, 0.0]);
-            host.draw_model(draw, small, 0xFF_FFFF);
-            draw.pop();
-            draw.push();
-            draw.translate([0.0, offset2 + animation - 3.0 / 16.0, 0.0]);
-            host.draw_model(draw, large, 0xFF_FFFF);
-            draw.pop();
-        }
-        draw.light = light;
+        // `be.hat` (`TrainHat` in the data, set by Ponder's scenes).
+        let hat = util::boolean(&event.entity.nbt, TRAIN_HAT);
+        draw_head(host, draw, &Head { heat, facing, time, hash: hash_of(x, y, z), animation, hat });
         // The bobbing reads the game time: nothing here is kept.
     }
 

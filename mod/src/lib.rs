@@ -889,6 +889,10 @@ impl mod_api::Hooks for Mod {
         compat::world::run_mod_command(host, event)
     }
 
+    fn client_setup(&self, host: &mut dyn mod_api::ClientHost, _: &mut mod_api::ClientSetupEvent) {
+        machines::train_hat::client_setup(host)
+    }
+
     fn register_entity_layers(&self, _: &mod_api::RegistrationContext, event: &mut mod_api::RegisterEntityLayersEvent<'_>) {
         machines::train_hat::register_entity_layers(event)
     }

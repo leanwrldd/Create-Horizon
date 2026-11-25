@@ -902,6 +902,8 @@ pub fn draw_blocks(host: &dyn Host, draw: &mut BlockEntityDraw, parsed: &Parsed,
             base[2] + block.local[2] as f32,
         ]);
         draw_state(host, draw, &block.state);
+        // `BlazeBurnerMovementBehaviour.renderInContraption`: the burner's head (the block entity doesn't render here).
+        super::burner::draw_in_structure(host, draw, &block.state, block.local, false);
         super::actor_draw::draw_actor(host, draw, &block.state, block.local, motion);
         draw.pop();
     }

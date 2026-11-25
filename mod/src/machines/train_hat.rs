@@ -8,11 +8,14 @@
 //!   each player which entities wear the hat (`create:train_hats`, entity ids, from `player_tick`) and the layer looks the frame's
 //!   entity up in that list. The model is `create:entity/train_hat`, resolved with the other standalone models.
 //! - **What is covered**: the zombie family, the skeletons, villagers, the wandering trader and the illagers, and players
-//!   (`rules::trains::train_hat::TARGETS`). Create reads the head off any model's parts; a layer can't, so every other mob goes without.
-//! - **The Blaze Burner's hat** (`BlazeBurnerRenderer`'s `drawHat`, a carriage's conducting burner) is not drawn: a carriage's burner is a
-//!   block of the structure and the structure's draw (`train_draw.rs`) draws its blocks as models (`draw_block`), where the burner's head,
-//!   goggles and hat are a block entity renderer's partial models. The rules for it (`burner_wears_hat`, `hat_placement`) are in
-//!   `schedule_hand.rs`; the hat would have to be drawn there once the burner's head is.
+//!   (`rules::trains::train_hat::TARGETS`), each with a head written down. Every type in Create's `train_hat_info` data
+//!   (`rules::trains::train_hat_info::INFO`) too: a layer can't read the renderer's model as Create's does, so `client_setup` bakes the
+//!   type's vanilla layer (`bake_layer("minecraft:cow#main")`, and `cow_baby#main` for a baby), turns it into the tree the rules
+//!   walk (`ModelNode`) and keeps the head's mount; the layer looks its type up. Types whose layer has no head by that path
+//!   (pufferfish and tropical fish have a model per variant) get no hat. Piglins take Horizon's own head pose, the rest turn the
+//!   head's part with the entity's head angles. A baby's own model carries its size, so only the entity's `scale` is applied.
+//! - **The Blaze Burner's hat** (`BlazeBurnerRenderer.renderShared`) is drawn by `burner::draw_head` on a carriage's conducting burner
+//!   (`train_draw.rs` reads the `Hats` list `trains.rs` writes into the anchor, from `carriage_contraption::hat_burners`).
 //! - The head slot isn't read (`getHatFor` returns nothing for a mob that wears a helmet), nor is `TrainHat` in a mob's persistent data.
 //!
 //! Type-checked and unit-tested (the geometry) only: not played.
@@ -22,6 +25,8 @@ use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
 use create_kinetics::rules::trains::train_hat::{self as rules, HeadPose, HeadSource, Mount, Op};
 use crate::compat::{Hooks, Host, NetFromServerEvent, PlayerTickEvent};
+
+use create_kinetics::rules::trains::train_hat_info as info;
 
 use super::trains;
 use crate::util;
@@ -61,6 +66,92 @@ fn decode(data: &[u8]) -> Option<Vec<u32>> {
         return None;
     }
     Some(rest.chunks_exact(4).map(|c| u32::from_be_bytes([c[0], c[1], c[2], c[3]])).collect())
+}
+
+// --- the heads of the types Create has data for ------------------------------------------------------------------------------------
+
+/// What `client_setup` read of a type's model: the head of the adult and, where the game has one, the baby.
+#[derive(Default)]
+struct Baked {
+    adult: Option<info::ModelMount>,
+    baby: Option<info::ModelMount>,
+}
+
+static BAKED: LazyLock<Mutex<HashMap<String, Baked>>> = LazyLock::new(Mutex::default);
+
+/// A baked part as the rules' tree: its pose now (as baked), the boxes its faces make and its children.
+fn node_of(name: &str, part: &mod_api::ModelPart) -> info::ModelNode {
+    let faces: Vec<[[f32; 3]; 4]> = part.polygons.iter().map(|p| p.vertices.map(|v| v.pos)).collect();
+    info::ModelNode {
+        name: name.to_owned(),
+        pose: [part.x, part.y, part.z, part.x_rot, part.y_rot, part.z_rot, part.x_scale, part.y_scale, part.z_scale],
+        cubes: info::cubes_of(&faces),
+        children: part.children().map(|(n, c)| node_of(n, c)).collect(),
+    }
+}
+
+fn mount_of(host: &dyn mod_api::ClientHost, layer: &str, entity_type: &str) -> Option<info::ModelMount> {
+    let root = node_of("root", &host.bake_layer(layer)?);
+    info::resolve(&root, entity_type, &info::info_for(entity_type))
+}
+
+/// `FMLClientSetupEvent`: the vanilla layers are baked and the heads found, once.
+pub(crate) fn client_setup(host: &mut dyn mod_api::ClientHost) {
+    let mut table = lock(&BAKED);
+    for entity_type in info::types() {
+        let adult = mount_of(&*host, &format!("{entity_type}#main"), entity_type);
+        let baby = mount_of(&*host, &format!("{entity_type}_baby#main"), entity_type);
+        table.insert(entity_type.to_owned(), Baked { adult, baby });
+    }
+}
+
+/// The layer of a type whose head is in the table: `CreateHatArmorLayer` with `TrainHatInfo`.
+struct ModelLayer {
+    entity_type: String,
+}
+
+impl mod_api::EntityRenderLayer for ModelLayer {
+    fn submit(
+        &self,
+        entity: &mod_api::EntityRenderState,
+        parts: Option<&mod_api::PosedParts>,
+        draw: &mut dyn mod_api::BlockEntityDrawContext,
+    ) -> Result<(), String> {
+        if !lock(&WEARERS).contains(&entity.id) {
+            return Ok(());
+        }
+        let Some(model) = crate::compat::adapter::model(rules::MODEL) else { return Ok(()) };
+        let living = entity.living;
+        let baby = living.is_some_and(|l| l.is_baby);
+        let (mount, scale) = {
+            let table = lock(&BAKED);
+            let Some(baked) = table.get(&self.entity_type) else { return Ok(()) };
+            let scale = living.map_or(1.0, |l| l.scale);
+            match (&baked.baby, baby) {
+                (Some(own), true) => (own.clone(), scale),
+                _ => {
+                    let Some(adult) = baked.adult.clone() else { return Ok(()) };
+                    (adult, if baby { scale * living.map_or(1.0, |l| l.age_scale) } else { scale })
+                }
+            }
+        };
+        let head = living.map_or([0.0; 2], |l| [f64::from(l.x_rot).to_radians(), f64::from(l.y_rot).to_radians()]);
+        let posed = parts.and_then(|p| p.get(mod_api::HumanoidPart::Head)).map(|part| HeadPose {
+            position: [f64::from(part.pose.x), f64::from(part.pose.y), f64::from(part.pose.z)],
+            angles: [f64::from(part.pose.x_rot), f64::from(part.pose.y_rot), f64::from(part.pose.z_rot)],
+        });
+        draw.push();
+        for op in info::mount_ops(&mount, head, posed.as_ref(), scale) {
+            match op {
+                Op::Translate(v) => draw.translate(v.map(|x| x as f32)),
+                Op::Scale(v) => draw.scale(v.map(|x| x as f32)),
+                Op::Rotate(axis, degrees) => draw.rotate_about(axis, degrees, [0.0; 3]),
+            }
+        }
+        let drawn = draw.model(model, rules::TINT);
+        draw.pop();
+        drawn.map_err(|e| format!("train hat: {e:?}"))
+    }
 }
 
 // --- the layer ---------------------------------------------------------------------------------------------------------------------
@@ -117,6 +208,10 @@ pub(crate) fn register_entity_layers(event: &mut mod_api::RegisterEntityLayersEv
     for target in rules::TARGETS {
         let Some(mount) = rules::mount_for(target) else { continue };
         let _ = event.layers.add(mod_api::LayerTarget::Entity((*target).to_owned()), Arc::new(HatLayer { mount }));
+    }
+    for entity_type in info::types().filter(|t| !rules::TARGETS.contains(t)) {
+        let layer = Arc::new(ModelLayer { entity_type: entity_type.to_owned() });
+        let _ = event.layers.add(mod_api::LayerTarget::Entity(entity_type.to_owned()), layer);
     }
     for model in [mod_api::PlayerModel::Wide, mod_api::PlayerModel::Slim] {
         let _ = event.layers.add(mod_api::LayerTarget::Player(model), Arc::new(HatLayer { mount: rules::PLAYER }));

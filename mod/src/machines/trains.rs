@@ -127,6 +127,8 @@ pub struct CarriageRt {
     /// Game time of the last look at the cargo, and whether the change since is counted already (`burnFuel` counts its own).
     pub cargo_at: i64,
     pub cargo_silent: bool,
+    /// The burners (local positions) that wear the Train Hat now; told to clients in the anchor's data.
+    pub hats: Vec<Pos>,
 }
 
 impl CarriageRt {
@@ -160,6 +162,7 @@ impl CarriageRt {
             cargo_dirty: true,
             cargo_at: i64::MIN / 2,
             cargo_silent: false,
+            hats: Vec::new(),
         }
     }
 
@@ -611,6 +614,7 @@ fn anchor_data(train: Uuid, carriage: i32, rt: &CarriageRt, motion: &Motion, ini
     c.insert(draw::TRAIN.into(), uuid_tag(train));
     c.insert(draw::CARRIAGE.into(), Tag::Int(carriage));
     draw::write_pose(&mut c, motion, initial_yaw, spacing, bogeys, derailed);
+    draw::write_hats(&mut c, &rt.hats);
     c
 }
 
@@ -697,8 +701,10 @@ fn update_anchor(
     // when something changed, and every `DATA_EVERY` ticks for players who come into view and for saving.
     draw::publish(dimension, anchor, &motion, &bogeys, derailed);
     if !moved || rt.fresh || now - rt.data_at >= DATA_EVERY {
+        let hats = rt.hats.clone();
         let wrote = host.change_mod_block_entity(anchor, &mut |e| {
             draw::write_pose(&mut e.nbt, &motion, initial_yaw, spacing, &bogeys, derailed);
+            draw::write_hats(&mut e.nbt, &hats);
         });
         if wrote {
             host.block_entity_sync(anchor);
@@ -946,6 +952,7 @@ fn place_carriages(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, 
         // `shouldActorTrigger` scales a carriage's motion to the train's speed; the doors read the station the train is at.
         let speed = train.speed.abs();
         let door_mode = train.current_station_id().and_then(|s| dim.doors.get(&s).copied());
+        let has_schedule = train.runtime.schedule.is_some();
         let spacing_of: Vec<i32> = train.carriages.iter().map(|c| c.bogey_spacing).collect();
         for (i, carriage) in train.carriages.iter_mut().enumerate() {
             if !derailed {
@@ -956,6 +963,15 @@ fn place_carriages(host: &mut dyn Host, dimension: &'static str, dim: &mut Dim, 
             let Some(dce) = carriage.dimensions.get(&did) else { continue };
             let (Some(position), [Some(a), Some(b)]) = (dce.position_anchor, dce.rotation_anchors) else { continue };
             let pose_now = pose::align(position, [a, b]);
+            // `shouldRenderHat`: a conducting burner on a train with a schedule. A change goes out with the next whole data.
+            if now % 20 == 0 || rt.fresh {
+                let blocks: Vec<(Pos, State)> = rt.structure.blocks.iter().map(|b| (b.local, b.state.clone())).collect();
+                let hats = cc::hat_burners(&blocks, rt.direction, has_schedule);
+                if hats != rt.hats {
+                    rt.hats = hats;
+                    rt.fresh = true;
+                }
+            }
             let carriage_copy = carriage.clone();
             update_anchor(host, dimension, *id, &carriage_copy, graph, derailed, spacing_of[i], rt, pose_now, now);
             // The cargo is read from the structure, and the doors (actors of the carriage's structure) tick.
