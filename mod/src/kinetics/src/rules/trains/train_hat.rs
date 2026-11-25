@@ -95,6 +95,18 @@ pub struct HeadPose {
     pub angles: Vec3,
 }
 
+/// `rotationZYX(z, y, x)` as draw operations (angles in radians): the matrix is `Rz * Ry * Rx`, so the turns are taken z, y, x
+/// (an earlier version took them x, y, z, which only differs once a head is both pitched and turned).
+pub fn rotation_ops(angles: Vec3) -> Vec<Op> {
+    let mut ops = Vec::new();
+    for (axis, angle) in [([0.0, 0.0, 1.0], angles[2]), ([0.0, 1.0, 0.0], angles[1]), ([1.0, 0.0, 0.0], angles[0])] {
+        if angle != 0.0 {
+            ops.push(Op::Rotate(axis, angle.to_degrees() as f32));
+        }
+    }
+    ops
+}
+
 /// The ops that put the hat model where Create's layer does, from the entity's frame. `entity_scale` is the state's
 /// `scale * age_scale`.
 pub fn hat_ops(mount: &Mount, head: &HeadPose, entity_scale: f32) -> Vec<Op> {
@@ -106,11 +118,7 @@ pub fn hat_ops(mount: &Mount, head: &HeadPose, entity_scale: f32) -> Vec<Op> {
         // `ModelPart.translateAndRotate`: `translate`, then `rotationZYX(z, y, x)`.
         Op::Translate([head.position[0] / 16.0, head.position[1] / 16.0, head.position[2] / 16.0]),
     ];
-    for (axis, angle) in [([1.0, 0.0, 0.0], head.angles[0]), ([0.0, 1.0, 0.0], head.angles[1]), ([0.0, 0.0, 1.0], head.angles[2])] {
-        if angle != 0.0 {
-            ops.push(Op::Rotate(axis, angle.to_degrees() as f32));
-        }
-    }
+    ops.extend(rotation_ops(head.angles));
     let (min_y, max_y, off) = (f64::from(mount.min_y), f64::from(mount.max_y), mount.offset);
     ops.push(Op::Translate([off[0] / 16.0, (min_y - max_y + off[1]) / 16.0, off[2] / 16.0]));
     let size = f64::from(mount.width / 8.0 * mount.scale);

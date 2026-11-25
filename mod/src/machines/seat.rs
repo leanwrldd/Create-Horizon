@@ -572,14 +572,50 @@ pub(super) fn sit_mob_on_structure(
     mob_uuid: u128,
     at: [f64; 3],
 ) -> bool {
+    sit_mob_inner(host, dimension, controller, local, cell, mob, mob_uuid, at, false)
+}
+
+/// `AbstractContraptionEntity.handlePlayerInteraction` with a mob on the player's lead (`SeatBlock.getLeashed`): the click ejects
+/// a mob that sits there (`toDismount.stopRiding()`), and only a player on the seat refuses. The new marker replaces the old.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn sit_led_on_structure(
+    host: &dyn Host,
+    dimension: &str,
+    controller: Pos,
+    local: Pos,
+    cell: Pos,
+    mob: u32,
+    mob_uuid: u128,
+    at: [f64; 3],
+) -> bool {
+    sit_mob_inner(host, dimension, controller, local, cell, mob, mob_uuid, at, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sit_mob_inner(
+    host: &dyn Host,
+    dimension: &str,
+    controller: Pos,
+    local: Pos,
+    cell: Pos,
+    mob: u32,
+    mob_uuid: u128,
+    at: [f64; 3],
+    by_click: bool,
+) -> bool {
     if host.vehicle_of(mob).is_some() {
         return false;
     }
     let occupant = passengers_of(host, dimension, controller).into_iter().find(|(l, _, _)| *l == local).map(|(_, _, player)| player);
-    // A mob never takes a seat from anyone: only a player replaces a mob, and that is the player's own click.
-    if create_kinetics::rules::trains::train_passengers::add_sitting_passenger(occupant, false)
-        != (create_kinetics::rules::trains::train_passengers::Seating::Sit { eject: false })
-    {
+    // A mob never takes a seat from anyone on its own: only a player replaces a mob, and that is the player's own click.
+    // A click with a lead puts the mob there as the player's own act, so the mob that sat there goes first.
+    let seating = create_kinetics::rules::trains::train_passengers::add_sitting_passenger(occupant, by_click);
+    let allowed = if by_click {
+        matches!(seating, create_kinetics::rules::trains::train_passengers::Seating::Sit { .. })
+    } else {
+        seating == (create_kinetics::rules::trains::train_passengers::Seating::Sit { eject: false })
+    };
+    if !allowed {
         return false;
     }
     if let Ok(mut book) = BOOK.lock() {

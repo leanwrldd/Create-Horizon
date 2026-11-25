@@ -378,8 +378,7 @@ Differences and what is left out:
   station's records and the offline buffers are saved in the station block entity as `Ports`; `port_packages` (Fetch Packages) is
   answered. Differences: no selection outline, particles are a command, no ComputerCraft events.
 - **Seating by lead**: `seat::leashed_by` (`SeatBlock.getLeashed`: a mob on the player's lead within 10 blocks, using
-  `entity_leash_holder`) seats the mob on a block seat. **Not wired for a carriage's seat**: that click is `structure_click.rs`, which this
-  branch left alone; its seat branch should call `seat::leashed_by(host, uuid, entity_id)` and, on `Some((id, uuid))`, `seat::sit_mob_on_structure`.
+  `entity_leash_holder`) seats the mob on a block seat. Wired for a carriage's seat in glue part 4d.
 - **Elevator doors**: an Elevator Contact has a door control (`DoorControl`, saved as the constant's name); `/elevator doors <mode>` sets it for
   the contact last right-clicked. A cabin's sliding doors open when the cabin has arrived (or is slow and not held) by the control of the
   contact at the column's target floor (`train_doors::tick_elevator`, `should_open_in_elevator`).
@@ -391,6 +390,48 @@ Differences and what is left out:
   dimension (`track.rs`, `trains.rs`) must become one shared set (Create has one manager), `HostTracks` must read blocks of another dimension, the
   track block needs `connectToPortal` on its tick, `BoundLocation` / `BoundDimension` in its block entity and the `bound_ends` in `getConnected`,
   anchors need to be kept in both dimensions, and the cutoff (`portal_cutoff.rs`) applied to what is drawn and to the carriage's collision.
+
+## Glue part 4d: lead seating on a carriage seat, the Train Hat on burners and on mobs from `train_hat_info` (not played)
+
+- **Lead seating** (`SeatInteractionBehaviour`'s caller, `AbstractContraptionEntity.handlePlayerInteraction`): `structure_click.rs`'s `sit` gets the
+  clicking player's entity id from the compat layer's `server_players()` view (`player_view`: `PlayerRef::entity().id()`), refuses a player who
+  rides something, and calls `seat::leashed_by` (`SeatBlock.getLeashed`); a mob on the lead sits instead through the new
+  `seat::sit_led_on_structure` (same body as `sit_mob_on_structure`, but the click ejects a mob already on the seat, as `toDismount.stopRiding()`
+  does; a player on the seat still refuses). Without a led mob the player sits as before.
+- **The Blaze Burner's hat** (`BlazeBurnerRenderer.renderShared` / `renderInContraption`, `BlazeBurnerMovementBehaviour.shouldRenderHat`): the burner's
+  head, hat and rods are now one function (`burner::draw_head`), used by the block entity and by `burner::draw_in_structure`, which every moving
+  structure's draw (`contraption::draw_blocks`) and a carriage's (`train_draw::draw_structure`) calls, so burners on bearings, pistons and carriages have
+  their heads (they had only the cage). A carriage's conducting burners wear the hat while the train has a schedule: `carriage_contraption::hat_burners`
+  (pure) is worked out every 20 ticks in `trains::place_carriages` and written as `Hats` (local positions) into the anchor's data, which goes out
+  whole when it changes. The hat is lifted `hat_placement` (0.75; in a structure the head is never the small one) and turned half a turn past
+  the head. A static burner wears it when its data has `TrainHat` (Create's `BlazeBurnerBlockEntity.hat`, which only Ponder sets); the update tag carries it.
+  Differences: the head faces the block's `facing` (Create turns it to the camera, or along the train's motion for a conductor), no goggles.
+- **The hat on any mob with `train_hat_info`**: the 58 entries of `VanillaHatOffsetGenerator` are `rules::trains::train_hat_info::INFO` (Create writes them as
+  JSON files, so there is no data file here), with `info_for` (`TrainHatInfoReloadListener.getHatInfoFor`, minus the snow golem's pumpkin entry
+  `SNOW_GOLEM_PUMPKIN`, which needs entity data a layer lacks). A layer can't read the renderer's model parts as `CreateHatArmorLayer` does, so
+  `train_hat::client_setup` (`FMLClientSetupEvent`) bakes each type's vanilla layer with `ClientHost::bake_layer("minecraft:cow#main")` (and
+  `_baby#main`), turns it into a `ModelNode` tree and `resolve` finds the chain of parts to the head, the head's box and the offset; `mount_ops`
+  is `CreateHatArmorLayer.render`'s transform chain. 26.3's models carry the renderer's scale and lift in their root (a cat's root is 0.8 scaled), so
+  the chain starts at the root. A part path is looked for from the root, then below any part of that name (the bee's `body`, the wolf's
+  `real_head`); equines use `head_parts`. Types with no such part (pufferfish and tropical fish: one model per variant) get no hat. Piglins take Horizon's
+  head pose; other models turn their `head` part with the entity's head angles. Boxes are read off the faces (six to a box), so a grown box
+  reads slightly bigger than Create's. Not read: `train_hat_info` files of resource packs and other mods (`bake_layer` is fine, but there's no way
+  to list a pack's folder), the head slot, and a model replaced by a resource pack after start-up.
+- **Fixed on the way**: `train_hat::hat_ops` turned a head pitch-first (x, y, z) where `rotationZYX` is `Rz * Ry * Rx`; a head both pitched and turned sat wrong.
+  `rotation_ops` is the one place now.
+- **Not changed**: the existing zombie, skeleton, villager and illager mounts still multiply a baby's `age_scale` (0.5); 26.3 has separate baby layers for
+  zombies, villagers and others (`zombie_baby#main`), so that may shrink the hat twice. To check in game with a baby zombie conductor.
+- **One-shot pose fields (`set_client_update_fields`)**: the new API has it (`ModBlockEntityView::set_client_update_fields`), and the compat layer's
+  `ModBlockEntity` doesn't carry it yet, but exposing it would not make only the pose travel. The fields go *over* what `block_entity_update_tag`
+  returns, in the packet a block change sends, and the hook that builds the tag can't tell a change from a chunk send, so the anchor's tag must still
+  hold the whole structure; it's sent alone only when the hook returns nothing, and then a chunk send carries nothing either. What is missing is
+  either a way for the tag hook to know it is building a change, or a sync call that sends fields only. A redesign that sends the structure by message when
+  a player first sees the anchor (as the pose news already goes) and returns no tag could use it: not done, because it changes how every carriage appears.
+  The pose news message (`POSE_CHANNEL`) keeps the per-tick path small meanwhile.
+
+To check in game: sit a leashed villager on a carriage seat (and a second one on an occupied mob seat, and a player seat which should refuse);
+a Blaze Burner in front of Train Controls with a schedule on the train (hat on, off when the schedule goes); a burner on a bearing (head shown);
+a conductor cow, pig, wolf, horse, cat, bee, ghast (hat on the head, sized by the head); a baby of each.
 
 ## Glue part 6: tilt, girder, the straight outline, breaking a curve (not played)
 
@@ -458,13 +499,12 @@ Rules in `station_screen.rs` and `station_marker.rs`; glue in `mod/src/machines/
 
 ## Next
 
-1. Play-test glue parts 3, 4, 4b, 4c, 5, 6 and 6b (HANDOFF.md lists what to watch; for 6b: right-click a station, rename, assemble and
+1. Play-test glue parts 3, 4, 4b, 4c, 4d, 5, 6 and 6b (HANDOFF.md lists what to watch; for 6b: right-click a station, rename, assemble and
    disassemble through the buttons, the door control, the train name).
 2. Gluing portals (see glue part 4c) and the station map markers (see glue part 6b).
 3. (Glue part 6 did the girder and tilt of a curve, the straight outline and the break and Wrench pick-up of a curve.) What is left of them:
    tilting the track's model, the overlay shift of a tilted track, placing a curve with a girder, the client's hit sound and particles.
-4. The Blaze Burner's Train Hat (needs the burner's head drawn in a carriage first), the hat on mobs whose heads aren't known (Create reads
-   `train_hat_info`), the lead seating on a carriage seat (`structure_click.rs`'s `sit` needs the player's entity id to call
-   `seat::leashed_by`, then `seat::sit_mob_on_structure`).
-5. One-shot update fields for the pose (`set_client_update_fields`) so only the pose travels, once the compat layer exposes them.
+4. Hats: the snow golem's pumpkin entry, `train_hat_info` files of resource packs, the burner's goggles and its head turning to the camera or along
+   the train, the baby scale of the older mounts (see glue part 4d).
+5. One-shot update fields for the pose: needs a tag hook that knows it builds a change, or a fields-only sync (see glue part 4d).
 

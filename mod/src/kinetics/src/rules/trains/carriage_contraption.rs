@@ -77,6 +77,21 @@ pub fn in_control(blocks: &[(Pos, State)], pos: Pos, direction: Dir) -> bool {
         .is_some_and(|(_, state)| state.is(CONTROLS) && state.dir("facing") == Some(direction.opposite()))
 }
 
+/// The Blaze Burners that wear the Train Hat (`BlazeBurnerMovementBehaviour.shouldRenderHat`): a burner with a blaze that
+/// conducts (`determineIfConducting`: `inControl` for a direction along the assembly axis) on a carriage that has a schedule
+/// (`schedule_hand::burner_wears_hat`).
+pub fn hat_burners(blocks: &[(Pos, State)], assembly_direction: Dir, has_schedule: bool) -> Vec<Pos> {
+    blocks
+        .iter()
+        .filter(|(_, state)| is_valid_conductor(state))
+        .filter(|(pos, _)| {
+            let conducting = along(assembly_direction.axis()).into_iter().any(|d| in_control(blocks, *pos, d));
+            super::schedule_hand::burner_wears_hat(conducting, has_schedule)
+        })
+        .map(|(pos, _)| *pos)
+        .collect()
+}
+
 /// The directions along an axis (`Iterate.directionsInAxis`: negative, then positive).
 fn along(axis: crate::Axis) -> [Dir; 2] {
     match axis {
@@ -172,6 +187,21 @@ mod tests {
             ([1, 1, 1], state("create:white_seat")),
             ([2, 0, 0], state("create:small_bogey[axis=x]")),
         ]
+    }
+
+    #[test]
+    fn only_a_conducting_burner_with_a_schedule_wears_the_hat() {
+        let blocks = vec![
+            ([0, 0, 0], state("create:blaze_burner[blaze=kindled,facing=north]")),
+            ([1, 0, 0], state("create:controls[facing=west]")),
+            ([0, 0, 3], state("create:blaze_burner[blaze=kindled,facing=north]")),
+            ([5, 0, 0], state("create:blaze_burner[blaze=none,facing=north]")),
+            ([6, 0, 0], state("create:controls[facing=west]")),
+        ];
+        assert_eq!(hat_burners(&blocks, Dir::East, true), vec![[0, 0, 0]]);
+        assert!(hat_burners(&blocks, Dir::East, false).is_empty());
+        // The controls face the burner along x, not along the assembly axis z.
+        assert!(hat_burners(&blocks, Dir::North, true).is_empty());
     }
 
     #[test]

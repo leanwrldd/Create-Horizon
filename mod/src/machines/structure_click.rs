@@ -582,9 +582,19 @@ fn sit(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, who: 
     let centre = found.pose.to_global_vector([f64::from(local[0]) + 0.5, f64::from(local[1]) + 0.5, f64::from(local[2]) + 0.5], 1.0, false);
     let lift = create_kinetics::rules::seat::carried_lift();
     let at = [centre[0] + lift[0], centre[1] + lift[1], centre[2] + lift[2]];
-    let adapter = Adapter::Server(host);
+    let mut adapter = Adapter::Server(host);
     // A carriage's seats are kept by its train and carriage, not by the anchor block that moves with it.
     let controller = super::trains::seat_key_of_anchor(&adapter, found.controller).unwrap_or(found.controller);
+    // `handlePlayerInteraction`: a player who rides something sits nowhere; `SeatBlock.getLeashed(..).or(player)`: a mob on their
+    // lead sits instead. The player's entity id comes from the compat layer's player view (`server_players`).
+    let player = Host::server_players(&adapter).into_iter().find(|p| p.uuid == who);
+    if let Some(player) = player
+        && let Ok(entity) = u32::try_from(player.entity_id)
+        && Host::vehicle_of(&adapter, entity).is_none()
+        && let Some((mob, mob_uuid)) = super::seat::leashed_by(&mut adapter, who, player.entity_id)
+    {
+        return super::seat::sit_led_on_structure(&adapter, dimension, controller, local, cell, mob, mob_uuid, at);
+    }
     super::seat::sit_on_structure(&adapter, dimension, controller, local, cell, who, at)
 }
 

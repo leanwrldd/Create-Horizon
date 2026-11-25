@@ -41,6 +41,7 @@ pub mod track_overlay;
 pub mod train_controls;
 pub mod train_doors;
 pub mod train_hat;
+pub mod train_hat_info;
 pub mod train_nbt;
 pub mod train_passengers;
 pub mod track_render;
