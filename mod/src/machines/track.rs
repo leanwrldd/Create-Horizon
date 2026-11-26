@@ -29,12 +29,13 @@
 //!   no wrench pick-up of a curve's items (`onSneakWrenched`), no `getRequiredItems` for schematics.
 //! - A curve's items drop for a survival player breaking an end, not for explosions.
 
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::{LazyLock, Mutex};
 
 use create_kinetics::rules::contraption::{State, replaceable as vanilla_replaceable};
 use create_kinetics::rules::trains::bezier::BezierConnection;
+use create_kinetics::rules::trains::discovery::{self, Registration, Sync};
 use create_kinetics::rules::trains::graph::{DiscoveredLocation, TrackNodeLocation};
 use create_kinetics::rules::trains::network::RailNetworks;
 use create_kinetics::rules::trains::railways::Railways;
@@ -45,13 +46,43 @@ use create_kinetics::rules::trains::track_tilt;
 use create_kinetics::rules::trains::vec::{Vec3, block_containing};
 use create_kinetics::{Dir, Pos};
 use crate::compat::{
-    AttachmentCodec, AttachmentType, BlockEntityEvent, BlockStateId, Compound, DestroyBlockEvent, Flow, Holder, Hooks,
+    AttachmentCodec, AttachmentType, BlockEntityEvent, BlockEntityTickEvent, BlockEntityTicksEvent, BlockStateId, Compound, DestroyBlockEvent, Flow, Holder, Hooks,
     Host, ItemStack, LevelHost, LevelTickPostEvent, PlaceBlockEvent, StateForPlacementEvent, Tag,
 };
 
 use crate::util;
 
 struct Tracks;
+
+/// The components an item's selection can leave in a block entity placed from it (`BlockItem.updateBlockEntityComponents` copies
+/// the stack's whole patch): the track item's `TRACK_CONNECTING_FROM` and the targeting items' selection, and the glint that shows
+/// either. Create's block entities hold none of them.
+pub(crate) const LEAKED: [&str; 3] =
+    [rules::COMPONENT, "create:track_targeting_item_selection", "minecraft:enchantment_glint_override"];
+
+/// Whether a block entity's data holds any of [`LEAKED`] in its `components`.
+pub(crate) fn leaked_components(nbt: &Compound) -> bool {
+    matches!(util::get(nbt, "components"), Some(Tag::Compound(c)) if LEAKED.iter().any(|k| {
+        c.contains_key(&(*k).into()) || c.contains_key(&format!("!{k}").as_str().into())
+    }))
+}
+
+/// Removes [`LEAKED`] from a block entity's `components` (and the compound itself once it is empty).
+pub(crate) fn strip_components(nbt: &mut Compound) {
+    let empty = match nbt.get_mut(&"components".into()) {
+        Some(Tag::Compound(c)) => {
+            for key in LEAKED {
+                c.remove(&key.into());
+                c.remove(&format!("!{key}").as_str().into());
+            }
+            c.is_empty()
+        }
+        _ => false,
+    };
+    if empty {
+        util::remove(nbt, "components");
+    }
+}
 
 pub fn hooks() -> Box<dyn Hooks> {
     Box::new(Tracks)
@@ -369,9 +400,23 @@ static NETWORK: AttachmentType<Compound> = AttachmentType {
 const TOKEN: &str = "Token";
 const POSITIONS: &str = "Tracks";
 /// Track positions looked at in one tick by the sweep for blocks that vanished.
-const SWEEP: usize = 96;
-/// Queued changes applied in one tick.
-const BUDGET: usize = 96;
+const SWEEP: usize = 64;
+/// Queued changes applied in one tick (a `/fill` of a long strip is in the graph within a few ticks).
+const BUDGET: usize = 256;
+
+impl DimState {
+    fn push_added(&mut self, pos: Pos) {
+        if self.queued.insert(pos) {
+            self.added.push_back(pos);
+        }
+    }
+
+    fn pop_added(&mut self) -> Option<Pos> {
+        let pos = self.added.pop_front()?;
+        self.queued.remove(&pos);
+        Some(pos)
+    }
+}
 
 #[derive(Default)]
 struct DimState {
@@ -385,6 +430,8 @@ struct DimState {
     /// The curve partners each block had when last added (to cut them if the block goes without the break hook).
     partners: HashMap<Pos, Vec<Pos>>,
     added: VecDeque<Pos>,
+    /// What `added` holds, so a block entity that reports its block every tick doesn't search the queue.
+    queued: HashSet<Pos>,
     removed: VecDeque<Pos>,
     /// Blocks whose ends changed under them (a tilt): taken out of the graphs by what they had, then added again.
     retrack: VecDeque<Pos>,
@@ -420,10 +467,32 @@ pub fn with_railways<R>(dimension: &str, f: impl FnOnce(&mut Railways) -> R) -> 
 /// A track block was placed or changed: its graph is updated at the next tick.
 pub fn queue_added(dimension: &str, pos: Pos) {
     let mut states = lock(&STATE);
+    states.entry(dimension.to_owned()).or_default().push_added(pos);
+}
+
+/// A track block's block entity ticked: if the graph has never heard of the block (a `setblock`, a `/fill`, a structure, a piston,
+/// a block put back where track was) it is queued as added; `TrackBlock.onPlace`'s scheduled tick and `onRailAdded`.
+fn note_present(dimension: &str, pos: Pos) {
+    let mut states = lock(&STATE);
     let st = states.entry(dimension.to_owned()).or_default();
-    if !st.added.contains(&pos) {
-        st.added.push_back(pos);
+    if !st.tracks.contains(&pos) {
+        st.push_added(pos);
     }
+}
+
+/// Puts the block at `pos` in the graph now if it is not there yet, so the click that needs it (a Train Station's first click)
+/// doesn't wait for the next tick. Only once the dimension's graphs exist (the first tick makes them).
+pub fn register_now(host: &dyn Host, pos: Pos) {
+    let dimension = host.dimension();
+    let mut states = lock(&STATE);
+    let Some(st) = states.get_mut(dimension) else { return };
+    if st.token == 0 || st.tracks.contains(&pos) || host.block(pos) != TRACK {
+        return;
+    }
+    let world = HostTracks { host, dimension: dimension_id(dimension) };
+    add_now(&world, st, pos);
+    let events = st.rails.nets.drain_events();
+    st.rails.apply_rail_events(&events);
 }
 
 /// A track block's ends moved (a tilt was applied or let go): its graph nodes are taken out and made again at the next tick
@@ -460,19 +529,22 @@ fn save(st: &DimState) -> Compound {
 fn sync(host: &mut dyn Host, st: &mut DimState, now: i64) {
     let stored = NETWORK.get_existing(host.new_server(), Holder::Level).ok().flatten();
     let stored_token = stored.as_ref().map(|c| util::long(c, TOKEN)).unwrap_or(0);
-    if stored_token == 0 || stored_token != st.token {
-        *st = DimState::default();
-        match stored.as_ref().filter(|_| stored_token != 0) {
-            Some(c) => {
-                st.token = stored_token;
-                if let Some(Tag::IntArray(v)) = util::get(c, POSITIONS) {
-                    st.rebuild = v.chunks_exact(3).map(|p| [p[0], p[1], p[2]]).collect();
-                }
+    // The graphs in memory are dropped only for another world. An attachment that reads back empty used to reset them here,
+    // every second, which wiped every node the glue had learned.
+    match discovery::sync(stored_token, st.token, now < st.time) {
+        Sync::Keep => {}
+        Sync::Resave => st.dirty = true,
+        Sync::Adopt(token) => {
+            *st = DimState::default();
+            st.token = token;
+            if let Some(Tag::IntArray(v)) = stored.as_ref().and_then(|c| util::get(c, POSITIONS)) {
+                st.rebuild = v.chunks_exact(3).map(|p| [p[0], p[1], p[2]]).collect();
             }
-            None => {
-                st.token = new_token();
-                st.dirty = true;
-            }
+        }
+        Sync::Fresh => {
+            *st = DimState::default();
+            st.token = new_token();
+            st.dirty = true;
         }
     }
     st.time = now;
@@ -492,17 +564,22 @@ fn tick(host: &mut dyn Host) {
     let mut st = queued.unwrap_or_default();
     // What was queued before this world's first sync is kept across the reset a new world makes.
     let (added, removed, retrack) = (std::mem::take(&mut st.added), std::mem::take(&mut st.removed), std::mem::take(&mut st.retrack));
+    st.queued.clear();
     if st.token == 0 || now < st.time || now % 20 == 0 {
         sync(host, &mut st, now);
     }
-    st.added.extend(added);
+    for pos in added {
+        st.push_added(pos);
+    }
     st.removed.extend(removed);
     st.retrack.extend(retrack);
     run(&*host, &mut st, id, now);
     let mut states = lock(&STATE);
     // Anything queued meanwhile (by a hook the work called) joins what is there.
     if let Some(late) = states.remove(&dimension) {
-        st.added.extend(late.added);
+        for pos in late.added {
+            st.push_added(pos);
+        }
         st.removed.extend(late.removed);
         st.retrack.extend(late.retrack);
     }
@@ -534,7 +611,7 @@ fn run(host: &dyn Host, st: &mut DimState, id: u32, now: i64) {
         add_now(&world, st, pos);
     }
     for _ in 0..BUDGET {
-        let Some(pos) = st.added.pop_front() else { break };
+        let Some(pos) = st.pop_added() else { break };
         add_now(&world, st, pos);
     }
     if now % 40 == 0 && !st.waiting.is_empty() {
@@ -554,7 +631,7 @@ fn run(host: &dyn Host, st: &mut DimState, id: u32, now: i64) {
             st.dirty = true;
         }
     }
-    sweep(host, st, level);
+    sweep(host, st, level, &world);
     // What the track's changes do to the trains on it (`removeNode`, `transfer`, `notifyTrains`).
     let events = st.rails.nets.drain_events();
     st.rails.apply_rail_events(&events);
@@ -574,7 +651,7 @@ fn add_now(world: &HostTracks<'_>, st: &mut DimState, pos: Pos) {
 }
 
 /// A few known blocks each tick: any that is gone is queued as removed (and its curves cut).
-fn sweep(host: &dyn Host, st: &mut DimState, level: Option<crate::compat::LevelRef>) {
+fn sweep(host: &dyn Host, st: &mut DimState, level: Option<crate::compat::LevelRef>, world: &HostTracks<'_>) {
     let Some(level) = level else { return };
     let from = st.cursor;
     let mut taken: Vec<Pos> = match from {
@@ -586,8 +663,20 @@ fn sweep(host: &dyn Host, st: &mut DimState, level: Option<crate::compat::LevelR
     }
     st.cursor = taken.last().copied();
     for pos in taken {
-        if host.level_is_loaded(level, pos) && host.block(pos) != TRACK && !st.removed.contains(&pos) {
-            st.removed.push_back(pos);
+        if !host.level_is_loaded(level, pos) {
+            continue;
+        }
+        if host.block(pos) != TRACK {
+            if !st.removed.contains(&pos) {
+                st.removed.push_back(pos);
+            }
+            continue;
+        }
+        // A block replaced in place (`setblock` of another shape over it) keeps its place in the set but not its ends:
+        // `onRailRemoved` with what it had, then `onRailAdded` (`discovery::registration`).
+        let current = world.connected(pos, false, None);
+        if discovery::registration(true, st.known.get(&pos).map(Vec::as_slice), &current) != Registration::Keep && !st.retrack.contains(&pos) {
+            st.retrack.push_back(pos);
         }
     }
 }
@@ -658,6 +747,26 @@ impl Hooks for Tracks {
         (event.block == TRACK).then(|| (TRACK.to_owned(), Compound::new()))
     }
 
+    /// `TrackBlock.onPlace` schedules a tick and `tick` runs `onRailAdded`: here the block entity's own tick reports a block the
+    /// graph doesn't have (a `setblock`, `fill`, structure or piston never reaches `place_block`). It also drops what the placing
+    /// item leaked into the entity.
+    fn block_entity_ticks(&self, _: &dyn Host, event: &mut BlockEntityTicksEvent<'_>) {
+        if event.block == TRACK {
+            event.ticks = true;
+        }
+    }
+
+    fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
+        if event.entity.id != TRACK {
+            return;
+        }
+        if leaked_components(&event.entity.nbt) {
+            strip_components(&mut event.entity.nbt);
+            host.block_entity_sync(event.pos);
+        }
+        note_present(host.dimension(), event.pos);
+    }
+
     /// `TrackBlock.getStateForPlacement`: the shape from the player's look; the slope fix is `place_block`'s (a
     /// placement hook can't read neighbours).
     fn state_for_placement(
@@ -684,6 +793,16 @@ impl Hooks for Tracks {
             if fixed != shape && matches!(shape, TrackShape::Xo | TrackShape::Zo) {
                 host.set_block_property(pos, "shape", fixed.serialized_name());
             }
+        }
+        // A selection still on the stack is spent by a placement (the next inventory tick takes it off), and the new block
+        // entity must not keep it among its components.
+        if event.stack.data().is_some_and(|d| d.other(rules::COMPONENT).is_some())
+            && let Some(player) = host.acting_player()
+        {
+            super::track_item::forget(player.uuid);
+        }
+        if host.mod_block_entity(pos).is_some_and(|e| leaked_components(&e.nbt)) {
+            host.change_mod_block_entity(pos, &mut |e| strip_components(&mut e.nbt));
         }
         queue_added(&host.dimension().to_owned(), pos);
     }

@@ -269,7 +269,7 @@ fn describe(host: &dyn Host, pos: Pos) -> Vec<String> {
                 let places: Vec<String> = a.scan.bogey_locations.iter().map(|l| l.to_string()).collect();
                 lines.push(format!("Bogeys at offsets {} along the track.", places.join(", ")));
             }
-            lines.push("Right-click the track with Train Casing to put a bogey (offset 0 or at least 3 from the others). /station assemble checks them; /station cancel leaves assembly mode.".to_owned());
+            lines.push("Right-click the assembly track (the blocks past the station's own track block) with Train Casing to put a bogey ABOVE it: the first at offset 0, the track block next to the station's, then at least 3 blocks from the others. /station assemble checks them; /station cancel leaves assembly mode.".to_owned());
         }
     }
     lines
@@ -728,6 +728,11 @@ impl Hooks for Stations {
 
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         if event.entity.id == STATION {
+            // The placing item's selection is copied into the new block entity's components: Create's holds none.
+            if super::track::leaked_components(&event.entity.nbt) {
+                super::track::strip_components(&mut event.entity.nbt);
+                host.block_entity_sync(event.pos);
+            }
             tick(host, event);
         }
     }

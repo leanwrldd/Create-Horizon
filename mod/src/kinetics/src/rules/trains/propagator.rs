@@ -443,6 +443,39 @@ mod tests {
     }
 
     #[test]
+    fn a_block_replaced_and_put_back_rejoins_the_graph() {
+        // Play-test 2026-11-26: a track block replaced (a bogey over it, a `setblock`) lost its node and, put back, was
+        // never added again, so the station found no starting node. Removal and adding are symmetric.
+        let mut world = row(6);
+        let mut nets = RailNetworks::new();
+        for x in 0..6 {
+            nets.on_rail_added(&world, [x, 64, 0]);
+        }
+        let ends = world.connected([3, 64, 0], false, None);
+        world.blocks.remove(&[3, 64, 0]);
+        nets.on_rail_removed(&world, [3, 64, 0], &ends);
+        assert_eq!(nets.graphs.len(), 2);
+        world.blocks.insert([3, 64, 0], X);
+        let graph = nets.on_rail_added(&world, [3, 64, 0]).expect("the block is track again");
+        assert_eq!(nets.graphs.len(), 1, "{:?}", nets.graphs.values().map(|g| g.node_count()).collect::<Vec<_>>());
+        let g = &nets.graphs[&graph];
+        let a = g.locate_node(&loc(0.0, 0.5)).expect("west end").net_id;
+        let b = g.locate_node(&loc(6.0, 0.5)).expect("east end").net_id;
+        assert_eq!(g.edge(a, b).unwrap().length(), 6.0);
+    }
+
+    #[test]
+    fn a_strip_nobody_told_the_graph_about_is_learned_from_one_block() {
+        // A `/fill`ed strip: one `onRailAdded` from any of its blocks makes the graph for all of them.
+        let world = row(8);
+        let mut nets = RailNetworks::new();
+        let graph = nets.on_rail_added(&world, [4, 64, 0]).expect("track");
+        let g = &nets.graphs[&graph];
+        assert_eq!(g.node_count(), 2);
+        assert!(g.locate_node(&loc(0.0, 0.5)).is_some() && g.locate_node(&loc(8.0, 0.5)).is_some());
+    }
+
+    #[test]
     fn breaking_the_middle_splits_the_graph_in_two() {
         let mut world = row(6);
         let mut nets = RailNetworks::new();

@@ -62,6 +62,11 @@ fn set_pending(uuid: u128, value: Option<ConnectingFrom>) {
     PENDING_COUNT.store(pending.len(), Ordering::Relaxed);
 }
 
+/// A placement spent the selection: the next inventory tick takes it off the stack.
+pub(super) fn forget(uuid: u128) {
+    set_pending(uuid, None);
+}
+
 // --- the component (`ConnectingFrom.CODEC`: pos, axis, normal, end) -------------------------------------------------
 
 fn tag_of(from: &ConnectingFrom) -> Tag {
