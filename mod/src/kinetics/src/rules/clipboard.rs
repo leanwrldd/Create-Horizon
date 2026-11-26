@@ -253,6 +253,48 @@ pub fn placement(clicked: [i32; 3], player_facing: &str) -> (Face, String) {
     }
 }
 
+/// Whether the entry an edit names is ticked (`Check`, `Uncheck`, `Toggle` of entry `n`, 1-based, on the open page).
+pub fn checked_of(content: &Content, edit: &Edit) -> Option<bool> {
+    let (Edit::Check(n) | Edit::Uncheck(n) | Edit::Toggle(n)) = edit else { return None };
+    content.pages.get(content.page.min(content.pages.len().saturating_sub(1)))?.get(n.checked_sub(1)?).map(|e| e.checked)
+}
+
+/// `ClipboardScreen.mouseClicked`'s ticking sound: `CLIPBOARD_CHECKMARK` at pitch `0.95 + random * 0.05` when an
+/// entry became ticked, `CLIPBOARD_ERASE` at `0.90 + random * 0.2` when it was cleared. `dice` is in `[0, 1)`.
+pub fn tick_sound(was: Option<bool>, now: Option<bool>, dice: f32) -> Option<(&'static str, f32)> {
+    match (was?, now?) {
+        (false, true) => Some(("clipboard_check", 0.95 + dice * 0.05)),
+        (true, false) => Some(("clipboard_erase", 0.90 + dice * 0.2)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod sound_tests {
+    use super::*;
+
+    #[test]
+    fn ticking_an_entry_checks_and_clearing_it_erases() {
+        let mut content = Content::default();
+        apply(&mut content, Edit::Add("a".into()));
+        let was = checked_of(&content, &Edit::Toggle(1));
+        assert_eq!(was, Some(false));
+        apply(&mut content, Edit::Toggle(1));
+        let now = checked_of(&content, &Edit::Toggle(1));
+        assert_eq!(tick_sound(was, now, 0.0), Some(("clipboard_check", 0.95)));
+        let was = now;
+        apply(&mut content, Edit::Toggle(1));
+        let now = checked_of(&content, &Edit::Toggle(1));
+        let (name, pitch) = tick_sound(was, now, 1.0).unwrap();
+        assert_eq!(name, "clipboard_erase");
+        assert!((pitch - 1.1).abs() < 1e-6);
+        // Checking an entry that was ticked already, an edit that is not a tick, a missing entry: silent.
+        assert_eq!(tick_sound(Some(true), Some(true), 0.5), None);
+        assert_eq!(checked_of(&content, &Edit::Add("x".into())), None);
+        assert_eq!(checked_of(&content, &Edit::Check(9)), None);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

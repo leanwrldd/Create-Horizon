@@ -414,7 +414,7 @@ fn apply_on_belt(host: &mut dyn Host, pos: Pos, clicked: Pos, items: &mut Items)
     host.play_sound(sound, at, BLOCKS, volume, pitch);
     if polishing {
         // `AllSoundEvents.SANDING_SHORT.playOnServer(world, pos, .35f, 1f)`.
-        host.play_sound("create:sanding_short", at, BLOCKS, 0.35, 1.0);
+        util::create_sound(host, "sanding_short", at, 0.35, 1.0);
     }
 }
 

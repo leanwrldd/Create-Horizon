@@ -373,12 +373,10 @@ pub fn apply_effects(host: &mut dyn Host, world: &World<ItemStack>, effects: Vec
     for effect in effects {
         match effect {
             Effect::Sound(pos, Sound::Click(pitch)) => {
-                let at = util::centre(pos);
-                host.play_sound("minecraft:block.netherite_block.hit", at, BLOCKS, 0.25, pitch);
-                host.play_sound("minecraft:block.wooden_trapdoor.open", at, BLOCKS, 0.125, pitch);
+                util::create_sound_at(host, "crafter_click", pos, 1.0, pitch);
             }
             Effect::Sound(pos, Sound::Craft) => {
-                host.play_sound("minecraft:entity.item.break", util::centre(pos), BLOCKS, 0.125, 0.75);
+                util::create_sound_at(host, "crafter_craft", pos, 1.0, 1.0);
             }
             Effect::Drop(pos, stack) => {
                 // `eject`: 0.75 out of the front.

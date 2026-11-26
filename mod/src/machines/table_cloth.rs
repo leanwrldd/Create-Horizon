@@ -310,7 +310,7 @@ fn use_shop(host: &mut dyn Host, uuid: u128, pos: Pos, cloth: &Cloth<ItemStack>,
     match outcome {
         ShopUse::Refused { why, give_back } => {
             tell(host, uuid, refusal_text(why));
-            host.play_sound("create:deny", centre, 2, 0.5, 1.0);
+            util::create_sound(host, "deny", centre, 0.5, 1.0);
             if let Some(list) = give_back {
                 let address = hotbar.iter().find(|(_, _, l)| *l == list).map(|(_, stack, _)| address_of(stack)).unwrap_or_default();
                 let back = list_item(&*host, &list, &address);
@@ -321,7 +321,7 @@ fn use_shop(host: &mut dyn Host, uuid: u128, pos: Pos, cloth: &Cloth<ItemStack>,
             if limited_stock {
                 tell(host, uuid, "Stock limit reached");
             } else {
-                host.play_sound("create:confirm_2", centre, 2, 0.5, 1.0);
+                util::create_sound(host, "confirm_2", centre, 0.5, 1.0);
                 if started_new_list {
                     tell(host, uuid, "Use this list to add more to your purchase");
                     host.play_sound("minecraft:item.book.page_turn", centre, 2, 1.0, 1.5);

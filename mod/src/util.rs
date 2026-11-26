@@ -265,11 +265,56 @@ pub fn wrench(host: &mut dyn Host, pos: Pos, turn: impl FnOnce(&mut dyn Host)) -
     {
         if matches!(player.game_mode, SURVIVAL | CREATIVE) {
             host.player_break_block(player.uuid, pos, true);
+            wrench_remove_sound(host, pos);
         }
         return Flow::Cancel;
     }
+    let before = wrench_look(host, pos);
     turn(host);
+    // `IWrenchable.onWrenched`: the rotate sound only when the state changed.
+    if wrench_look(host, pos) != before {
+        wrench_rotate_sound(host, pos);
+    }
     Flow::Cancel
+}
+
+/// The properties a Wrench turns, to tell whether a click changed the block (`level.getBlockState(pos) != state`).
+fn wrench_look(host: &dyn Host, pos: Pos) -> Vec<Option<String>> {
+    ["axis", "facing", "axis_along_first", "horizontal_axis", "face", "half", "shape", "type"]
+        .iter()
+        .map(|key| host.block_property(pos, key))
+        .collect()
+}
+
+/// `IWrenchable.playRemoveSound`: `WRENCH_REMOVE` at volume 1, pitch `random * .5 + .5`.
+pub fn wrench_remove_sound(host: &mut dyn Host, pos: Pos) {
+    let pitch = create_kinetics::rules::sound_entries::wrench_remove_pitch(random_unit());
+    create_sound(host, "wrench_remove", centre(pos), 1.0, pitch);
+}
+
+/// `IWrenchable.playRotateSound`: `WRENCH_ROTATE` at volume 1, pitch `random + .5`.
+pub fn wrench_rotate_sound(host: &mut dyn Host, pos: Pos) {
+    let pitch = create_kinetics::rules::sound_entries::wrench_rotate_pitch(random_unit());
+    create_sound(host, "wrench_rotate", centre(pos), 1.0, pitch);
+}
+
+/// A random number in `[0, 1)` (`Create.RANDOM.nextFloat()`).
+pub fn random_unit() -> f32 {
+    (random() % 1_000_000) as f32 / 1_000_000.0
+}
+
+/// `AllSoundEvents.<entry>.play*` for the entry `name` (`"mixing"`): every event the entry plays (its main event and
+/// each `_compounded_<i>` layer) at the entry's configured volume and pitch times `volume` and `pitch`, on the
+/// entry's mixer group. The rule is `rules::sound_entries::plays`.
+pub fn create_sound(host: &mut dyn Host, name: &str, at: [f64; 3], volume: f32, pitch: f32) {
+    for play in create_kinetics::rules::sound_entries::plays(name, volume, pitch) {
+        host.play_sound(&play.event, at, play.source, play.volume, play.pitch);
+    }
+}
+
+/// [`create_sound`] at the centre of the block `pos` (`SoundEntry.play(level, player, pos, ..)`).
+pub fn create_sound_at(host: &mut dyn Host, name: &str, pos: Pos, volume: f32, pitch: f32) {
+    create_sound(host, name, centre(pos), volume, pitch);
 }
 
 /// A block's state property as a direction (`facing`).

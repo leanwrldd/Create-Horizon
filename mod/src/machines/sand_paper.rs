@@ -33,7 +33,7 @@ use crate::compat::{
     UseAnimationEvent, UseDurationEvent, UseItemEvent,
 };
 
-use crate::recipes;
+use crate::{recipes, util};
 
 /// `AllRecipeTypes.SANDPAPER_POLISHING`.
 pub const POLISHING: &str = "create:sandpaper_polishing";
@@ -163,7 +163,7 @@ impl Hooks for SandPaper {
                 Some(random) => rules::sound_levels(random.next_float(), random.next_float()),
                 None => (1.0, 1.0),
             };
-            host.play_sound("create:sanding_short", player.position, PLAYERS, volume, pitch);
+            util::create_sound(host, "sanding_short", player.position, volume, pitch);
         }
         Flow::Continue
     }

@@ -115,7 +115,7 @@ fn deposit(host: &mut dyn Host, pos: Pos, uuid: u128, sneaking: bool, holding_wr
         return Flow::Cancel;
     }
     let now = util::game_time(&*host);
-    host.play_sound("create:item_hatch", util::centre(pos), 2, 1.0, 1.0);
+    util::create_sound_at(host, "item_hatch", pos, 1.0, 1.0);
     host.set_block_property(pos, "open", "true");
     host.change_mod_block_entity(pos, &mut |entity| {
         util::put(&mut entity.nbt, OPENED_AT, Tag::Long(now));

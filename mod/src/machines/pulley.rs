@@ -249,6 +249,8 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, offset: f32, initial:
     let dimension = host.dimension().to_owned();
     // `Contraption.stop`: the actors on the structure stop first.
     actor::stop(host, pos, nbt);
+    // `AbstractContraptionEntity.disassemble`.
+    util::create_sound_at(host, "contraption_disassemble", pos, 1.0, 1.0);
     let range = range_at(&*host, pos);
     let grid = pulley_rules::grid_offset(offset, range);
     make_ropes(host, pos, grid);

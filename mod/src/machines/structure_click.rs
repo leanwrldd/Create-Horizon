@@ -413,9 +413,9 @@ fn scroll(host: &mut dyn mod_api::ServerHost, who: u128, steps: i8) {
     let (short, long) = &floors.names[index];
     Host::action_bar(&mut adapter, who, floor_line(short, long, unreachable));
     if index != before {
-        // `AllSoundEvents.SCROLL_VALUE`: a rising tick as the choice goes up the list.
+        // `AllSoundEvents.SCROLL_VALUE.play(.., 1, pitch)`: a rising tick as the choice goes up the list.
         let pitch = 1.0 + 0.5 * index as f32 / floors.heights.len() as f32;
-        Host::play_sound(&mut adapter, "minecraft:block.note_block.hat", found.world, BLOCKS, 1.0, pitch);
+        util::create_sound(&mut adapter, "scroll_value", found.world, 1.0, pitch);
     }
 }
 
@@ -747,9 +747,9 @@ fn controls(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, 
     let mut adapter = Adapter::Server(host);
     let line = super::contraption_controls::status(filter_stack.as_ref(), !disable);
     Host::action_bar(&mut adapter, who, line);
-    // `AllSoundEvents.CONTROLLER_CLICK`, with the stand-in the Controls on the ground use.
+    // `AllSoundEvents.CONTROLLER_CLICK.play(.., 1, disable ? 0.8f : 1.5f)`.
     let pitch = create_kinetics::rules::contraption_controls::click_pitch(disable);
-    Host::play_sound(&mut adapter, "minecraft:entity.item_frame.add_item", found.world, BLOCKS, 0.35, pitch);
+    util::create_sound(&mut adapter, "controller_click", found.world, 1.0, pitch);
     true
 }
 
@@ -757,9 +757,9 @@ fn controls(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, 
 /// player chose (the client's branch sends `ElevatorTargetFloorPacket`, whose handler is `call_floor`).
 fn elevator_controls(host: &mut dyn mod_api::ServerHost, dimension: &str, found: &Found, nbt: &Compound, who: u128) -> bool {
     let mut adapter = Adapter::Server(host);
-    // `CONTROLLER_CLICK` at pitch 1.5 and `CONTRAPTION_ASSEMBLE` (0.75, 0.8), with the stand-ins used elsewhere.
-    Host::play_sound(&mut adapter, "minecraft:entity.item_frame.add_item", found.world, BLOCKS, 1.0, 1.5);
-    Host::play_sound(&mut adapter, "minecraft:block.piston.contract", found.world, BLOCKS, 0.75, 0.8);
+    // `CONTROLLER_CLICK` at pitch 1.5 and `CONTRAPTION_ASSEMBLE` (0.75, 0.8).
+    util::create_sound(&mut adapter, "controller_click", found.world, 1.0, 1.5);
+    util::create_sound(&mut adapter, "contraption_assemble", found.world, 0.75, 0.8);
     let Some(floors) = super::elevator::floors_of(&adapter, dimension, nbt) else { return true };
     let index = chosen(dimension, found.controller, who);
     match rules::floor_click(&floors.heights, index, floors.target, floors.min, floors.max) {

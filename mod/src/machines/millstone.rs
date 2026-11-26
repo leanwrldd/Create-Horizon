@@ -30,6 +30,8 @@ const RECIPE_TYPE: &str = "create:milling";
 /// `AllPartialModels.MILLSTONE_COG`.
 const INNER: &str = "create:block/millstone/inner";
 const TIMER: &str = "Timer";
+/// Whether the input slot holds something: sent to clients for the ambient sound (`MillstoneBlockEntity.tickAudio`).
+const BUSY: &str = "Busy";
 const SLOTS: usize = INPUT_SLOTS + OUTPUT_SLOTS;
 const CENTRE: [f32; 3] = [0.5; 3];
 
@@ -249,6 +251,11 @@ impl Hooks for Millstone {
         if timer != before {
             event.entity.nbt.insert(TIMER.into(), Tag::Int(timer));
         }
+        let busy = slots[0].is_some();
+        if util::boolean(&event.entity.nbt, BUSY) != busy {
+            event.entity.nbt.insert(BUSY.into(), Tag::Byte(i8::from(busy)));
+            sync = true;
+        }
         if store(event.entity, slots) {
             sync = true;
         }
@@ -264,6 +271,7 @@ impl Hooks for Millstone {
         (event.entity.id == ID).then(|| {
             let mut tag = kinetic::update_tag(event.entity);
             tag.insert(TIMER.into(), Tag::Int(util::int(&event.entity.nbt, TIMER)));
+            tag.insert(BUSY.into(), Tag::Byte(i8::from(util::boolean(&event.entity.nbt, BUSY))));
             tag
         })
     }

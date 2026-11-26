@@ -39,6 +39,10 @@ pub const COLOURS: [&str; 16] = [
 
 struct Postboxes;
 
+/// Whether each postbox's flag was up at its last tick (the flag's sounds play when it changes).
+static FLAGS: std::sync::Mutex<std::collections::BTreeMap<(String, [i32; 3]), bool>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
 pub fn hooks() -> Box<dyn Hooks> {
     Box::new(Postboxes)
 }
@@ -83,6 +87,18 @@ impl Hooks for Postboxes {
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         if is_postbox(&event.entity.id) {
             let now = util::game_time(&*host);
+            // `PostboxBlockEntity.tick`: the flag going up rings `CONTRAPTION_ASSEMBLE` (1, 2) and going down
+            // `CONTRAPTION_DISASSEMBLE` (0.75, 1.5).
+            let up = filled(event.entity) > 0;
+            let key = (host.dimension().to_owned(), event.pos);
+            let before = FLAGS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(key, up);
+            if before == Some(!up) {
+                if up {
+                    util::create_sound_at(host, "contraption_assemble", event.pos, 1.0, 2.0);
+                } else {
+                    util::create_sound_at(host, "contraption_disassemble", event.pos, 0.75, 1.5);
+                }
+            }
             super::train_mail::tick_postbox(host, event.pos, event.entity, now);
         }
     }

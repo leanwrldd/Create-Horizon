@@ -151,6 +151,33 @@ failed lookup (`cc09448`). The mod's `eprintln!` warnings don't reach `latest.lo
 Testers get Create's art in the release files (`v0.1.0-test4`), with the permission of Create's developers, so the
 old plan of a pack built from each tester's own jar is dropped.
 
+## Sounds
+
+2026-11-26, branch `worktree-agent-ae8a0a0f278ce93c2` (type-checked and unit-tested only, **not built or heard in game**).
+Create's `sounds.json` and `.ogg` files were already staged, but 51 of the 79 events (68 entries plus 11 `_compounded_` layers) were never played. Now:
+- **One helper for every `create:` sound:** `util::create_sound(host, "mixing", at, volume, pitch)` and `create_sound_at(..,
+  pos, ..)`. The rule is `rules/sound_entries.rs` (`ENTRIES`, `plays`): a wrapped entry (`playExisting`) plays its main event
+  and every `<name>_compounded_<i>` layer, each at the layer's configured volume and pitch times the caller's; a custom entry
+  is one event; the mixer group comes from the entry's category. Trains' own files (`track*`, `train*`, `station*`) still call
+  `host.play_sound("create:...")` and should move to the helper.
+- **Ambient hum:** `rules/soundscape.rs` (pitch groups, which blocks report, nearest/loudest volume, mean position, cadence)
+  and `machines/soundscape.rs` (client glue: `block_entity_client_tick` of every kinetic block entity reports, `client_tick_post`
+  runs the scapes, `ClientHost::play_local_sound` plays; loops are faded and restarted, see the module's notes). The crushing
+  wheel controller and the millstone send `Busy` in their update tags for it.
+- **What to listen for:** a running cogwheel or gearbox rumbles (`cogs`) and a running machine (press, mixer, saw, belts, ...)
+  hums (minecart-inside loop); both get louder with more machines near, quieter with distance, cut off past 16 blocks. A
+  Millstone with grain, or a crushing wheel with an item, clatters (`crushing_1/2/3`). Wrench: a click on a block that turns
+  makes `wrench_rotate`, sneak pick-up `wrench_remove`. Press, depot slide/plop, funnel flap, crafter click/craft, Mixer (every
+  tick at the bottom, every other tick below 65 RPM), Saw (wood or stone), hand crank, Sticker and chassis slime, bearing/piston/
+  gantry/pulley/elevator assemble and disassemble (bearings and pistons ring twice, as Create does), controls and elevator
+  floor clicks, Schematicannon launch and finish, steam whistle chiff, engine stroke hiss, backtank low/empty (deny + steam),
+  cardboard sword bonk, Worldshaper zap, copper diving gear equip, postbox flag, clipboard check/erase (`/clipboard check|uncheck|toggle`).
+- **Not done (and why):** `blaze_munch` (an egg thrown at a burner: no projectile hook yet), `frogport_close` (needs the
+  hand-opened frogport), `sanding_long` (the paper can't scrape or unwax: Horizon can't ask a block's tool-modified state),
+  the standing Peculiar and Haunted Bell's ring (the vanilla bell template rings it with vanilla's sound), `scroll_value` on the
+  value board's hover and on scroll inputs (client screen hooks have no `&mut` host to play from), and the whole
+  `train`, `train2`, `train3`, `whistle_train*` family (trains code was another agent's).
+
 ## Building and testing
 
 - **Build:** `powershell -File tools/native_build.ps1`. It stages the package (Create's art comes from the user's

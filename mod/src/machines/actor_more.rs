@@ -68,7 +68,13 @@ impl Rng for Dice<'_> {
 }
 
 fn play(host: &mut dyn Host, sound: misc::Sound, at: [f64; 3]) {
-    host.play_sound(sound.id, at, BLOCKS, sound.volume, sound.pitch);
+    // A Create entry plays all its layers (`SoundEntry.play`); a vanilla id plays as it is.
+    match sound.id.strip_prefix("create:") {
+        Some(name) => util::create_sound(host, name, at, sound.volume, sound.pitch),
+        None => {
+            host.play_sound(sound.id, at, BLOCKS, sound.volume, sound.pitch);
+        }
+    }
 }
 
 // --- the hooks --------------------------------------------------------------------------------------------

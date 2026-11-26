@@ -22,11 +22,12 @@
 //!   against what it makes itself; a network stopped by overstress isn't counted as a source.
 //! - Placing a Shaft by clicking the engine replaces air and fluids only (not every replaceable
 //!   block), and plays the stone sound. The placement helper's ghost outline isn't shown.
-//! - The steam particles (`SteamJetParticle`) and the hiss at each stroke (`BoilerData.sound`) are
-//!   not done; nor the Powerhouse advancement or waterlogging. Goggles on an engine or its Powered
+//! - The steam particles (`SteamJetParticle`) are not done, and the hiss at each stroke (`BoilerData.sound`) plays once a turn of the shaft from the engine, not from the piston's drawn angle through a per-side sound pool; no Powerhouse advancement and no waterlogging.
+//!   Goggles on an engine or its Powered
 //!   Shaft show the capacity it provides (`goggles.rs`).
 //! - A Powered Shaft can't take Shafts beside it by clicking (`PoweredShaftBlock.useItemOn`).
 
+use create_kinetics::rules::sound_entries as rules_sound;
 use create_kinetics::rules::steam_engine::{self as rules, ENGINE_CAPACITY};
 use create_kinetics::{Axis, Dir, Node};
 use crate::compat::{
@@ -316,6 +317,15 @@ fn tick_engine(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         let flipped = 1 - util::int(&event.entity.nbt, SCROLL);
         event.entity.nbt.insert(SCROLL.into(), Tag::Int(flipped));
         conveyed = -conveyed;
+    }
+
+    // `BoilerData.sound`, queued at each stroke of a working engine: a hiss on its side of the tank.
+    if efficiency > 0.0 && rules_sound::engine_stroke(shaft_speed, now) {
+        let dice = (util::random() % 1_000_000) as f32 / 1_000_000.0;
+        let (volume, pitch) = rules_sound::boiler_hiss(tank.boiler.engines, dice);
+        let at = util::centre(pos);
+        host.play_sound("minecraft:block.candle.extinguish", at, 4, volume, pitch);
+        util::create_sound(host, "steam", at, volume / 16.0, 0.8);
     }
 
     // `shaft.update(worldPosition, conveyedSpeedLevel, efficiency)`.

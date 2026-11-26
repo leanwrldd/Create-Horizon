@@ -341,6 +341,12 @@ impl Hooks for Core {
                 let backwards = int(&event.entity.nbt, BACKWARDS) != 0;
                 node.generated = crank_speed(left, backwards, facing);
                 node.capacity = CRANK_CAPACITY;
+                // `HandCrankBlockEntity.tickAudio`.
+                if let Some((volume, pitch)) =
+                    create_kinetics::rules::sound_entries::crank_sound(left, util::game_time(host))
+                {
+                    util::create_sound_at(host, "cranking", pos, volume, pitch);
+                }
                 // Only written while it counts down: any write marks the entity changed.
                 if left > 0 {
                     event.entity.nbt.insert(IN_USE.into(), Tag::Int(left - 1));
@@ -564,6 +570,7 @@ impl Hooks for Core {
             // Create's `IWrenchable.onSneakWrenched`: return the drops in survival.
             if matches!(player.game_mode, SURVIVAL | CREATIVE) {
                 host.player_break_block(player.uuid, pos, true);
+                util::wrench_remove_sound(host, pos);
             }
             return Flow::Cancel;
         }
@@ -587,6 +594,7 @@ impl Hooks for Core {
                     _ => Dir::North,
                 };
                 host.set_block_property(pos, "facing", next.name());
+                util::wrench_rotate_sound(host, pos);
             }
         } else if let Some(axis) = host
             .block_property(pos, "axis")
@@ -595,6 +603,7 @@ impl Hooks for Core {
         {
             let next = Axis::ALL[(axis.index() + 1) % 3];
             host.set_block_property(pos, "axis", next.name());
+            util::wrench_rotate_sound(host, pos);
         }
         Flow::Cancel
     }
@@ -688,6 +697,7 @@ impl mod_api::Hooks for Mod {
     fn client_tick_post(&self, host: &mut dyn mod_api::ClientHost, _: &mut mod_api::ClientTickPostEvent) {
         machines::cog_placement::client_tick(&*host);
         machines::train_overlay::client_tick(&mut *host);
+        machines::soundscape::client_tick(&*host);
         compat::events::client_tick_post(host)
     }
 

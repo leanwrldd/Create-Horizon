@@ -237,7 +237,7 @@ fn chassis_takes_it(host: &dyn Host, pos: Pos, face: Dir) -> bool {
 fn spawn_effect(host: &mut dyn Host, glue: &GlueBox, uuid: u128) {
     outline(host, uuid, glue, 0xB5_F2C6, 0.5);
     let at = [0, 1, 2].map(|i| f64::from(glue.min[i] + glue.max[i]) / 2.0 + 0.5);
-    host.play_sound("minecraft:block.slime_block.place", at, BLOCKS, 0.5, 0.95);
+    util::create_sound(host, "slime_added", at, 0.5, 0.95);
     host.play_sound("minecraft:entity.item_frame.add_item", at, BLOCKS, 0.75, 1.0);
 }
 
@@ -284,7 +284,7 @@ impl Hooks for Glue {
                 lock(&FIRST).insert(player.uuid, (dimension, corner));
                 say(host, player.uuid, "First position selected", PASSIVE);
                 let at = util::centre(corner);
-                host.play_sound("minecraft:block.slime_block.place", at, BLOCKS, 0.5, 0.85);
+                util::create_sound(host, "slime_added", at, 0.5, 0.85);
                 host.play_sound("minecraft:entity.item_frame.add_item", at, BLOCKS, 0.75, 1.0);
             }
             Click::Discard => {
@@ -328,7 +328,7 @@ impl Hooks for Glue {
             set.remove(&glue);
             store(host, &set);
             let at = [0, 1, 2].map(|i| f64::from(glue.min[i] + glue.max[i]) / 2.0 + 0.5);
-            host.play_sound("minecraft:block.slime_block.place", at, BLOCKS, 0.5, 0.5);
+            util::create_sound(host, "slime_added", at, 0.5, 0.5);
             outline(host, player.uuid, &glue, PASSIVE, 0.5);
         }
         Flow::Cancel

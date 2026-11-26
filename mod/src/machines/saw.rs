@@ -27,7 +27,7 @@
 //!   keys, but at the top of the block entity's data, and the stacks are the block entity's own
 //!   item slots (`Items`: slot 0 is the input) as Horizon saves them, not an `Inventory` compound.
 //! - A crafting remainder of the input (a bucket) is not returned with the results.
-//! - No particles, no cutting sound, no Workshop's Most Feared advancement, and a broken saw does
+//! - No particles, no Workshop's Most Feared advancement, and a broken saw does
 //!   not drop what it holds.
 //! - Felled trees show a break effect for every block, not by chance (`effectChance`).
 //! - Dynamic Trees and Tinkers' slimy logs are not supported (the tag `create:slimy_logs` is
@@ -559,6 +559,13 @@ fn process(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, rpm: f32,
             sync = true;
         }
         Step::Apply => {
+            // `tickAudio` of the shown `PlayEvent`: the wood or the stone cut.
+            if let Some(input) = &slots[0] {
+                let (name, volume, pitch) = create_kinetics::rules::sound_entries::saw_activation(
+                    create_kinetics::rules::sound_entries::is_wood_item(&input.item),
+                );
+                util::create_sound_at(host, name, pos, volume, pitch);
+            }
             apply(host, &mut slots, &filter, &mut index);
             sync = true;
         }

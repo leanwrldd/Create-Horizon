@@ -76,7 +76,7 @@ fn apply(host: &mut dyn Host, pos: Pos, changes: &[(&'static str, bool)]) {
         host.set_block_property(pos, key, if *on { "true" } else { "false" });
     }
     if !changes.is_empty() {
-        host.play_sound("minecraft:block.slime_block.place", util::centre(pos), BLOCKS, 0.5, 1.0);
+        util::create_sound_at(host, "slime_added", pos, 0.5, 1.0);
     }
 }
 

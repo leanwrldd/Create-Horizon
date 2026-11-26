@@ -520,7 +520,7 @@ impl Hooks for Packagers {
         let tick = state.tick(now);
         match tick.cue {
             Some(Cue::Packager) => {
-                host.play_sound("create:packager", util::centre(pos), 2, 1.0, 1.0);
+                util::create_sound_at(host, "packager", pos, 1.0, 1.0);
             }
             Some(Cue::Trapdoor) => {
                 host.play_sound("minecraft:block.iron_trapdoor.close", util::centre(pos), 2, 0.25, 0.75);
@@ -786,7 +786,7 @@ impl Hooks for Packagers {
             }
             if items::is_package(stack) && receive_at(host, pos, stack) {
                 items::shrink_held(player.uuid, &stack.item);
-                host.play_sound("create:depot_plop", util::centre(pos), 2, 1.0, 1.0);
+                util::create_sound_at(host, "depot_plop", pos, 1.0, 1.0);
             }
             return Flow::Cancel;
         }

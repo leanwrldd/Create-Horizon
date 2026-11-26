@@ -229,7 +229,7 @@ fn replace_with_lectern(host: &mut dyn Host, pos: [i32; 3]) {
     let Some(state) = host.default_state(rules::LECTERN) else {
         return;
     };
-    host.play_sound("create:controller_take", util::centre(pos), BLOCKS, 1.0, 1.0);
+    util::create_sound_at(host, "controller_take", pos, 1.0, 1.0);
     if host.set_block(dimension, pos, state, util::UPDATE_ALL) {
         host.set_block_property(pos, "facing", &facing);
         host.set_block_property(pos, "powered", if powered { "true" } else { "false" });
@@ -272,7 +272,7 @@ fn put(host: &mut dyn Host, job: &Put) {
         e.nbt.insert(CONTROLLER_DATA.into(), Tag::Compound(data.clone()));
     });
     host.block_entity_sync(job.pos);
-    host.play_sound("create:controller_put", util::centre(job.pos), BLOCKS, 1.0, 1.0);
+    util::create_sound_at(host, "controller_put", job.pos, 1.0, 1.0);
 }
 
 fn is_lectern_state(level: &dyn LevelHost, state: crate::compat::BlockStateId) -> bool {

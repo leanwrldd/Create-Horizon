@@ -205,13 +205,16 @@ fn tick_whistle(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
     // The sound, once the sample has ended.
     let key = (dimension.to_owned(), pos);
     if sounding {
-        let due = PLAYED
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&key)
-            .is_none_or(|at| now - *at >= LOOP_TICKS);
+        let last = PLAYED.lock().unwrap_or_else(PoisonError::into_inner).get(&key).copied();
+        let due = last.is_none_or(|at| now - at >= LOOP_TICKS);
         if due {
             let pitch = rules::pitch_factor(util::int(&event.entity.nbt, PITCH));
+            if last.is_none() {
+                // `WhistleBlockEntity.tickAudio`, when the sound instance starts: `WHISTLE_CHIFF.playAt(.., maxVolume *
+                // .175f, small ? f + .75f : f)` (the distance's `maxVolume` is the listener's: 1 here).
+                let chiff_pitch = if size == Size::Small { pitch + 0.75 } else { pitch };
+                util::create_sound_at(host, "chiff", pos, 0.175, chiff_pitch);
+            }
             // `SoundSource.RECORDS` (2); the sample carries 64 blocks (`attenuationDistance`).
             host.play_sound(size.sound(), util::centre(pos), 2, 4.0, pitch);
             PLAYED.lock().unwrap_or_else(PoisonError::into_inner).insert(key, now);

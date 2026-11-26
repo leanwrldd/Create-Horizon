@@ -129,7 +129,7 @@ fn held(host: &mut dyn Host, pos: Pos, stack: &ItemStack) -> Processing {
             host.block_entity_sync(pos);
             // `AllSoundEvents.SPOUTING.playOnServer(level, pos, 0.75f, 0.9f + 0.2f * random)`.
             let pitch = 0.9 + 0.2 * (util::random() % 1000) as f32 / 1000.0;
-            host.play_sound("create:spout", util::centre(pos), 4, 0.75, pitch);
+            util::create_sound_at(host, "spout", pos, 0.75, pitch);
             Processing::Hold
         }
     }

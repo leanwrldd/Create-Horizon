@@ -7,7 +7,7 @@
 //! - The signal is read by the block entity's tick (a poll, as the Controls do), not by
 //!   `neighborChanged`; a Sticker placed beside a signal takes its first reading as its powered
 //!   state without extending, as `getStateForPlacement` does.
-//! - No hit sound or glue particles (`playSound`, `SuperGlueItem.spawnParticles`) when the head
+//! - The hit sound (`playSound`) plays as the head starts to move, not when it arrives; no glue particles (`SuperGlueItem.spawnParticles`) when the head
 //!   meets a block, and no slime-block bounce on an upright Sticker (`fallOn`, `stepOn`).
 //! - The head's animation is worked out from the game time of the change (`Since`), the same for
 //!   every client, not a per-client `LerpedFloat`.
@@ -66,7 +66,7 @@ impl Hooks for Stickers {
             return;
         }
         let pos = event.pos;
-        let Some((_, state)) = state_of(&*host, pos) else { return };
+        let Some((facing, state)) = state_of(&*host, pos) else { return };
         let signal = crate::signals::read(host, &mut event.entity.nbt, pos) > 0;
         let first = !util::boolean(&event.entity.nbt, SEEN);
         if first {
@@ -86,6 +86,14 @@ impl Hooks for Stickers {
             host.set_block_property(pos, "extended", if next.extended { "true" } else { "false" });
             event.entity.nbt.insert(SINCE.into(), Tag::Long(util::game_time(&*host)));
             host.block_entity_sync(pos);
+            // `StickerBlockEntity.playSound`: `SLIME_ADDED.play(.., 0.35, attach ? 0.75 : 0.2)` when the head meets a
+            // block it can glue (`isAttachedToBlock`).
+            let attached = super::contraption::HostWorld::new(&*host).is_some_and(|world| {
+                create_kinetics::rules::super_glue::is_valid_face(&world, util::add(pos, facing.normal()), facing.opposite())
+            });
+            if attached {
+                util::create_sound_at(host, "slime_added", pos, 0.35, if next.extended { 0.75 } else { 0.2 });
+            }
         }
     }
 

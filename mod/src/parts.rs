@@ -94,11 +94,13 @@ impl BlockEntityPart for CreateEntity {
     fn block_entity_render_bounding_box(&self, host: &dyn ClientHost, event: &mut BlockEntityRenderBoundingBoxEvent<'_>) {
         events::block_entity_render_bounding_box(host, event)
     }
-    /// A structure's controller ticks on the client so the local player can be collided with it.
+    /// A structure's controller ticks on the client so the local player can be collided with it; a rotating machine
+    /// does so for its ambient sound (`KineticBlockEntity.tickAudio`).
     fn block_entity_client_ticks(&self, _host: &dyn ClientHost, event: &mut mod_api::BlockEntityClientTicksEvent<'_>) {
-        event.ticks |= crate::solid::is_controller(self.id);
+        event.ticks |= crate::solid::is_controller(self.id) || create_kinetics::rules::soundscape::listens(self.id);
     }
     fn block_entity_client_tick(&self, host: &mut dyn ClientHost, event: &mut mod_api::BlockEntityClientTickEvent<'_>) {
+        crate::machines::soundscape::observe(event);
         crate::solid::client::observe(host, event)
     }
 }
@@ -123,6 +125,12 @@ impl ItemPart for CreateItem {
     }
     fn inventory_tick(&self, host: &mut dyn ServerHost, event: &mut mod_api::InventoryTickEvent<'_>) {
         items::inventory_tick(host, event)
+    }
+    /// `AllArmorMaterials.COPPER`'s equip sound for the copper diving gear and the Copper Backtank.
+    fn get_equip_sound(&self, _host: &dyn mod_api::Host, event: &mut mod_api::GetEquipSoundEvent<'_>) {
+        if let Some(sound) = create_kinetics::rules::sound_entries::equip_sound(self.id) {
+            *event.sound = mod_api::Identifier::parse(sound).ok();
+        }
     }
     fn item_bar(&self, host: &dyn ClientHost, event: &mut mod_api::ItemBarEvent<'_>) {
         items::item_bar(host, event)
