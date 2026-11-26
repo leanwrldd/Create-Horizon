@@ -141,6 +141,8 @@ fn pick(host: &mut dyn Host, player: &NativeServerPlayer, item: &str, ty: EdgePo
     if !util::first_click(&*host, player.uuid, pos) {
         return Flow::Cancel;
     }
+    // A block put down by `setblock` or `fill` a moment ago may not be in the graph yet: add it now (`onRailAdded`).
+    world::register_now(&*host, pos);
     let query = net::query(&*host);
     let axes = query.axes(pos);
     let look = world::look_of(player.yaw, player.pitch);
@@ -175,6 +177,7 @@ fn select_curve(host: &mut dyn Host, player: &NativeServerPlayer, click: CurveCl
         return;
     }
     let bezier = BezierTrackPointLocation { curve_target: click.curve, segment: click.segment };
+    world::register_now(&*host, pos);
     let query = net::query(&*host);
     let result = net::with_nets(&*host, |nets| with_graph_location(&query, nets, pos, click.front, Some(bezier), ty).0).unwrap_or(OverlapResult::NoTrack);
     if let Some(key) = result.feedback() {
@@ -248,15 +251,22 @@ impl Hooks for Targets {
             return;
         }
         let Some(player) = host.acting_player() else { return };
-        let Some(selected) = selection(player.uuid, event.stack) else { return };
-        let data = net::item_data(selected.pos, selected.front, selected.bezier, event.pos);
+        // The selection is spent by a placement whether or not it could be read (Create clears it before it tries); the next
+        // inventory tick takes it off the stack, so the next click on a track is a new first point.
+        let selected = selection(player.uuid, event.stack);
+        set_pending(player.uuid, item, None);
+        let data = selected.map(|s| net::item_data(s.pos, s.front, s.bezier, event.pos));
+        // The block entity takes the stack's components when it is placed: the selection must not stay in it.
         host.change_mod_block_entity(event.pos, &mut |e| {
-            for (key, value) in &data {
+            for (key, value) in data.iter().flatten() {
                 e.nbt.insert(key.clone(), value.clone());
             }
+            world::strip_components(&mut e.nbt);
         });
         host.block_entity_sync(event.pos);
-        set_pending(player.uuid, item, None);
+        if data.is_none() {
+            return;
+        }
         net::say(host, player.uuid, "create.track_target.success", &[]);
     }
 

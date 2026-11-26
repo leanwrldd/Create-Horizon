@@ -169,6 +169,11 @@ impl Hooks for Signals {
 
     fn block_entity_tick(&self, host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         if event.entity.id == SIGNAL {
+            // The placing item's selection is copied into the new block entity's components: Create's holds none.
+            if super::track::leaked_components(&event.entity.nbt) {
+                super::track::strip_components(&mut event.entity.nbt);
+                host.block_entity_sync(event.pos);
+            }
             tick(host, event);
         }
     }

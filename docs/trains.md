@@ -497,6 +497,49 @@ Rules in `station_screen.rs` and `station_marker.rs`; glue in `mod/src/machines/
   `right_click_block` (`StationBlock.useItemOn`), a per-map store (an attachment keyed by map id) feeding `StationMarkers`, and a client
   `map_decorations` that turns `decorations()` into `MapDecoration`s.
 
+## Play-test fixes (2026-11-26)
+
+A play-test on an old build (about `83aaba9`) could not assemble a train. Found by reading the code against Create's source;
+none of it built or played (the task forbade it).
+
+- **The graph learned new track only through the item.** `machines/track.rs` queued a block as added from `place_block` and the curve
+  flow, and its sweep only looked for blocks that had *vanished*; nothing looked for new ones, so `/fill`, `/setblock`, structures,
+  pistons and a block put back after a replacement never reached the graph (Create: `TrackBlock.onPlace` schedules a tick, `tick`
+  runs `onRailAdded`). Now every track block entity ticks (`block_entity_ticks`) and `note_present` queues any block the graph
+  doesn't have; the queue budget is 256 a tick and the queue has a set beside it, so a long `/fill` isn't quadratic. The sweep also
+  compares each known block's ends with what it had when added (`rules/trains/discovery.rs` `registration`) and re-tracks a block
+  replaced in place (a different shape by `setblock`). The Train Station item's first click calls `register_now`, so a click made a
+  tick after a `fill` works.
+- **The graph could be wiped every second.** `sync` (every 20 ticks) reset the whole dimension (graphs, known ends, trains) whenever
+  the level attachment read back without a token. `discovery::sync` keeps the graphs of the same world and only rewrites the token.
+  Together with the above this would explain "bound only after minutes" and a station stuck at `TargetTrack [0,0,0]`.
+- **Removal and adding are symmetric.** The removal path was already `onRailRemoved` with the ends the block had; the missing half
+  was re-adding (above). Test: `propagator::a_block_replaced_and_put_back_rejoins_the_graph`.
+- **Bogeys sit above the track, not on it.** In Create the bogey does not replace the track block: `StationBlockEntity.trackClicked`
+  puts it at `pos + up` (`getUpNormal`) of a track piece inside the station's assembly area, and the graph keeps the track block. A bogey
+  placed where track was removes that track. Only offset 0 (the track block next to the station's own) is valid for the first bogey,
+  then at least 3 from the others (`isValidBogeyOffset`). The `/station` text now says so.
+- **Train Casing on the track** is `track_station.rs` `track_clicked` (a port of `trackClicked`, via `TrackBlock.useItemOn`); it needs the
+  station in assembly mode with a bound track (the scan fills the assembly area) and a click inside the area. It was not broken by itself:
+  an unbound station or a graph without the track had no assembly area, so the click fell through. Not verified in game.
+- **The selection leaked.** Placing a block item copies the stack's components into the block entity: `create:track_connecting_from` into
+  a track, `create:track_targeting_item_selection` into a station, signal or observer. All four block entities now drop the
+  keys (`track::strip_components`) when placed and on their first tick, and `track_target::place_block` clears the selection
+  whether or not it could read it; the track item forgets a selection a plain placement saw (`track_item::forget`), so the next inventory
+  tick takes it off the stack and the next click on a track is a first point.
+- **Load warnings.** `bogey.py` and `factory_gauge.py` now list the standalone models the Rust asks for (`MODELS`): the seven bogey
+  models (`bogey_frame`, `bogey_wheel`, the five `bogey_drive*`) and the eight `factory_gauge/connections/{arrow,line}_{north,east,south,west}`.
+  The importer copies only listed models (checked with a staging run against the 6.0.10 jar).
+- **`/station` chat replies.** `train_net::tell` now falls back to the action bar when the chat line is refused. A dropped reply was not
+  reproduced; other ways it can vanish are `compat/world.rs` `run_mod_command` returning `Continue` when the usage doesn't match or no
+  acting player is found.
+
+Re-check in game: `/fill` a strip of `create:track`, right-click the Train Station item on it at once (the first click should select);
+place the station: its `TargetTrack` is not `[0,0,0]`, and the placed track and station have no `create:track_*` in their `components`
+(`/data get block`); `/station assembly`, Train Casing on the first track block past the station, then a second three or more blocks
+along; `setblock` over a track block with another shape and with air and back, then `/station assemble`; the load log has no
+`standalone model ... not loaded` lines.
+
 ## Next
 
 1. Play-test glue parts 3, 4, 4b, 4c, 4d, 5, 6 and 6b (HANDOFF.md lists what to watch; for 6b: right-click a station, rename, assemble and

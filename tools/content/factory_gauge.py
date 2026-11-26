@@ -42,6 +42,11 @@ PICKAXE_ONLY = {"factory_gauge"}
 NAMES = {"block.create.factory_gauge": "Factory Gauge"}
 TAB = ["factory_gauge"]
 
+# `AllPartialModels.FACTORY_PANEL_ARROWS` and `_LINES`, drawn by `machines/factory_gauge.rs` from its `standalone_models`
+# hook; without the entry the models aren't in the package and the game logs "standalone model ... not loaded".
+MODELS = [f"block/factory_gauge/connections/{kind}_{side}" for kind in ("arrow", "line")
+          for side in ("north", "east", "south", "west")]
+
 RECIPES = {
     "crafting/logistics/factory_gauge": {
         "type": "minecraft:crafting_shapeless", "category": "misc",

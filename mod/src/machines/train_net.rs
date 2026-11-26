@@ -334,7 +334,12 @@ pub fn say(host: &mut dyn Host, uuid: u128, key: &str, args: &[String]) {
 
 /// A lang line in the chat.
 pub fn tell(host: &mut dyn Host, uuid: u128, line: impl Into<String>) {
-    host.tell(uuid, Text::literal(line.into()));
+    let line = line.into();
+    // A chat line the host refuses (the player can't be reached for it right now) still has to reach the player: the action bar
+    // is the fallback, so a command's answer is never dropped silently.
+    if !host.tell(uuid, Text::literal(line.clone())) {
+        host.action_bar(uuid, Text::literal(line));
+    }
 }
 
 struct Net;

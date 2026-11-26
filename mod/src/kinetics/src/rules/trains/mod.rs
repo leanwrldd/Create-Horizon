@@ -10,6 +10,7 @@ pub mod carriage;
 pub mod carriage_contraption;
 pub mod carriage_pose;
 pub mod curve_interaction;
+pub mod discovery;
 pub mod display;
 pub mod edge_blocks;
 pub mod graph;

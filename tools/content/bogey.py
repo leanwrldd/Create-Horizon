@@ -53,6 +53,13 @@ LOOT = {"small_bogey": _DROP_CASING, "large_bogey": _DROP_CASING}
 
 TAB = ["railway_casing"]
 
+# `AllPartialModels` of the standard bogeys' frame, wheels and the large bogey's drive, which `train_draw.rs` asks the game to
+# load as standalone models (`carriage_pose.rs` has the ids). Create's `.obj` files come with their `.mtl`: `build_content.py`
+# copies both. Without this entry the game logs "standalone model ... not loaded" and the wheels aren't drawn.
+MODELS = [f"block/track/bogey/{name}" for name in (
+    "bogey_frame", "bogey_wheel", "bogey_drive", "bogey_drive_wheel", "bogey_drive_wheel_pin", "bogey_drive_piston",
+    "bogey_drive_belt")]
+
 NAMES = {
     "block.create.small_bogey": "Small Bogey",
     "block.create.large_bogey": "Large Bogey",
