@@ -136,7 +136,7 @@ pub fn accepts(host: &dyn Host, item: &str) -> bool {
 pub fn deny(host: &mut dyn Host, player: &NativeServerPlayer) {
     let line = Text::translate_with_fallback("create.logistics.filter.invalid_item", "Cannot use this item here.", &[]);
     host.action_bar(player.uuid, line);
-    host.play_sound("create:deny", player.position, BLOCKS, 1.0, 1.0);
+    util::create_sound(host, "deny", player.position, 1.0, 1.0);
 }
 
 // --- the hooks ---------------------------------------------------------------------------------------------------

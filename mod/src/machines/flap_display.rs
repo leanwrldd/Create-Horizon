@@ -621,7 +621,7 @@ fn clatter(host: &mut dyn Host, pos: Pos, facing: Dir, board: &Board, rpm: f32, 
     let background = (flaps as f32 / 40.0).clamp(0.25, 1.0);
     let middle = step(step(pos, reach(facing), board.x_size / 2), Dir::Down, board.y_size / 2);
     let at = util::centre(middle);
-    host.play_sound("minecraft:block.note_block.hat", at, BLOCKS, volume, 0.56);
+    util::create_sound(host, "scroll_value", at, volume, 0.56);
     host.play_sound("minecraft:block.calcite.hit", at, BLOCKS, 0.35 * background, 1.95);
 }
 

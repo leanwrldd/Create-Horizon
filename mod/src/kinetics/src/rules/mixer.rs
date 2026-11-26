@@ -17,6 +17,19 @@ pub const BOTTOM: i32 = 20;
 /// the basin (`contentsChanged`) at once, which the glue approximates with this poll.
 pub const POLL: i64 = 5;
 
+/// `MechanicalMixerBlockEntity.tickAudio`: while the head sits at the bottom (`runningTicks == 20`) the `MIXING`
+/// entry plays at 0.75 every tick, or every other tick (the odd ones) below 65 RPM. `ticks` is the game time.
+pub fn mixing_sound_now(rpm: f32, at_bottom: bool, ticks: i64) -> bool {
+    let slow = rpm.abs() < 65.0;
+    if slow && ticks.rem_euclid(2) == 0 {
+        return false;
+    }
+    at_bottom
+}
+
+/// `AllSoundEvents.MIXING.playAt(.., .75f, 1, ..)`: the volume it plays at.
+pub const MIXING_VOLUME: f32 = 0.75;
+
 /// `isSpeedRequirementFulfilled`: `abs(speed) >= MEDIUM`.
 pub fn speed_fulfilled(rpm: f32) -> bool {
     rpm.abs() >= MIN_SPEED
@@ -181,6 +194,23 @@ pub fn client_ticks(ticks: i32, since: i64, now: f64) -> f32 {
     let cap = if ticks <= BOTTOM { BOTTOM } else { CYCLE } as f32;
     let start = (ticks as f32).min(cap);
     (((ticks as f64 + (now - since as f64)) as f32).max(start)).min(cap)
+}
+
+#[cfg(test)]
+mod sound_tests {
+    use super::*;
+
+    #[test]
+    fn the_mixing_sound_plays_at_the_bottom_every_tick_when_fast_and_every_other_when_slow() {
+        assert!(mixing_sound_now(128.0, true, 10));
+        assert!(mixing_sound_now(128.0, true, 11));
+        assert!(!mixing_sound_now(32.0, true, 10));
+        assert!(mixing_sound_now(32.0, true, 11));
+        assert!(!mixing_sound_now(128.0, false, 11));
+        assert!(!mixing_sound_now(-32.0, true, 12));
+        assert!(mixing_sound_now(-64.0, true, 13));
+        assert!(mixing_sound_now(-65.0, true, 14));
+    }
 }
 
 #[cfg(test)]

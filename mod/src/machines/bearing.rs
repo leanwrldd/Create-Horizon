@@ -205,6 +205,8 @@ fn assemble(
     entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
     engine::store_exception(entity, None);
     host.block_entity_sync(pos);
+    // `AllSoundEvents.CONTRAPTION_ASSEMBLE.playOnServer(level, worldPosition)`.
+    util::create_sound_at(host, "contraption_assemble", pos, 1.0, 1.0);
     true
 }
 
@@ -214,6 +216,9 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, facing: Dir, angle: f
     let dimension = host.dimension().to_owned();
     // `Contraption.stop`: the actors on the structure stop first.
     actor::stop(host, pos, nbt);
+    // The entity's `disassemble` and the bearing's own both play `CONTRAPTION_DISASSEMBLE`.
+    util::create_sound_at(host, "contraption_disassemble", pos, 1.0, 1.0);
+    util::create_sound_at(host, "contraption_disassemble", pos, 1.0, 1.0);
     if let Some(live) = engine::live(&dimension, pos, nbt) {
         let transform: Transform = bearing_rules::disassembly(live.moving.anchor, facing, angle);
         engine::place_in_world(host, &live.moving, &transform, &mut |_, _, _| false);

@@ -143,6 +143,8 @@ pub mod signals;
 pub mod smart_fluid_pipe;
 pub mod snbt;
 pub mod solid;
+pub mod sound_entries;
+pub mod soundscape;
 pub mod speed_controller;
 pub mod spout;
 pub mod spout_blocks;

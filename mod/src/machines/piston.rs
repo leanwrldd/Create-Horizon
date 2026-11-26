@@ -219,6 +219,8 @@ fn assemble(
     entity.nbt.insert(SYNC_TIME.into(), Tag::Long(now));
     engine::store_exception(entity, None);
     host.block_entity_sync(pos);
+    // `AllSoundEvents.CONTRAPTION_ASSEMBLE.playOnServer(level, worldPosition)`.
+    util::create_sound_at(host, "contraption_assemble", pos, 1.0, 1.0);
     true
 }
 
@@ -228,6 +230,9 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, facing: Dir, offset: 
     let dimension = host.dimension().to_owned();
     // `Contraption.stop`: the actors on the structure stop first.
     actor::stop(host, pos, nbt);
+    // The entity's `disassemble` and the piston's own both play `CONTRAPTION_DISASSEMBLE`.
+    util::create_sound_at(host, "contraption_disassemble", pos, 1.0, 1.0);
+    util::create_sound_at(host, "contraption_disassemble", pos, 1.0, 1.0);
     let live = engine::live(&dimension, pos, nbt)?;
     let moving = &live.moving;
     let settled = piston_rules::grid_offset(offset, range);
@@ -591,6 +596,8 @@ impl Hooks for Piston {
             .with("axis_along_first", if along_first { "true" } else { "false" })
             .with("state", "retracted");
         engine::place_state(host, pos, &sticky);
+        // `MechanicalPistonBlock.useItemOn`: `SLIME_ADDED.playOnServer(level, pos, .5f, 1)`.
+        util::create_sound_at(host, "slime_added", pos, 0.5, 1.0);
         Flow::Cancel
     }
 

@@ -326,7 +326,7 @@ fn open(host: &mut dyn Host, uuid: u128, position: [f64; 3], stack: &ItemStack) 
             util::spawn_item(host, position, &rest, [0.0; 3], 0);
         }
     }
-    host.play_sound("create:package_pop", position, PLAYERS, 1.0, 1.0);
+    util::create_sound(host, "package_pop", position, 1.0, 1.0);
     queue(uuid, Edit::Shrink(stack.item.to_string()));
 }
 

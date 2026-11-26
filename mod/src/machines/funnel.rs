@@ -24,8 +24,7 @@
 //! - Brass filter: Create's filter slot (a value box, `machines/value_box.rs`): right-click it with an item,
 //!   an empty hand clears it, hold for the amount where the funnel extracts. Andesite funnels move one item
 //!   at a time and take anything.
-//! - The flaps are drawn (swinging out and settling as `FlapStuffs` moves them) but make no
-//!   sound (`AllSoundEvents.FUNNEL_FLAP`); no advancements, no Smart Observer, no contraption
+//! - The flaps are drawn (swinging out and settling as `FlapStuffs` moves them) and play `FUNNEL_FLAP`; no advancements, no Smart Observer, no contraption
 //!   movement behaviour (`FunnelMovementBehaviour`), no waterlogging.
 //! - Funnels on an upright saw (`SawBlockEntity` allows belt funnels) are not belt funnels.
 //! - Collision boxes are cut to the block's own cell.
@@ -341,9 +340,11 @@ fn start_cooldown(entity: &mut ModBlockEntity) {
 }
 
 /// `FunnelBlockEntity.flap`: the flaps swing, in (`inward`) or out.
-fn flap(entity: &mut ModBlockEntity, inward: bool, now: i64) {
+fn flap(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, inward: bool, now: i64) {
     entity.nbt.insert(FLAP_KEY.into(), Tag::Byte(if inward { -1 } else { 1 }));
     entity.nbt.insert(FLAP_TICK.into(), Tag::Long(now));
+    // `AllSoundEvents.FUNNEL_FLAP.playAt(level, worldPosition, 1, 1, true)`.
+    util::create_sound_at(host, "funnel_flap", pos, 1.0, 1.0);
 }
 
 fn has_flap(v: &View) -> bool {
@@ -378,7 +379,7 @@ fn extract(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, v: &View,
     let Some(stack) = inv::take(host, source, v.facing, &plan) else {
         return;
     };
-    flap(entity, false, now);
+    flap(host, pos, entity, false, now);
     let (offset, motion) = rules::output_of(v.facing);
     let c = util::centre(pos);
     util::spawn_item(
@@ -415,7 +416,7 @@ fn push_to_belt(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, v: &
     let Some(stack) = inv::take(host, source, v.facing, &plan) else {
         return;
     };
-    flap(entity, false, now);
+    flap(host, pos, entity, false, now);
     let angle = (util::random() % 360) as i32;
     let item = Item::dropped(stack.clone(), 0, angle, true);
     let rest = belt::handle_insertion(host, below, side, &item, false, false);
@@ -474,7 +475,7 @@ fn try_insert(
         return stack.clone();
     };
     if rest.count != stack.count && has_flap(v) {
-        flap(entity, true, now);
+        flap(host, pos, entity, true, now);
     }
     rest
 }
@@ -547,7 +548,7 @@ fn pull_from_belt(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, v:
         changed
     });
     if flaps {
-        flap(entity, true, now);
+        flap(host, pos, entity, true, now);
         host.block_entity_sync(pos);
     }
 }

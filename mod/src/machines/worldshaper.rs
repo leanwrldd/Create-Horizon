@@ -145,7 +145,7 @@ fn activate(host: &mut dyn Host, settings: &Settings) {
         return;
     };
     if settings.tool.requires_block() && settings.block.is_none() {
-        host.play_sound("create:deny", player.position, 4, 1.0, 1.0);
+        util::create_sound(host, "deny", player.position, 1.0, 1.0);
         tell(host, "Left-click a block to choose the block to use".to_owned());
         return;
     }
@@ -159,6 +159,8 @@ fn activate(host: &mut dyn Host, settings: &Settings) {
     let Some((target, face)) = hit else {
         return;
     };
+    // `ZapperRenderHandler.playSound`, where the beam ends: `WORLDSHAPER_PLACE.play(.., 0.1f, mainHand ? 0.1f : 0.9f)`.
+    util::create_sound_at(host, "worldshaper_place", target, 0.1, 0.1);
     let params = settings.brush.params(settings.size);
     let tool = settings.brush.redirect(settings.tool);
     let world = World { host: &*host };

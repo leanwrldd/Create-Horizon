@@ -76,7 +76,7 @@ impl Hooks for Bells {
         host.set_block_property(pos, "attachment", &attachment);
         host.set_block_property(pos, "powered", &powered);
         let at = util::centre(pos);
-        host.play_sound("create:haunted_bell_convert", at, 4, 1.0, 1.0);
+        util::create_sound(host, "haunted_bell_convert", at, 1.0, 1.0);
         for _ in 0..16 {
             host.send_particles(&ParticleOptions::dust([0.3, 0.9, 1.0], 0.8), None, at, [0.3; 3], 0.05, 1);
         }

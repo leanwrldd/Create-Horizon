@@ -477,6 +477,8 @@ fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound, offset: f32, initial:
     let dimension = host.dimension().to_owned();
     // `Contraption.stop`: the actors on the cabin stop first.
     actor::stop(host, pos, nbt);
+    // `AbstractContraptionEntity.disassemble`.
+    util::create_sound_at(host, "contraption_disassemble", pos, 1.0, 1.0);
     train_doors::forget_elevator(&dimension, pos);
     let grid = (offset + 0.5).floor().max(0.0) as i32;
     if let Some(live) = engine::live(&dimension, pos, nbt) {
@@ -627,7 +629,8 @@ fn tick_pulley(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
         Some(y) => {
             if arrivals.insert(key.clone(), y) != Some(y) {
                 drop(arrivals);
-                host.play_sound("minecraft:block.piston.contract", util::centre(below(pos, offset as i32)), 4, 0.75, 0.8);
+                // `CONTRAPTION_DISASSEMBLE.play(level, null, worldPosition.below((int) offset), 0.75f, 0.8f)` once the cabin arrives.
+                util::create_sound_at(host, "contraption_disassemble", below(pos, offset as i32), 0.75, 0.8);
             }
         }
         None => {

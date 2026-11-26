@@ -74,7 +74,7 @@ pub struct Sound {
 pub fn bell_sound(kind: BellKind) -> Sound {
     match kind {
         BellKind::Desk => Sound { id: "create:desk_bell", volume: 1.0, pitch: 1.0 },
-        BellKind::Peculiar => Sound { id: "minecraft:block.bell.use", volume: 2.0, pitch: 0.94 },
+        BellKind::Peculiar => Sound { id: "create:peculiar_bell_use", volume: 2.0, pitch: 0.94 },
         BellKind::Haunted => Sound { id: "create:haunted_bell_use", volume: 4.0, pitch: 1.0 },
         BellKind::Vanilla => Sound { id: "minecraft:block.bell.use", volume: 2.0, pitch: 1.0 },
     }

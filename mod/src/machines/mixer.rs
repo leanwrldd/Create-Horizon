@@ -190,19 +190,11 @@ impl Hooks for MechanicalMixer {
         } else {
             0
         };
-        let out = mixer.tick(rpm, duration);
-        if out.started
-            && basin::contents(host, basin).is_some_and(|c| c.tanks.iter().any(|t| t.amount > 0))
-        {
-            // `BUBBLE_COLUMN_WHIRLPOOL_AMBIENT`.
-            host.play_sound(
-                "minecraft:block.bubble_column.whirlpool_ambient",
-                util::centre(pos),
-                4,
-                0.75,
-                if rpm.abs() < 65.0 { 0.75 } else { 1.5 },
-            );
+        // `tickAudio`: the head at the bottom mixes (every tick; every other tick when slow).
+        if rules::mixing_sound_now(rpm, mixer.running && mixer.running_ticks == rules::BOTTOM, util::game_time(host)) {
+            util::create_sound_at(host, "mixing", pos, rules::MIXING_VOLUME, 1.0);
         }
+        let out = mixer.tick(rpm, duration);
         if out.apply {
             sync = true;
             if let Some(recipe) = id.as_deref().and_then(|id| basin::recipe_by_id(host, id)) {

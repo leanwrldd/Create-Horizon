@@ -475,10 +475,10 @@ impl Hooks for Cannons {
         for effect in &effects {
             match effect {
                 Effect::Fired => {
-                    host.play_sound("minecraft:entity.generic.explode", util::centre(pos), 4, 0.1, 1.1);
+                    util::create_sound_at(host, "schematicannon_launch_block", pos, 1.0, 1.0);
                 }
                 Effect::FinishSound => {
-                    host.play_sound("minecraft:block.note_block.bell", util::centre(pos), 4, 1.0, 0.7);
+                    util::create_sound_at(host, "schematicannon_finish", pos, 1.0, 1.0);
                 }
                 Effect::ClearBlueprint { give_empty } => {
                     slots[BLUEPRINT] = None;

@@ -255,15 +255,15 @@ impl Hooks for Requesters {
             match change.trigger {
                 Trigger::Nothing => {}
                 Trigger::Denied => {
-                    host.play_sound("create:deny", util::centre(pos), 2, 0.5, 1.0);
+                    util::create_sound_at(host, "deny", pos, 0.5, 1.0);
                 }
                 Trigger::Send { order, address, success_effect } => {
                     network::broadcast(host, freq, RequestType::Redstone, &order, &address);
                     if success_effect {
-                        host.play_sound("create:confirm", util::centre(pos), 2, 0.5, 1.5);
-                        host.play_sound("create:stock_link", util::centre(pos), 2, 1.0, 1.0);
+                        util::create_sound_at(host, "confirm", pos, 0.5, 1.5);
+                        util::create_sound_at(host, "stock_link", pos, 1.0, 1.0);
                     } else {
-                        host.play_sound("create:deny", util::centre(pos), 2, 0.5, 1.0);
+                        util::create_sound_at(host, "deny", pos, 0.5, 1.0);
                     }
                 }
             }

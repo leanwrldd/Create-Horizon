@@ -17,8 +17,8 @@
 //! - The boots only pull the player down (`motion.add(0, -0.05, 0)`) from the client's tick, in water
 //!   that is not swimming (the swimming pose can't be told): no jump boost from the sea floor, no
 //!   horizontal speed-up (`getMovementMultiplier`), no lava walking.
-//! - No air overlay (`RemainingAirOverlay`) and no deny or steam sounds on the low and depleted warnings:
-//!   they show on the action bar.
+//! - No air overlay (`RemainingAirOverlay`): the low and depleted warnings show on the action bar (with Create's
+//!   deny and steam sounds), not as a title.
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -61,6 +61,8 @@ struct Worn {
     /// Air to take from the chest tank in the next level tick.
     owed: i32,
     dimension: &'static str,
+    /// Where the player stood at their last tick: the warnings' sounds play there.
+    position: [f64; 3],
 }
 
 static WORN: Mutex<BTreeMap<u128, Worn>> = Mutex::new(BTreeMap::new());
@@ -131,6 +133,7 @@ impl Hooks for Diving {
         entry.full_set = full_set;
         entry.seen = now;
         entry.dimension = dimension;
+        entry.position = player.position;
         // `breatheUnderwater` in lava: a netherite helmet and tank give a second of air for a second.
         if in_lava {
             entry.lava += 1;
@@ -183,12 +186,12 @@ impl Hooks for Diving {
     /// `BacktankUtil.consumeAir`: the air a worn tank owes comes out of its stack, with the warnings.
     fn level_tick_post(&self, host: &mut dyn Host, event: &mut LevelTickPostEvent<'_>) {
         let now = util::game_time(&*host);
-        let jobs: Vec<(u128, i32, ItemStack)> = worn()
+        let jobs: Vec<(u128, i32, ItemStack, [f64; 3])> = worn()
             .iter()
             .filter(|(_, w)| w.owed > 0 && w.dimension == event.dimension && now - w.seen <= 3)
-            .filter_map(|(uuid, w)| Some((*uuid, w.owed, w.chest_stack.clone()?)))
+            .filter_map(|(uuid, w)| Some((*uuid, w.owed, w.chest_stack.clone()?, w.position)))
             .collect();
-        for (uuid, owed, stack) in jobs {
+        for (uuid, owed, stack, position) in jobs {
             if !tank::is_backtank(&stack.item) {
                 if let Some(w) = worn().get_mut(&uuid) {
                     w.owed = 0;
@@ -221,6 +224,10 @@ impl Hooks for Diving {
                     tank::Warning::Depleted => "Warning: backtank depleted",
                 };
                 host.action_bar(uuid, Text::literal(line.to_owned()));
+                // `BacktankUtil.sendWarning`: `DENY.play(.., 1, 1.25f)` and `STEAM.play(.., .5f, .5f)` at the player's block.
+                let at = position.map(|v| v.floor() + 0.5);
+                util::create_sound(host, "deny", at, 1.0, 1.25);
+                util::create_sound(host, "steam", at, 0.5, 0.5);
             }
         }
         // Forget players that stopped ticking.

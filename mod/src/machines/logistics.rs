@@ -506,7 +506,7 @@ pub fn perform(host: &mut dyn Host, dispatches: Vec<net::Dispatch<ItemStack>>, p
         let at = *at;
         let mut requests = dispatch.requests;
         // `flashLink`.
-        host.play_sound("create:stock_link", util::centre(at), 2, 0.75, 1.25);
+        util::create_sound_at(host, "stock_link", at, 0.75, 1.25);
         net::run_attempts(&mut requests, |list| {
             packager_glue::attempt_requests(host, at, list);
         });

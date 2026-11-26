@@ -53,8 +53,6 @@ pub const RECIPE_TYPE: &str = "create:pressing";
 const HEAD: &str = "create:block/mechanical_press/head";
 pub const MODELS: [&str; 1] = [HEAD];
 const CENTRE: [f32; 3] = [0.5; 3];
-/// `SoundSource.BLOCKS`.
-const BLOCKS: usize = 4;
 
 // Saved as Create's `PressingBehaviour.write` names them.
 const RUNNING: &str = "Running";
@@ -355,15 +353,12 @@ fn apply_basin(host: &mut dyn Host, basin_pos: Pos, id: Option<String>) {
 /// `AllSoundEvents.MECHANICAL_PRESS_ACTIVATION` (and `_ON_BELT` over wool, which a belt is).
 fn activation_sound(host: &mut dyn Host, pos: Pos, rpm: f32) {
     let name = host.block([pos[0], pos[1] - 2, pos[2]]);
-    let at = util::centre(pos);
     if name == belt::ID || name.ends_with("_wool") || name.ends_with("_carpet") {
-        host.play_sound("minecraft:block.wool.hit", at, BLOCKS, 0.75, 1.0);
-        host.play_sound("minecraft:entity.item.break", at, BLOCKS, 0.15, 0.75);
+        util::create_sound_at(host, "mechanical_press_activation_belt", pos, 1.0, 1.0);
     } else {
         // `playOnServer(level, pos, .5f, .75f + |speed| / 1024)`.
         let pitch = 0.75 + rpm.abs() / 1024.0;
-        host.play_sound("minecraft:block.anvil.land", at, BLOCKS, 0.125 * 0.5, pitch);
-        host.play_sound("minecraft:entity.item.break", at, BLOCKS, 0.5 * 0.5, pitch);
+        util::create_sound_at(host, "mechanical_press_activation", pos, 0.5, pitch);
     }
 }
 

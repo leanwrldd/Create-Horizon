@@ -51,7 +51,6 @@ const LAND_SCAN: i64 = 2;
 const MECHANICAL_ARM: &str = "create:mechanical_arm";
 const SPECTATOR: i32 = 3;
 /// `SoundSource` ordinals.
-const BLOCKS: usize = 4;
 const PLAYERS: usize = 7;
 
 /// `DepotItemHandler`: the same from every side, put into slot 0 only and taken out of any.
@@ -334,11 +333,9 @@ fn landed(host: &mut dyn Host, pos: [i32; 3], entity: &mut ModBlockEntity) {
 /// `DepotBehaviour.insert`'s sound: sliding in from the side, or landing from above.
 fn play_arrival(host: &mut dyn Host, pos: [i32; 3], from: Dir) {
     if from.axis() != Axis::Y {
-        // AllSoundEvents.DEPOT_SLIDE.
-        host.play_sound("minecraft:block.sand.break", centre(pos), BLOCKS, 0.125, 1.5);
+        util::create_sound_at(host, "depot_slide", pos, 1.0, 1.0);
     } else {
-        // AllSoundEvents.DEPOT_PLOP.
-        host.play_sound("minecraft:entity.item_frame.add_item", centre(pos), BLOCKS, 0.25, 1.25);
+        util::create_sound_at(host, "depot_plop", pos, 1.0, 1.0);
     }
 }
 
@@ -728,14 +725,7 @@ pub fn right_click(host: &mut dyn Host, pos: [i32; 3], face: [i32; 3]) -> Flow {
         && empty_main_hand(host, &player, &stack)
     {
         put_down(host, pos, stack, player.yaw);
-        // AllSoundEvents.DEPOT_SLIDE: sand breaking at volume 0.125 and pitch 1.5.
-        host.play_sound(
-            "minecraft:block.sand.break",
-            centre(pos),
-            BLOCKS,
-            0.125,
-            1.5,
-        );
+        util::create_sound_at(host, "depot_slide", pos, 1.0, 1.0);
     }
     host.block_entity_sync(pos);
     Flow::Cancel

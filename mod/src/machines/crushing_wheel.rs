@@ -47,6 +47,8 @@ const MILLING: &str = "create:milling";
 /// `CreateDamageSources.crush`.
 const CRUSH: &str = "create:crush";
 const SPEED: &str = "Speed";
+/// Whether something is being crushed: sent to clients for the ambient sound (`CrushingWheelControllerBlockEntity.tickAudio`).
+const BUSY: &str = "Busy";
 const INVENTORY: &str = "Inventory";
 const PROCESSING_TIME: &str = "ProcessingTime";
 const RECIPE_TIME: &str = "RecipeTime";
@@ -525,6 +527,12 @@ fn controller_tick(host: &mut dyn Host, event: &mut BlockEntityTickEvent<'_>) {
             }
         }
     }
+    // `tickAudio` runs while an entity or an item is in the controller: the client's `Busy`.
+    let busy = processing.is_some() || slots.first().is_some_and(Option::is_some);
+    if util::boolean(&event.entity.nbt, BUSY) != busy {
+        event.entity.nbt.insert(BUSY.into(), Tag::Byte(i8::from(busy)));
+        sync = true;
+    }
     if slots != event.entity.items {
         event.entity.items = slots;
     }
@@ -625,6 +633,7 @@ impl Hooks for Crushing {
                     SPEED,
                     util::float(&event.entity.nbt, SPEED).unwrap_or(0.0),
                 );
+                tag.insert(BUSY.into(), Tag::Byte(i8::from(util::boolean(&event.entity.nbt, BUSY))));
                 Some(tag)
             }
             _ => None,

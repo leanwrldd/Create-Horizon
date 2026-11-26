@@ -184,8 +184,9 @@ pub fn catch(host: &mut dyn Host, pos: Pos, item: &ItemStack) -> bool {
         store(e, &port);
     });
     host.block_entity_sync(pos);
-    host.play_sound("create:frogport_open", util::centre(pos), 4, 1.0, 1.0);
-    host.play_sound("create:frogport_catch", util::centre(pos), 4, 1.0, 1.0);
+    // `FrogportSounds.open` (0.5), then `catchPackage`, as `startAnimation` plays them.
+    util::create_sound_at(host, "frogport_open", pos, 0.5, 1.0);
+    util::create_sound_at(host, "frogport_catch", pos, 1.0, 1.0);
     true
 }
 
@@ -228,6 +229,7 @@ fn try_pull(host: &mut dyn Host, pos: Pos, entity: &ModBlockEntity, port: &mut P
     if let Some(slot) = own {
         let boxed = port.slots[slot].take().expect("the slot held the box");
         port.start_animation(boxed, true, now);
+        deposit_sound(host, pos);
         return true;
     }
     // The inventory below.
@@ -247,9 +249,16 @@ fn try_pull(host: &mut dyn Host, pos: Pos, entity: &ModBlockEntity, port: &mut P
         let mut boxed = stack;
         boxed.count = 1;
         port.start_animation(boxed, true, now);
+        deposit_sound(host, pos);
         return true;
     }
     false
+}
+
+/// `startAnimation(.., deposit = true)`: `FrogportSounds.open` (0.5) and `depositPackage`.
+fn deposit_sound(host: &mut dyn Host, pos: Pos) {
+    util::create_sound_at(host, "frogport_open", pos, 0.5, 1.0);
+    util::create_sound_at(host, "frogport_deposit", pos, 1.0, 1.0);
 }
 
 fn chain_conveyor_accepts(host: &mut dyn Host, conveyor: Pos, target: &Target, sample: &ItemStack) -> bool {
@@ -355,9 +364,7 @@ impl Hooks for Frogports {
                     let sent = target
                         .as_ref()
                         .is_some_and(|t| super::chain_conveyor::export_from_port(host, conveyor_of(pos, t), t, &boxed, false));
-                    if sent {
-                        host.play_sound("create:frogport_deposit", util::centre(pos), 4, 1.0, 1.0);
-                    } else {
+                    if !sent {
                         drop_box(host, pos, &boxed);
                     }
                 }

@@ -239,7 +239,7 @@ impl Hooks for DeskBell {
         if !util::first_click(host, player.uuid, pos) {
             return Flow::Cancel;
         }
-        host.play_sound("create:desk_bell", util::centre(pos), BLOCKS, 1.0, 1.0);
+        util::create_sound_at(host, "desk_bell", pos, 1.0, 1.0);
         let now = util::game_time(host);
         host.change_mod_block_entity(pos, &mut |entity| {
             entity.nbt.insert(TIMER.into(), Tag::Int(rules::POWERED_TICKS));

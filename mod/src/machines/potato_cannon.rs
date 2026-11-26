@@ -158,7 +158,7 @@ impl Hooks for Cannon {
                 lock(&SHOTS).insert(id, Shot { kind: index_of(kind), owner: player.entity_id as u32, born: now, dimension });
             }
         }
-        host.play_sound("create:fwoomp", barrel, 7, 1.0, kind.sound_pitch + (pitch_roll - 0.5) / 4.0);
+        util::create_sound(host, "fwoomp", barrel, 1.0, kind.sound_pitch + (pitch_roll - 0.5) / 4.0);
 
         lock(&READY).insert(uuid, now + i64::from(kind.reload_ticks));
         // Wear, or a worn backtank's air.
@@ -213,7 +213,9 @@ impl Hooks for Cannon {
             let stack = ItemStack { item: drop.into(), count: 1, damage: 0, extra: None };
             util::spawn_item(host, event.at, &stack, [0.0; 3], 10);
         }
-        host.play_sound("create:potato_hit", event.at, 7, 0.9, 1.0);
+        // `playOnServer(world, BlockPos.containing(location))`: the centre of the block it hit, at 1 and 1.
+        let block = event.at.map(|v| v.floor() as i32);
+        util::create_sound_at(host, "potato_hit", block, 1.0, 1.0);
         host.remove_entity(dimension, event.projectile);
         Flow::Cancel
     }

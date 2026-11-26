@@ -110,7 +110,7 @@ fn collect_payments(host: &mut dyn Host, uuid: u128, pos: Pos) -> bool {
 
 fn deny(host: &mut dyn Host, uuid: u128, line: &str) {
     if let Some(player) = host.acting_player() {
-        host.play_sound("create:deny", player.position, 7, 1.0, 1.0);
+        util::create_sound(host, "deny", player.position, 1.0, 1.0);
     }
     host.action_bar(uuid, Text::literal(line.to_owned()));
 }
@@ -165,7 +165,7 @@ fn sell(host: &mut dyn Host, uuid: u128, pos: Pos, held: &ItemStack) {
             });
             items::shrink_held(uuid, table_cloth::SHOPPING_LIST);
             if !order.is_empty() {
-                host.play_sound("create:stock_ticker_trade", util::centre(pos), 2, 1.0, 1.0);
+                util::create_sound_at(host, "stock_ticker_trade", pos, 1.0, 1.0);
             }
         }
     }
@@ -394,7 +394,7 @@ fn send(host: &mut dyn Host, uuid: u128, ticker: Pos, freq: Freq, order: &Contex
         util::put(&mut entity.nbt, PREVIOUS_ADDRESS, Tag::String(address.into()));
     });
     if accepted {
-        host.play_sound("create:stock_ticker_request", util::centre(ticker), 2, 1.0, 1.0);
+        util::create_sound_at(host, "stock_ticker_request", ticker, 1.0, 1.0);
         if let Some(session) = sessions().get_mut(&uuid) {
             session.order.items.clear();
         }
@@ -413,7 +413,7 @@ fn program(host: &mut dyn Host, uuid: u128, ticker: Pos, freq: Freq, order: Cont
         tell(host, uuid, "Hold a Redstone Requester or a Table Cloth to program it");
         return;
     }
-    host.play_sound("create:stock_ticker_request", util::centre(ticker), 2, 1.0, 1.0);
+    util::create_sound_at(host, "stock_ticker_request", ticker, 1.0, 1.0);
     tell(host, uuid, "Order programmed into the item in your hand (a Redstone Requester also joins this network)");
 }
 

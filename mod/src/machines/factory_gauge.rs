@@ -505,8 +505,8 @@ fn tick_panel(host: &mut dyn Host, pos: Pos, panels: &mut [Gauge<ItemStack>], i:
     let reads = Reads { restocker, unloaded_links: unloaded, level_in_storage: level, max_stack_size: max_stack };
     let tick = panels[i].tick_storage_monitor(&reads, promised);
     if tick.confirm {
-        host.play_sound("create:confirm", util::centre(pos), 2, 0.075, 1.0);
-        host.play_sound("create:confirm_2", util::centre(pos), 2, 0.125, 0.575);
+        util::create_sound_at(host, "confirm", pos, 0.075, 1.0);
+        util::create_sound_at(host, "confirm_2", pos, 0.125, 0.575);
     }
     dirty |= tick.changed;
 
@@ -837,7 +837,7 @@ fn run(host: &mut dyn Host, uuid: u128, line: &str) {
         Command::Connect { pos, slot } => {
             let source = PanelPosition { pos, slot };
             if let Some(issue) = connect_issue(host, &at, &panel, &source) {
-                host.play_sound("create:deny", util::centre(at.pos), 2, 1.0, 1.0);
+                util::create_sound_at(host, "deny", at.pos, 1.0, 1.0);
                 status(host, uuid, issue.message());
                 return;
             }
@@ -861,7 +861,7 @@ fn run(host: &mut dyn Host, uuid: u128, line: &str) {
         Command::ConnectLink { pos } => match connect_link(host, &at, restocker, pos) {
             Ok(text) => message = Some(text),
             Err(text) => {
-                host.play_sound("create:deny", util::centre(at.pos), 2, 1.0, 1.0);
+                util::create_sound_at(host, "deny", at.pos, 1.0, 1.0);
                 status(host, uuid, text);
                 return;
             }
@@ -910,7 +910,7 @@ fn run(host: &mut dyn Host, uuid: u128, line: &str) {
                     message = Some(text);
                 }
                 Err(text) => {
-                    host.play_sound("create:deny", util::centre(at.pos), 2, 1.0, 1.0);
+                    util::create_sound_at(host, "deny", at.pos, 1.0, 1.0);
                     status(host, uuid, text);
                     return;
                 }
@@ -1018,7 +1018,7 @@ fn open(host: &mut dyn Host, uuid: u128, pos: Pos) {
 /// item carries (it must be tuned).
 fn add_panel(host: &mut dyn Host, uuid: u128, pos: Pos, creative: bool, stack: &ItemStack) {
     let Some(freq) = network::stack_freq(stack) else {
-        host.play_sound("create:deny", util::centre(pos), 2, 1.0, 1.0);
+        util::create_sound_at(host, "deny", pos, 1.0, 1.0);
         status(host, uuid, "Tune to a stock link before placing");
         return;
     };
@@ -1355,7 +1355,7 @@ impl Hooks for Gauges {
             if let Some(player) = host.acting_player()
                 && player.game_mode != util::SPECTATOR
             {
-                host.play_sound("create:deny", util::centre(pos), 2, 1.0, 1.0);
+                util::create_sound_at(host, "deny", pos, 1.0, 1.0);
                 status(host, player.uuid, "Tune to a stock link before placing");
                 return Flow::Cancel;
             }

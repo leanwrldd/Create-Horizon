@@ -174,6 +174,9 @@ fn assemble(host: &mut dyn Host, pos: Pos, entity: &mut ModBlockEntity, facing: 
 /// Sets both hands of the bearing at `pos` down, unturned (`disassemble` zeroes the angles first).
 fn set_down(host: &mut dyn Host, pos: Pos, nbt: &Compound) {
     let dimension = host.dimension().to_owned();
+    // `AbstractContraptionEntity.disassemble`, once for each hand.
+    util::create_sound_at(host, "contraption_disassemble", pos, 1.0, 1.0);
+    util::create_sound_at(host, "contraption_disassemble", pos, 1.0, 1.0);
     if let Some(live) = engine::live(&dimension, pos, nbt) {
         let transform = Transform::translation(live.moving.anchor);
         engine::place_in_world(host, &live.moving, &transform, &mut |_, _, _| false);

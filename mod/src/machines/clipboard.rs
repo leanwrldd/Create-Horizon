@@ -122,6 +122,17 @@ fn say(host: &mut dyn Host, uuid: u128, lines: &[String]) {
     }
 }
 
+/// `ClipboardScreen`'s check and erase sounds (a UI sound there, so heard by the editing player alone), played at the
+/// player here.
+fn tick_sound(host: &mut dyn Host, uuid: u128, was: Option<bool>, now: Option<bool>) {
+    let dice = (util::random() % 1_000_000) as f32 / 1_000_000.0;
+    if let Some((name, pitch)) = rules::tick_sound(was, now, dice)
+        && let Some(player) = host.acting_player().filter(|player| player.uuid == uuid)
+    {
+        util::create_sound(host, name, player.position, 1.0, pitch);
+    }
+}
+
 // ---- state kept in memory ----------------------------------------------------------------------
 
 /// The clipboard each player last right-clicked where it stands, for the command.
@@ -306,10 +317,12 @@ impl Hooks for Clipboards {
         let held = host.held_stack(uuid).filter(|stack| &*stack.item == ID);
         if let Some(stack) = held {
             let mut content = carried(&stack).unwrap_or_default();
-            let reply = rules::apply(&mut content, edit);
+            let was = rules::checked_of(&content, &edit);
+            let reply = rules::apply(&mut content, edit.clone());
             if let Some(error) = reply.error {
                 say(host, uuid, &[error]);
             } else {
+                tick_sound(host, uuid, was, rules::checked_of(&content, &edit));
                 if reply.changed {
                     lock(&PENDING).insert(uuid, tag_of(&content));
                     PENDING_COUNT.store(lock(&PENDING).len(), Ordering::Relaxed);
@@ -327,10 +340,12 @@ impl Hooks for Clipboards {
             return Flow::Cancel;
         };
         let mut content = content_at(&entity.nbt);
-        let reply = rules::apply(&mut content, edit);
+        let was = rules::checked_of(&content, &edit);
+        let reply = rules::apply(&mut content, edit.clone());
         if let Some(error) = reply.error {
             say(host, uuid, &[error]);
         } else {
+            tick_sound(host, uuid, was, rules::checked_of(&content, &edit));
             if reply.changed {
                 let tag = tag_of(&content);
                 host.change_mod_block_entity(pos, &mut |e| {

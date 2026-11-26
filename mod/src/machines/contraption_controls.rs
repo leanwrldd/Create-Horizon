@@ -247,13 +247,8 @@ impl Hooks for ContraptionControls {
         if let Some((disabled, filter)) = shown {
             host.block_entity_sync(pos);
             host.action_bar(player.uuid, status(filter.as_ref(), !disabled));
-            host.play_sound(
-                "minecraft:entity.item_frame.add_item",
-                util::centre(pos),
-                BLOCKS,
-                0.35,
-                rules::click_pitch(disabled),
-            );
+            // `CONTROLLER_CLICK.play(level, null, pos, 1, disabled ? 0.8f : 1.5f)`.
+            util::create_sound_at(host, "controller_click", pos, 1.0, rules::click_pitch(disabled));
         }
         Flow::Cancel
     }
